@@ -286,7 +286,7 @@ The agent reads this file (`branching-strategies.md`) as the menu, matches the t
 
 If the team's stated strategy doesn't map cleanly to the menu (e.g. "we use a hybrid"), the agent picks the closest fit and notes the deviation in the response's `notes` field; the orchestrator surfaces it in the audit log.
 
-If neither `aidlc-team.md` nor `aidlc-org.md` provides branching practice, the agent applies hardcoded defaults — trunk-based with squash, base `main`, target `main` — and emits `PRACTICES_SECTION_EMPTY` (advisory-only).
+If neither `aidlc-team.md` nor `aidlc-org.md` provides branching practice, and the repository **pre-exists** (a customer or brownfield repo rather than one this workflow created), inspect the repo before assuming a default: `git branch -r` and `git log --graph --oneline -20` reveal the model actually in use — a live `develop` branch means GitFlow, long-lived PR branches mean GitHub Flow, `release/*` branches mean Release Branches. Match what the repo's owners do, not the framework's preference, and record the observed strategy in the response `notes`. Only when the repo is fresh (or inspection is inconclusive) apply the hardcoded defaults — trunk-based with squash, base `main`, target `main` — and emit `PRACTICES_SECTION_EMPTY` (advisory-only).
 
 ---
 

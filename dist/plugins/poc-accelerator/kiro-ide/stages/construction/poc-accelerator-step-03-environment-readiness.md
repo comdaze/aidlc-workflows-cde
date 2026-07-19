@@ -46,7 +46,10 @@ stages depend on it. Confirm
 the customer-approved AWS account, region, identity method, and non-production
 boundary through read-only AWS API MCP server calls (identity, region, and
 existing-resource discovery) before any mutation; keep
-`REQUIRE_MUTATION_CONSENT=true`. Do not place access keys or customer
+`REQUIRE_MUTATION_CONSENT=true`. If working in a pre-existing customer
+repository, discover its branching model first (`git branch -r`,
+`git log --graph` — per the git collaboration knowledge) and record the
+observed model in the readiness evidence. Do not place access keys or customer
 credentials in source control or stage artifacts.
 
 ### Step 2: Prepare CDK as Code

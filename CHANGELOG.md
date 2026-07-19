@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.20] - 2026-07-17
+
+Git collaboration discipline for customer repos, and the branching fallback now inspects pre-existing repositories. **Upgrade:** re-copy your `dist/<harness>/` shell and re-compose `dist/plugins/poc-accelerator/<harness>/`.
+
+* Core `branching-strategies.md`: when no branching practice is affirmed and the repository pre-exists, the agent inspects it (`git branch -r`, `git log --graph`) and matches the observed model — a live `develop` means GitFlow, `release/*` means Release Branches — before falling back to hardcoded trunk-based defaults; the observed strategy is recorded in the response notes.
+* New poc-accelerator knowledge `git-collaboration.md` separating the two actors in a customer repo: the workflow's agents keep the framework's git safety line (no force pushes, no history rewriting), while the SA-as-human gets the CDE discipline — discover the branching model before the first commit, rebase only unshared branches, `--force-with-lease` never plain `--force`, resolve conflicts by understanding both sides' intent, clean up noisy WIP before the PR without rewriting anything shared.
+* Step 3 records the observed branching model in the readiness evidence for pre-existing customer repos; step 8's extension recommendations now name the CI/CD pipeline explicitly, note the deliverable is pipeline-ready (all-CDK + configuration-only portability), and point it at the follow-on workflow's ci-pipeline/deployment-pipeline stages instead of building one inside the PoC time box.
+* Plugin version bumps to 0.12.0.
+
 ## [2.3.19] - 2026-07-17
 
 The poc-accelerator handoff gains a recorded quality checklist. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.

@@ -59,9 +59,13 @@ package references the README rather than duplicating it.
 ### Step 2: Document the Production Extension Path
 
 Create `poc-accelerator-extension-recommendations.md`. Separate achieved PoC
-capabilities from production work such as authentication, resilience,
-observability, data governance, cost controls, security review, and operational
-ownership. Recommend a follow-on `feature` or `enterprise` workflow rather
+capabilities from production work such as a CI/CD pipeline, authentication,
+resilience, observability, data governance, cost controls, security review,
+and operational ownership. Note that the deliverable is pipeline-ready —
+all-CDK infrastructure plus configuration-only portability wires directly
+into any CI system — and point the CI/CD item at the follow-on workflow's
+ci-pipeline and deployment-pipeline stages rather than building one inside
+the PoC time box. Recommend a follow-on `feature` or `enterprise` workflow rather
 than declaring the PoC production ready.
 
 ### Step 3: Project PoC and Production Costs
