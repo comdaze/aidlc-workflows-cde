@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.15] - 2026-07-17
+
+The poc-accelerator plugin gains code-organization guidance for the developer persona. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.
+
+* New developer knowledge `code-organization.md` with three principles adapted to the 3–5-day PoC: modularity through action-oriented file names (no `utils` dumping ground), small files and small units (~500-line split signal), and indirection at every external-system boundary (api/service/client/adapter layout with a reference tree).
+* The walking-skeleton stage establishes the layered layout on its first slice, feature expansion fills it in file-by-file, and solution design names the layer seams as the thing the production extension path swaps — tying code structure to the PoC-to-production story.
+* The data redaction/masking boundary is called out as its own module on the data path, keeping the GenAIIC-approved handling one visible seam.
+* Plugin version bumps to 0.7.0.
+
 ## [2.3.14] - 2026-07-17
 
 Security-scan compliance sweep for the doctor and onboarding output strings. **Upgrade:** re-copy your `dist/<harness>/` shell if you surface these messages to users.

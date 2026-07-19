@@ -43,10 +43,14 @@ MANDATORY: Follow stage-protocol.md for approval gates, question format, and com
 
 ### Step 1: Select One Vertical Slice
 
-Load the developer, architecture, and quality personas. Choose the smallest
-customer-visible path that crosses the planned application and CDK-managed AWS
-boundary: one input, one business decision, one visible outcome. It must be a
-real runnable slice, not a mock-only slide deck.
+Load the developer, architecture, and quality personas and the PoC code
+organization knowledge. Choose the smallest customer-visible path that crosses
+the planned application and CDK-managed AWS boundary: one input, one business
+decision, one visible outcome. It must be a real runnable slice, not a
+mock-only slide deck. The skeleton establishes the project layout: layered
+modules (api/service/client/adapter/model), action-oriented file names with no
+`utils` dumping ground, and explicit seams between layers so the extension
+path can later swap parts without a rewrite.
 
 ### Step 2: Implement and Deploy the Slice
 

@@ -49,13 +49,17 @@ features, and unconfirmed industry rules to the extension recommendations.
 
 ### Step 2: Implement Core Behavior
 
-Extend the workspace code and TypeScript CDK definitions sequentially. Validate
-CDK/CloudFormation changes through the AWS IaC MCP server before each deploy,
-and consult the AWS documentation/knowledge MCP servers for service behavior
-instead of guessing API semantics. Keep a trace from each change to an
-acceptance criterion; add or update tests alongside the change. Apply the
-redaction placeholder to every data-handling path and use only approved
-synthetic or masked data.
+Extend the workspace code and TypeScript CDK definitions sequentially, filling
+in the layout the skeleton established (per the PoC code organization
+knowledge): new behavior goes in small, single-purpose files named for what
+they do, store and external-system access stays behind the client/adapter
+seams, and nothing accumulates in a `utils` file. A file crossing ~500 lines
+is a split signal. Validate CDK/CloudFormation changes through the AWS IaC MCP
+server before each deploy, and consult the AWS documentation/knowledge MCP
+servers for service behavior instead of guessing API semantics. Keep a trace
+from each change to an acceptance criterion; add or update tests alongside the
+change. Apply the redaction placeholder to every data-handling path and use
+only approved synthetic or masked data.
 
 ### Step 3: Verify Locally and in the PoC Environment
 
