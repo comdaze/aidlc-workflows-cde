@@ -49,7 +49,11 @@ existing-resource discovery) before any mutation; keep
 `REQUIRE_MUTATION_CONSENT=true`. If working in a pre-existing customer
 repository, discover its branching model first (`git branch -r`,
 `git log --graph` — per the git collaboration knowledge) and record the
-observed model in the readiness evidence. Do not place access keys or customer
+observed model in the readiness evidence. Also check whether the target
+account or repo is managed by an existing pipeline or GitOps controller
+(workflow files, Argo/Flux/Atlantis markers): deploying around one creates
+drift it will fight — coordinate with its owner before any direct
+`cdk deploy`, and record the agreement in the readiness evidence. Do not place access keys or customer
 credentials in source control or stage artifacts.
 
 ### Step 2: Prepare CDK as Code

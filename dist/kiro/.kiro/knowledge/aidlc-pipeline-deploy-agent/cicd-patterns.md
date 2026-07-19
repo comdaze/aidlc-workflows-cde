@@ -2,6 +2,16 @@
 
 Patterns for building reliable continuous integration and continuous delivery pipelines.
 
+## Reading an Existing Pipeline First
+
+Before adding or changing anything in a repo you did not create, read its
+workflow files (`.github/workflows/*.yml`, `buildspec.yml`, pipeline CDK).
+They tell you what the team trusts to ship code — and what they don't. A
+missing test or security stage is information about the project before you
+write a line; note it, don't silently "fix" it. If the environment is managed
+by a GitOps controller (see § GitOps below), find the gitops repo first —
+deploying around it creates drift the controller will fight.
+
 ## CI Pipeline Stages
 
 A well-structured CI pipeline runs these stages in order:
@@ -54,6 +64,53 @@ Define explicit pass/fail criteria that block pipeline progression:
 | Integration tests | 100% pass rate | Post-integration |
 | Manual approval | Tech lead or product owner sign-off | Pre-production |
 | Smoke tests | Critical path tests pass in production | Post-deploy |
+
+## Pipeline Credentials
+
+- **Use OIDC, not long-lived AWS keys, for CI auth.** Short-lived tokens via
+  the CI system's identity federation (`aws-actions/configure-aws-credentials`
+  with a role ARN on GitHub Actions; CodeBuild uses its service role natively)
+  are the modern pattern.
+- Long-lived access keys stored in CI secrets are a security finding to flag
+  when you encounter them, not a pattern to copy.
+- Scope the assumed role to the pipeline's actual needs (deploy this stack,
+  push to this ECR repo) — not administrator access with a pipeline attached.
+
+## IaC Delivery
+
+- **Every resource is defined in IaC** — Terraform, CloudFormation, or CDK.
+  Pick whichever the customer already uses; do not introduce a new IaC tool
+  because you prefer it. (Greenfield accelerator scopes may standardize on one
+  tool for speed — that is a scope decision, not a license to switch tools in
+  a brownfield estate.)
+- **IaC deploys belong in a pipeline, not on a laptop.** Static scan first
+  (cfn-lint/cfn-guard or the IaC MCP server for CloudFormation/CDK, Checkov or
+  tfsec for Terraform), then plan/diff (`cdk diff`, `terraform plan`), then
+  apply on merge — using the same OIDC pattern as the application pipeline.
+- **State**: Terraform state lives in a remote backend (S3 + locking),
+  bootstrapped once and reused — never on a developer machine. CloudFormation
+  and CDK keep state in the AWS account itself.
+- **Every infra change is a commit.** `git log` and `git blame` are how "why
+  does this resource exist?" gets answered six months later; console-created
+  infrastructure erases that history before it is written.
+- **App code and infra code have different lifecycles.** App PRs are routine;
+  infra PRs need the plan/diff output reviewed alongside the code diff — a bad
+  app deploy degrades a service, a bad apply can take down an environment.
+
+## GitOps
+
+GitOps puts the **desired state of an environment in a git repo**, and a
+controller **inside the environment** reconciles actual state to it. It is
+not Kubernetes-specific: Argo CD and Flux apply the pattern to clusters;
+Atlantis and Terraform Cloud apply it to IaC.
+
+- CI never holds credentials to the live system — it only writes to git; the
+  in-environment controller pulls.
+- Drift is detected and reverted by the controller; deploy history is
+  `git log`.
+- When you join a project using this pattern, find the gitops repo first, and
+  make changes through it — a direct deploy around the controller is drift
+  that will be reverted.
 
 ## Artifact Management
 

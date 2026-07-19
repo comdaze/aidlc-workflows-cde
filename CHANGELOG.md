@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.21] - 2026-07-17
+
+The core CI/CD patterns knowledge gains the pipeline-reading, credential, IaC-delivery, and GitOps guidance the ci-pipeline and deployment-pipeline stages were missing. **Upgrade:** re-copy your `dist/<harness>/` shell; poc-accelerator users also re-compose the plugin.
+
+* `cicd-patterns.md` gains four sections: **Reading an Existing Pipeline First** (workflow files tell you what the team trusts to ship; missing stages are information, not something to silently fix); **Pipeline Credentials** (OIDC short-lived tokens, long-lived keys in CI secrets are a finding to flag, least-privilege pipeline roles); **IaC Delivery** (every resource in IaC using the customer's existing tool, scan → plan → apply in a pipeline not on a laptop, remote Terraform state, every infra change is a commit, infra PRs reviewed with their plan output); **GitOps** (desired state in git + in-environment reconciler — Argo/Flux for clusters, Atlantis/Terraform Cloud for IaC; find the gitops repo first).
+* poc-accelerator step 3 now checks whether the target account/repo is managed by an existing pipeline or GitOps controller and requires coordinating with its owner before any direct `cdk deploy`, recording the agreement in the readiness evidence. Plugin version bumps to 0.13.0.
+
 ## [2.3.20] - 2026-07-17
 
 Git collaboration discipline for customer repos, and the branching fallback now inspects pre-existing repositories. **Upgrade:** re-copy your `dist/<harness>/` shell and re-compose `dist/plugins/poc-accelerator/<harness>/`.
