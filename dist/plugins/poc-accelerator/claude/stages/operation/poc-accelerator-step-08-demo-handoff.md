@@ -112,14 +112,22 @@ without an approved connector and data owner. The estimated-MRR row may cite
 the PoC running cost from `poc-accelerator-cost-projection.md` as its basis,
 clearly labeled as an estimate.
 
-### Step 5: Customer Acceptance Gate
+### Step 5: Verify the Handoff Quality Checklist
+
+Work through the handoff quality checklist in the PoC playbook item by item
+and record the checked list (with evidence pointers) in
+`poc-accelerator-demo-package.md`. An unchecked item is either fixed now or
+presented at the gate as an explicit, owner-assigned exception — never
+silently skipped.
+
+### Step 6: Customer Acceptance Gate
 
 Ask only:
 
 - **Accept handoff** — record the demo result, extension path, cost projection, and owner.
 - **Request changes** — return to the relevant approved PoC stage with a bounded request.
 
-### Step 6: Update State
+### Step 7: Update State
 
 Mark `poc-accelerator-step-08-demo-handoff` complete in `<record>/aidlc-state.md`.
 

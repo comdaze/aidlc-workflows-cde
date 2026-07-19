@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.19] - 2026-07-17
+
+The poc-accelerator handoff gains a recorded quality checklist. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.
+
+* The PoC playbook gains a ten-item handoff quality checklist condensing every delivery gate (runnable demo, four-questions README, deployed-accurate diagram, verified teardown, safe-error and no-leak evidence, config-only portability, ADR/door-note agreement, three-tier cost analysis with parametrized model, owned value metrics, data-safety red lines) with each item tracing to its detailed knowledge file.
+* Step 8 gains a dedicated verification step before the customer acceptance gate: the checked list is recorded in the demo package with evidence pointers, and an unchecked item is either fixed or presented as an explicit owner-assigned exception — never silently skipped.
+* Plugin version bumps to 0.11.0.
+
 ## [2.3.18] - 2026-07-17
 
 The poc-accelerator handoff cost projection grows into a full three-tier cost analysis. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.

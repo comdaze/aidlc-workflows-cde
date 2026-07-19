@@ -40,6 +40,35 @@ GenAIIC (Generative AI Innovation Center) co-creation path; record only the
 approval reference and data owner, not data
 values. Do not state or imply that a passing PoC is production ready.
 
+## Handoff quality checklist
+
+Verify every item at step 8 before the customer acceptance gate, and record
+the checked list in the demo package. Each item traces to a detailed
+knowledge file; the checklist is the 30-second verification pass, not a
+replacement for the rules.
+
+- [ ] Demo runs end-to-end with the documented safe sample input.
+- [ ] README answers the four questions (what / run / teardown / why) without
+      reading source; non-obvious prerequisites (e.g. model access) included.
+- [ ] Architecture diagram shows what was actually deployed — consistent with
+      the step-7 stack inventory.
+- [ ] Teardown command documented and verified against the deployed stack.
+- [ ] Test evidence includes the invalid-input case proving safe, specific
+      error messages; no ARNs, account IDs, or stack traces in any recorded
+      response or smoke output.
+- [ ] Portability proof holds: redeploy to another account/region is
+      configuration-only (no hardcoded account, region, or partition).
+- [ ] ADRs exist for every decision a customer engineer would question, and
+      their two-way/one-way door notes agree with the extension
+      recommendations.
+- [ ] Cost analysis covers pilot / production / over-production with
+      per-service breakdown and inline assumptions; parametrized model
+      committed; customer-facing copy at `docs/COST_ANALYSIS.md`.
+- [ ] Value-metrics register has named owners; no fabricated CFN/MRR/SFDC
+      values anywhere.
+- [ ] No customer-confidential material in repo docs; only synthetic or
+      approved masked data anywhere in the deliverable.
+
 ## Completion definition
 
 A completed PoC has: a customer-visible demo, TypeScript CDK source and deployed
