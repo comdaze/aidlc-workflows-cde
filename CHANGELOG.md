@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.23] - 2026-07-17
+
+Credential-hygiene and customer-security-boundary guidance. **Upgrade:** re-copy your `dist/<harness>/` shell; poc-accelerator users also re-compose the plugin.
+
+* Core `security-guide.md` gains a **Human AWS Credentials** section: prefer SSO/assume-role short-lived credentials over long-lived `AKIA` keys (per-person audit identity, self-expiring); treat any long-lived key found on disk as also existing elsewhere — rotate, don't just delete the copy you found; plus a recognize-on-sight anti-pattern list (`AKIA` strings, `sk_live_` keys, hardcoded production database URLs, `.env` files shared through chat).
+* The poc-accelerator playbook gains a **customer security boundaries** rule: work safely inside the customer's existing security pattern rather than refactoring their secrets pipeline inside the PoC time box — don't make it worse, don't lecture, put the migration on the extension recommendations as an owned follow-up, flag recognized anti-patterns factually, and when unsure raise it before acting. Plugin version bumps to 0.15.0.
+* Already covered and deliberately not duplicated: secret scanning (pre-commit + CI) and the rotate-revoke-then-purge leak response live in `devsecops-pipeline-patterns.md`; CI OIDC landed in 2.3.21.
+
 ## [2.3.22] - 2026-07-17
 
 The quality knowledge gains LLM evaluation guidance — the missing test layer for GenAI workloads. **Upgrade:** re-copy your `dist/<harness>/` shell; poc-accelerator users also re-compose the plugin.

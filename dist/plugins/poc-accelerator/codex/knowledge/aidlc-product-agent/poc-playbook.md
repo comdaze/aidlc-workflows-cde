@@ -40,6 +40,17 @@ GenAIIC (Generative AI Innovation Center) co-creation path; record only the
 approval reference and data owner, not data
 values. Do not state or imply that a passing PoC is production ready.
 
+**Customer security boundaries.** Work safely inside the customer's existing
+security pattern, then propose the fix — you will not refactor their secrets
+pipeline in a 3–5-day PoC. Do not make the existing pattern worse, do not
+lecture, and put the migration (e.g. long-lived keys → SSO/assume-role,
+shared `.env` → a secrets manager) on the extension recommendations as an
+owned follow-up. When you encounter a security anti-pattern you recognize —
+long-lived keys, shared credentials, hardcoded production endpoints — flag it
+factually to the customer contact. And when something looks off and you are
+not sure, raise it before you act: customer security boundaries are not the
+place to guess.
+
 ## Handoff quality checklist
 
 Verify every item at step 8 before the customer acceptance gate, and record
