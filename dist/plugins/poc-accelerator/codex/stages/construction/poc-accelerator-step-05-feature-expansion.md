@@ -76,7 +76,10 @@ quietly treating it as done.
 
 Create `poc-accelerator-feature-summary.md` (changes, criterion traceability,
 tests, and deployment impact) and `poc-accelerator-feature-review.md` (open
-risks, exclusions, and review decision).
+risks, exclusions, and review decision). Keep the workspace README current
+with the growing behavior, and write an ADR (`docs/adr/`) for each decision a
+customer engineer would question — data store, model choice, sync vs. async,
+runtime fallback — per the documentation guide knowledge.
 
 ### Step 5: SA Review Gate
 

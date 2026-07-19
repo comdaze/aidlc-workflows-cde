@@ -42,8 +42,9 @@ values. Do not state or imply that a passing PoC is production ready.
 ## Completion definition
 
 A completed PoC has: a customer-visible demo, TypeScript CDK source and deployed
-stack evidence, test evidence, a diagram, explicit limitations, an extension
-recommendation, a cost projection (PoC running cost and a production-scale
+stack evidence, test evidence, a diagram, a repo README answering
+what/run/teardown/why (with ADRs for real tradeoff decisions), explicit
+limitations, an extension recommendation, a cost projection (PoC running cost and a production-scale
 estimate, every figure labeled with its assumptions), and an owner for value
 tracking. Do not fabricate pipeline, MRR, CloudFormation, or SFDC metrics;
 cost figures are estimates with cited pricing sources, never quotes.

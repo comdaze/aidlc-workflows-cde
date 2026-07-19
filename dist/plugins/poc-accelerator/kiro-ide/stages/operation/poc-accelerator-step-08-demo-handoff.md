@@ -51,7 +51,10 @@ reference, test evidence, and cleanup contact. The launch steps are the
 portability proof: deploying to a different account and region must require
 editing configuration only, never source or CDK code — if that does not hold,
 fix it before handoff rather than deferring it to the extension
-recommendations.
+recommendations. Verify the workspace repo passes the documentation gate: a
+stranger can answer "what is this / how do I run it / how do I tear it down /
+why was it built this way" from the README and `docs/adr/` alone — the demo
+package references the README rather than duplicating it.
 
 ### Step 2: Document the Production Extension Path
 

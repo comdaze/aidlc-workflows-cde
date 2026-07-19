@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.17] - 2026-07-17
+
+The poc-accelerator developer flow gains documentation guidance, completing the CDE code-quality trio (code organization, robust portable code, documentation). **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.
+
+* New developer knowledge `documentation-guide.md`: the repo must answer four questions from the README and `docs/adr/` alone — what is this, how do I run it, how do I tear it down, why was it built this way. README sections (purpose, deployed-architecture diagram consistent with the stack inventory, prerequisites incl. non-obvious account steps like Bedrock model access, config-only setup/run, mandatory teardown, known limitations); ADRs for real tradeoff decisions (data store, model choice, sync vs. async, runtime fallback) and not for obvious defaults.
+* Wired into the gates: the walking skeleton starts the README with the first slice, feature expansion keeps it current and adds ADRs per questioned decision, and the step-8 handoff verifies the four-questions documentation gate; the demo package references the README instead of duplicating it. The playbook completion definition now includes the README and ADRs.
+* Plugin version bumps to 0.9.0.
+
 ## [2.3.16] - 2026-07-17
 
 The poc-accelerator developer flow gains robust-portable-code guidance, completing the CDE code-quality pair started by the code-organization knowledge. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.

@@ -69,7 +69,10 @@ stack traces in responses), and take account/region/partition from
 ### Step 3: Capture Demo Evidence
 
 Create `poc-accelerator-skeleton-demo.md` with launch command/URL, safe sample
-input, expected output, deployment reference, and test result. Create
+input, expected output, deployment reference, and test result. Start the
+workspace README now (purpose, prerequisites, run, teardown for this first
+slice — per the documentation guide knowledge); it grows with each expansion
+instead of being written in a handoff-day sprint. Create
 `poc-accelerator-skeleton-review.md` with what was demonstrated, customer
 feedback, and the decision to continue, change direction, or stop.
 
