@@ -44,7 +44,7 @@ MANDATORY: Follow stage-protocol.md for approval gates, question format, and com
 ### Step 1: Select One Vertical Slice
 
 Load the developer, architecture, and quality personas and the PoC code
-organization knowledge. Choose the smallest customer-visible path that crosses
+organization and robust-portable-code knowledge. Choose the smallest customer-visible path that crosses
 the planned application and CDK-managed AWS boundary: one input, one business
 decision, one visible outcome. It must be a real runnable slice, not a
 mock-only slide deck. The skeleton establishes the project layout: layered
@@ -61,7 +61,10 @@ working code examples when a construct is unfamiliar. Add a focused automated
 test, run lint/type checks and the test command, deploy through CDK, and prove
 the path in the approved non-production environment — confirm the deployed
 resources through the AWS API MCP server. Keep sample payloads synthetic or
-masked.
+masked. From the first slice, apply the robust-portable-code rules: wrap every
+external call with a safe, specific error message (no ARNs, account IDs, or
+stack traces in responses), and take account/region/partition from
+`Stack.of(this)` — never hardcode them.
 
 ### Step 3: Capture Demo Evidence
 

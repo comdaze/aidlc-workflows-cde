@@ -47,7 +47,11 @@ MANDATORY: Follow stage-protocol.md for approval gates, question format, and com
 Load the product, architect, and deployment personas. Create
 `poc-accelerator-demo-package.md` with the problem statement, launch steps,
 safe sample input, expected result, architecture diagram reference, CDK stack
-reference, test evidence, and cleanup contact.
+reference, test evidence, and cleanup contact. The launch steps are the
+portability proof: deploying to a different account and region must require
+editing configuration only, never source or CDK code — if that does not hold,
+fix it before handoff rather than deferring it to the extension
+recommendations.
 
 ### Step 2: Document the Production Extension Path
 

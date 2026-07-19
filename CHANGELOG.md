@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.16] - 2026-07-17
+
+The poc-accelerator developer flow gains robust-portable-code guidance, completing the CDE code-quality pair started by the code-organization knowledge. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.
+
+* New developer knowledge `robust-portable-code.md`: readability habits (why-not-what comments, no dead code, no magic numbers, one casing convention, lint before every gate); error handling at every external boundary (one wrapped call per named function, safe and specific error messages that leak no ARNs/account IDs/stack traces, dead-letter queues for async consumers, one error-handling decorator instead of per-route boilerplate); portability (environment values in configuration, account/region/partition always from `Stack.of(this)` — including the `aws-cn` partition trap for hardcoded ARN prefixes).
+* The rules are enforced at the delivery gates, not just documented: the walking skeleton applies them from the first slice, feature expansion carries them through every new external call, the step-6 invalid-input test must prove the safe-error-message behavior, the step-7 smoke output must not leak internals, and the step-8 demo package's launch steps double as the portability proof (config-only redeploy to another account/region).
+* Plugin version bumps to 0.8.0.
+
 ## [2.3.15] - 2026-07-17
 
 The poc-accelerator plugin gains code-organization guidance for the developer persona. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.

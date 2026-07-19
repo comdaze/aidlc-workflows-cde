@@ -54,9 +54,14 @@ in the layout the skeleton established (per the PoC code organization
 knowledge): new behavior goes in small, single-purpose files named for what
 they do, store and external-system access stays behind the client/adapter
 seams, and nothing accumulates in a `utils` file. A file crossing ~500 lines
-is a split signal. Validate CDK/CloudFormation changes through the AWS IaC MCP
-server before each deploy, and consult the AWS documentation/knowledge MCP
-servers for service behavior instead of guessing API semantics. Keep a trace
+is a split signal. Follow the robust-portable-code knowledge as behavior
+grows: every new external call is wrapped in its own named function with a
+safe, specific error message; async consumers get a dead-letter queue in CDK;
+environment-specific values go to configuration, and account/region/partition
+always come from `Stack.of(this)`. Validate CDK/CloudFormation changes through
+the AWS IaC MCP server before each deploy, and consult the AWS
+documentation/knowledge MCP servers for service behavior instead of guessing
+API semantics. Keep a trace
 from each change to an acceptance criterion; add or update tests alongside the
 change. Apply the redaction placeholder to every data-handling path and use
 only approved synthetic or masked data.

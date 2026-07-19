@@ -39,7 +39,8 @@ MANDATORY: Follow stage-protocol.md for approval gates, question format, and com
 
 Load the quality persona and map each acceptance criterion to the smallest
 meaningful unit or integration test. Include the safe demo path, a key invalid
-input, and the redaction behavior. State explicitly which production test types
+input, and the redaction behavior; the invalid-input case must show the error
+response is specific and leaks no internals (ARNs, account IDs, stack traces). State explicitly which production test types
 are out of scope for this PoC.
 
 ### Step 2: Execute Repeatable Checks
