@@ -82,6 +82,27 @@ Codex: `~/.codex/config.toml`) from the matching example before the first run.
 - Cost figures in the handoff projection are estimates with cited pricing
   sources and inline assumptions — never quotes or commitments.
 
+## Upstream upgrades
+
+This plugin never edits `core/` — all CDE-specific content (stages, scope,
+and every knowledge file, including additions for the quality and
+pipeline-deploy personas) lives under `plugins/poc-accelerator/` and composes
+additively. Upgrading the framework from upstream is therefore:
+
+```bash
+git fetch github            # the awslabs upstream remote
+git merge github/v2         # or rebase; plugin files never conflict
+bun scripts/package.ts      # regenerate every dist projection
+bash tests/run-tests.sh --smoke
+```
+
+Expected conflict surface: only `CHANGELOG.md` / `README.md` badge /
+`core/tools/aidlc-version.ts` (this fork's release-note entries) and the
+small security-compliance string edits in `core/tools/aidlc-utility.ts` +
+`harness/*/onboarding.fills.ts` (GitFarm-mandated; candidates for
+upstreaming). Resolve by taking upstream and re-applying the compliance
+strings if upstream has not absorbed them.
+
 ## Validate plugin content
 
 ```bash

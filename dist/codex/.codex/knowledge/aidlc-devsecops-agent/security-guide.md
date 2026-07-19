@@ -45,20 +45,6 @@ For each component and data flow, assess:
 - **API Keys**: For service-to-service communication. Rotate regularly. Scope to minimum permissions.
 - **OAuth2/OIDC**: For third-party authentication delegation. Use authorization code flow with PKCE. Never use implicit flow.
 
-### Human AWS Credentials
-
-- **Prefer short-lived credentials over long-lived access keys.** IAM Identity
-  Center (SSO) + assume-role gives per-person identity in audit logs and
-  credentials that expire on their own. Long-lived `AKIA` keys are the
-  riskiest common pattern in AWS.
-- **Treat any long-lived key found on disk as also existing somewhere else**
-  (a laptop backup, a chat paste, a CI secret). The response is rotation, not
-  just deletion of the copy you found.
-- **Anti-patterns to recognize on sight** — each should stop you to check
-  before moving on: `AKIA`-prefixed strings in code or config, `sk_live_`
-  and similar provider live keys, hardcoded production database URLs, and
-  `.env` files shared through chat or shared drives.
-
 ### Authorization
 - **RBAC (Role-Based)**: Assign permissions to roles, roles to users. Good for well-defined hierarchies.
 - **ABAC (Attribute-Based)**: Evaluate rules based on user, resource, action, and environment attributes. Good for complex, context-dependent policies.

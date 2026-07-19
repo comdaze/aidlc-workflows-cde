@@ -70,7 +70,10 @@ only approved synthetic or masked data.
 
 Run build, lint, type checks, tests, `cdk synth`, and the safe deployed flow.
 Capture any intentional shortfall with its owner and follow-up path rather than
-quietly treating it as done.
+quietly treating it as done. In the diff review, treat test-suite tampering as
+a first-class signal: a skipped test, a weakened assertion, or modified test
+setup usually means the implementation is wrong and the evidence is being
+hidden — the fix is the implementation, never the test.
 
 ### Step 4: Write the Reviewable Summary
 

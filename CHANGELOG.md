@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.24] - 2026-07-17
+
+Zero-core-divergence restoration: the CDE knowledge added to core in 2.3.20–2.3.23 moves into the poc-accelerator plugin, restoring the upstream core files byte-identical (only the GitFarm-mandated 2.3.14 compliance strings remain as core divergence). **Upgrade:** re-run `bun scripts/package.ts` and re-compose the plugin; if you copied the 2.3.20–2.3.23 core knowledge into an install, re-copy the shell to revert it.
+
+* Core `branching-strategies.md`, `cicd-patterns.md`, `testing-guide.md`, and `security-guide.md` are restored to their upstream content. The removed sections re-home as plugin knowledge: `aidlc-quality-agent/llm-evaluation.md` (LLM evals + the five test-design categories), `aidlc-pipeline-deploy-agent/cicd-cde-practices.md` (pipeline reading, OIDC credentials, IaC delivery, GitOps — reframed for customer environments), and `aidlc-pipeline-deploy-agent/credential-hygiene.md` (SSO/assume-role over long-lived keys, recognize-on-sight anti-patterns). The repo-inspection branching fallback is covered by the plugin's `git-collaboration.md`.
+* The plugin README documents the upstream upgrade procedure and the exact expected conflict surface. Going forward, plugin-only changes bump only the plugin version; this fork's core version freezes here until an upstream merge.
+* Step 5's verification treats test-suite tampering as a first-class review signal: a skipped test, weakened assertion, or modified test setup usually means the implementation is wrong and the evidence is being hidden — the fix is the implementation, never the test.
+* Plugin version bumps to 0.16.0.
+
 ## [2.3.23] - 2026-07-17
 
 Credential-hygiene and customer-security-boundary guidance. **Upgrade:** re-copy your `dist/<harness>/` shell; poc-accelerator users also re-compose the plugin.

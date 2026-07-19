@@ -44,8 +44,8 @@ response is specific and leaks no internals (ARNs, account IDs, stack traces).
 For LLM-driven behavior, do not exact-match unit-test the model: build a small
 eval set (15–30 representative cases from the acceptance criteria and any
 customer-calibrated examples), pick a grader per case type, and assert on
-aggregate accuracy against a stated threshold — per the testing guide's LLM
-evaluation section. The deterministic code around the LLM call (prompt
+aggregate accuracy against a stated threshold — per the LLM evaluation
+knowledge. The deterministic code around the LLM call (prompt
 assembly, parsing, guardrails) still gets normal tests. The eval set is a
 handoff deliverable: it is what makes a later model or prompt swap safely
 evaluable. State explicitly which production test types
