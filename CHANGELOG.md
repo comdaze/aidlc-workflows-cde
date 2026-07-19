@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.18] - 2026-07-17
+
+The poc-accelerator handoff cost projection grows into a full three-tier cost analysis. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.
+
+* New architect knowledge `cost-analysis.md`: scale estimates at pilot / production / over-production (2x–10x — the tier that exposes inflection points), per-service breakdown with each service's cost driver, inline assumptions, and architecture trade-offs at scale (managed LLM API vs. self-hosting crossover, on-demand vs. provisioned capacity, AgentCore consumption vs. self-managed runtime).
+* Each component that turns expensive at scale is labeled a two-way door (behind a seam, swappable) or a one-way door (rewrite first) — the framing must agree with the extension recommendations, and it is where the code-organization seams pay off.
+* The step-8 cost projection is built as a parametrized model (spreadsheet or calc script) committed with the analysis so assumptions adjust live in the handoff conversation, and the customer-facing version publishes to `docs/COST_ANALYSIS.md` in the workspace repo. Estimates-not-quotes and billing-data guardrails unchanged.
+* Plugin version bumps to 0.10.0.
+
 ## [2.3.17] - 2026-07-17
 
 The poc-accelerator developer flow gains documentation guidance, completing the CDE code-quality trio (code organization, robust portable code, documentation). **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.

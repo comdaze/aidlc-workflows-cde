@@ -66,16 +66,18 @@ than declaring the PoC production ready.
 
 ### Step 3: Project PoC and Production Costs
 
-Create `poc-accelerator-cost-projection.md` with two estimates that close the
-business case for the customer and the account team:
+Create `poc-accelerator-cost-projection.md` per the cost analysis knowledge —
+a three-tier, per-service breakdown that closes the business case for the
+customer and the account team:
 
-1. **PoC running cost** — enumerate the deployed CDK stack's resources (from
-   the deployment log), state the pricing assumptions (region, instance sizes,
-   storage volume, request rates observed during smoke testing), and estimate
-   the monthly cost of keeping the PoC running as-is. Prefer the AWS pricing
-   MCP server (`awslabs.aws-pricing-mcp-server`, configured per the regional
-   MCP setup knowledge) for real-time Price List API quotes; fall back to AWS
-   pricing pages. Cite the pricing source and the date of the quote.
+1. **PoC running cost (pilot tier)** — enumerate the deployed CDK stack's
+   resources (from the deployment log), state the pricing assumptions (region,
+   instance sizes, storage volume, request rates observed during smoke
+   testing), and estimate the monthly cost of keeping the PoC running as-is.
+   Prefer the AWS pricing MCP server (`awslabs.aws-pricing-mcp-server`,
+   configured per the regional MCP setup knowledge) for real-time Price List
+   API quotes; fall back to AWS pricing pages. Cite the pricing source and the
+   date of the quote.
 2. **Production-scale projection** — state explicit scale assumptions agreed
    with the customer (users, throughput, data volume, availability target),
    list the production additions from the extension recommendations that carry
@@ -83,10 +85,21 @@ business case for the customer and the account team:
    monthly cost range for the production architecture. Include the main cost
    levers (savings plans, reserved capacity, serverless tiers, storage classes)
    and which assumption dominates the range.
+3. **Over-production tier (2x–10x)** — extend the same per-service model past
+   the production load to expose the cost curve: where it stays linear (pure
+   pay-per-request has no economies of scale — say so), where inflection
+   points sit (managed LLM API vs. self-hosting, on-demand vs. provisioned
+   capacity), and for each component that turns expensive at scale, whether
+   swapping it is a two-way door (behind a seam) or a one-way door (rewrite
+   first). These notes must agree with the extension recommendations.
 
-Every figure must be labeled as an estimate with its assumptions inline. Do not
-present estimates as quotes or commitments, and do not pull billing data from
-customer accounts without the data owner's approval.
+Build the numbers as a parametrized model (spreadsheet or small calc script)
+committed alongside the analysis so assumptions can be adjusted live in the
+handoff conversation, and publish the customer-facing version at
+`docs/COST_ANALYSIS.md` in the workspace repo. Every figure must be labeled as
+an estimate with its assumptions inline. Do not present estimates as quotes or
+commitments, and do not pull billing data from customer accounts without the
+data owner's approval.
 
 ### Step 4: Record Value Signals Without Fabricating Business Data
 

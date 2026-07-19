@@ -20,9 +20,10 @@ and a clear extension path. It is not a production-readiness checklist.
 6. **Test validation (about 4h):** map each criterion to repeatable evidence.
 7. **CDK deployment (about 2h):** deploy and smoke test only through CDK.
 8. **Demo and handoff (about 2h):** obtain acceptance, document the
-   production-extension backlog, and deliver the cost projection (PoC running
-   cost plus a production-scale estimate with explicit assumptions) so the
-   customer sees the full business case, not just a working demo.
+   production-extension backlog, and deliver the cost analysis (pilot,
+   production, and 2x–10x over-production tiers with a per-service breakdown
+   and explicit assumptions) so the customer sees the cost curve and their
+   options, not just a working demo.
 
 ## CDE alignment
 
@@ -44,7 +45,8 @@ values. Do not state or imply that a passing PoC is production ready.
 A completed PoC has: a customer-visible demo, TypeScript CDK source and deployed
 stack evidence, test evidence, a diagram, a repo README answering
 what/run/teardown/why (with ADRs for real tradeoff decisions), explicit
-limitations, an extension recommendation, a cost projection (PoC running cost and a production-scale
-estimate, every figure labeled with its assumptions), and an owner for value
+limitations, an extension recommendation, a three-tier cost analysis (pilot /
+production / over-production, per-service breakdown, every figure labeled
+with its assumptions), and an owner for value
 tracking. Do not fabricate pipeline, MRR, CloudFormation, or SFDC metrics;
 cost figures are estimates with cited pricing sources, never quotes.

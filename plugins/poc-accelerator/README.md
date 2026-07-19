@@ -15,7 +15,7 @@ a throwaway feasibility spike.
 5. Feature expansion — only validated core behavior
 6. Test validation — repeatable unit/integration evidence
 7. CDK deployment — deployed stack and smoke-test evidence
-8. Demo and handoff — demo package, extension advice, a cost projection (PoC running cost plus production-scale estimate), and a value-metrics register
+8. Demo and handoff — demo package, extension advice, a three-tier cost analysis (pilot / production / over-production with per-service breakdown), and a value-metrics register
 
 The plugin uses only existing AIDLC personas: product, architect, developer,
 quality, and pipeline/deploy. It has no new agent implementation and does not
