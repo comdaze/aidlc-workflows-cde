@@ -43,7 +43,10 @@ required before alternatives can even be evaluated). This is where the code
 organization seams pay off: an LLM call behind a client interface is a
 two-way door; the same call inlined in fifty handlers is not. The framing
 gives the customer "what are our options if cost becomes a problem", not just
-a number.
+a number. For an LLM component, "two-way door" has a precondition: the eval
+set from test validation is what makes an alternative model or provider
+safely evaluable — a seam without evals is a door you can open but cannot
+walk through with confidence.
 
 ## Make it live-adjustable
 

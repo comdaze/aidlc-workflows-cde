@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.22] - 2026-07-17
+
+The quality knowledge gains LLM evaluation guidance — the missing test layer for GenAI workloads. **Upgrade:** re-copy your `dist/<harness>/` shell; poc-accelerator users also re-compose the plugin.
+
+* Core `testing-guide.md` gains an **LLM Evaluation (Evals)** section: eval LLM endpoints instead of exact-match unit-testing them (the deterministic code around the call still gets normal tests); build an eval set from acceptance criteria and real usage, pick a grader per case type (exact match, substring/regex, numeric tolerance, pinned LLM-as-judge, behavioral tool-call checks), assert on aggregate accuracy against a threshold rather than individual cases, grow the set from production failures, and version/run it in CI so model or prompt swaps are judged by eval delta.
+* Core `testing-guide.md` also gains a **Test Case Design Categories** section: the auditor-believable five categories per feature (core, edge, boundary, error, security) and the community-standard-framework rule.
+* poc-accelerator step 6 requires an eval set for LLM-driven behavior with a stated aggregate threshold and names it a handoff deliverable; the cost analysis's two-way-door framing notes that an LLM seam without evals is a door you cannot walk through with confidence. Plugin version bumps to 0.14.0.
+
 ## [2.3.21] - 2026-07-17
 
 The core CI/CD patterns knowledge gains the pipeline-reading, credential, IaC-delivery, and GitOps guidance the ci-pipeline and deployment-pipeline stages were missing. **Upgrade:** re-copy your `dist/<harness>/` shell; poc-accelerator users also re-compose the plugin.

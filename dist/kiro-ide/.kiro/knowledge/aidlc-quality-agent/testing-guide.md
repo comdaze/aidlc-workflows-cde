@@ -55,6 +55,32 @@ Structure tests in this ratio (approximate):
 - Manual: keyboard navigation, screen reader walkthrough
 - Run automated checks in CI; manual checks before release
 
+## LLM Evaluation (Evals)
+
+LLM-driven behavior is non-deterministic: exact-match unit tests either fail
+spuriously or get watered down until they assert nothing. **Eval LLM
+endpoints; don't unit-test them.** The deterministic code *around* the LLM
+call (prompt assembly, output parsing, guardrail logic, fallbacks) still gets
+normal unit tests.
+
+- **Build an eval set** of representative inputs with expected outcomes —
+  drawn from the requirements' acceptance criteria and real usage, not
+  invented convenience cases. Even 15–30 cases beat zero.
+- **Pick a grader per case type**: exact match (closed answers), substring or
+  regex (key facts present), numeric tolerance (predictions/scores),
+  LLM-as-judge (open-ended quality — pin the judge model + prompt for
+  reproducibility), behavioral (did the agent call the right tool with the
+  right arguments).
+- **Assert on aggregate accuracy** against a threshold (e.g. ≥ 90% of the
+  eval set passes), not on individual cases — a single flipped case failing
+  the build teaches teams to delete evals.
+- **Grow the set from failures.** Every wrong answer in real usage becomes a
+  new eval case; the set is the regression suite for non-deterministic code
+  and compounds in value the longer it is maintained.
+- Version the eval set with the code; run it in CI on prompt/model/parameter
+  changes; record scores over time so a model or prompt swap is judged by
+  eval delta, not vibes.
+
 ## Depth-Aware Test Volume
 
 Test volume scales with the active test strategy (defaults to depth level, overridable via `--test-strategy`). The pyramid ratios above set proportions within the volume cap for each level:
@@ -70,6 +96,17 @@ Test volume scales with the active test strategy (defaults to depth level, overr
 - All levels are soft guidelines. The LLM can exceed when context demands (e.g., security-critical code at Minimal depth).
 
 See stage-protocol.md §8 "Test Strategy" for the authoritative guidance.
+
+## Test Case Design Categories
+
+Coverage is necessary, not sufficient — a 100% report of happy-path tests
+gives false confidence. The question is "would an auditor believe this
+suite?" Design cases across five categories per feature: **core** (the happy
+path), **edge** (unusual but valid inputs), **boundary** (limits: empty, max,
+off-by-one), **error** (invalid inputs and failing dependencies), and
+**security** (injection, authorization, data exposure). Use the language
+community's standard framework (pytest, Vitest/Jest, JUnit) — a custom test
+runner is a tax the next maintainer pays for nothing.
 
 ## Test Case Design Template
 
