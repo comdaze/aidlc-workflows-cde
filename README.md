@@ -33,6 +33,16 @@ CDE-certified SAs — CDK-first deployment, a three-tier cost analysis
 (pilot / production / over-production), a recorded handoff quality
 checklist, and team knowledge reuse wired into both ends of the flow.
 
+### Quick install from the chat window
+
+In the Kiro chat session for the target project, enter:
+
+```text
+Install the PoC accelerator plugin from https://github.com/comdaze/aidlc-workflows into this project
+```
+
+For a reproducible/manual installation or another harness, use the steps below.
+
 Five steps from clone to running (Kiro IDE; full detail and other harnesses
 in the [plugin README](plugins/poc-accelerator/README.md)):
 

@@ -22,6 +22,16 @@
 三档费用分析（pilot / 生产 / 超产能）、留痕的交接质量清单、双端接线的团队
 知识复用。
 
+### 在聊天窗口快速安装
+
+在目标项目的 Kiro 聊天会话窗口中输入：
+
+```text
+安装https://github.com/comdaze/aidlc-workflows的poc 加速插件到这个项目
+```
+
+如需可复现的手动安装流程，或使用其他 harness，请使用下方步骤。
+
 从 clone 到跑起来共五步（Kiro IDE；完整细节与其他 harness 见
 [插件中文 README](plugins/poc-accelerator/README.zh-CN.md)）：
 
