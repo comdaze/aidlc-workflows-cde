@@ -22,7 +22,7 @@
 插件只使用既有 AIDLC 角色：product、architect、developer、quality、
 pipeline/deploy。不新增 agent 实现，也不会静默宣称生产就绪。
 
-## 安装与运行（Kiro，五步到 `/aidlc pocx`）
+## 安装与运行（Kiro，五步启动 CDE 流程）
 
 一切从本仓库**已提交的 `dist/`** 安装——无需构建。（只有改了 `plugins/`
 或 `core/` 才需要 `bun scripts/package.ts` 重新生成。）下文 `<repo>` 是你
@@ -65,12 +65,17 @@ bun .kiro/tools/aidlc-utility.ts select-plugins aidlc,poc-accelerator
 bun .kiro/tools/aidlc-utility.ts doctor    # 全绿 = 安装成功
 ```
 
-```
-/aidlc pocx Build a safe customer demo for <场景>
+```text
+/poc-accelerator-cde Build a safe customer demo for <场景>
+# 或
+/aidlc --scope poc-accelerator-cde Build a safe customer demo for <场景>
 ```
 
-（`pocx` 经关键词路由到 scope；显式形式为
-`/aidlc --scope poc-accelerator-cde <场景>`。）
+两者都是**受支持的显式启动命令**：直接 runner 固定 CDE scope，`/aidlc`
+形式则把相同 scope 传给 orchestrator。不要使用 `/aidlc pocx`、`/aidlc poc
+cde` 或裸 `/aidlc poc`：`pocx` 不是别名，核心 `poc` 则是独立的、用完即弃的
+可行性 spike scope。插件不声明快捷关键词，因此不会通过含混的关键词推断误选
+客户交付流程。
 
 > **首次运行提示**：把组织规则基线写入
 > `aidlc/spaces/default/memory/org.md`——部署规范、安全红线，以及（若团队

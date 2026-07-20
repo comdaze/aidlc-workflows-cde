@@ -10,7 +10,7 @@ A native implementation of the **AI-DLC methodology** (AI-Driven Development Lif
 
 The methodology lives once, in a harness-neutral `core/`; each harness adds a thin surface that decides how it shows up on that harness. So you edit the methodology in one place, and every harness distribution is generated from it — no harness gets special treatment. (See [Repository layout](#repository-layout) for how the pieces fit together.)
 
-![version](https://img.shields.io/badge/version-2.3.24-blue)
+![version](https://img.shields.io/badge/version-2.3.25-blue)
 ![license](https://img.shields.io/badge/license-MIT--0-green)
 ![Kiro IDE](https://img.shields.io/badge/harness-Kiro%20IDE-orange)
 ![Kiro CLI](https://img.shields.io/badge/harness-Kiro%20CLI-orange)
@@ -54,11 +54,16 @@ cd <project> && bun .kiro/tools/aidlc-utility.ts select-plugins aidlc,poc-accele
 bun .kiro/tools/aidlc-utility.ts doctor
 ```
 
-Then, in Kiro:
+Then, in Kiro, start the customer-delivery flow with either explicit entry:
 
+```text
+/poc-accelerator-cde Build a safe customer demo for <customer scenario>
+# or
+/aidlc --scope poc-accelerator-cde Build a safe customer demo for <customer scenario>
 ```
-/aidlc pocx Build a safe customer demo for <customer scenario>
-```
+
+Do not use `/aidlc pocx` or bare `/aidlc poc`: `pocx` is not an alias, and
+core `poc` remains the separate throwaway feasibility-spike scope.
 
 The rest of this README documents the underlying AI-DLC framework the plugin
 runs on. bun is the one prerequisite — see [Quick Start](#quick-start).

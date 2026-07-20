@@ -43,11 +43,16 @@ cd <project> && bun .kiro/tools/aidlc-utility.ts select-plugins aidlc,poc-accele
 bun .kiro/tools/aidlc-utility.ts doctor
 ```
 
-然后在 Kiro 中：
+然后在 Kiro 中通过任一显式入口启动客户交付流程：
 
+```text
+/poc-accelerator-cde Build a safe customer demo for <客户场景>
+# 或
+/aidlc --scope poc-accelerator-cde Build a safe customer demo for <客户场景>
 ```
-/aidlc pocx Build a safe customer demo for <客户场景>
-```
+
+不要使用 `/aidlc pocx` 或裸 `/aidlc poc`：`pocx` 不是别名，核心 `poc`
+仍是独立的、用完即弃的可行性 spike scope。
 
 > 首次运行：把组织规则基线（部署规范、安全红线、团队知识仓库地址）写入
 > `aidlc/spaces/default/memory/org.md`——填了仓库地址，流程步骤 1 才会自动
