@@ -103,6 +103,8 @@ describe(`${PLUGIN_NAME} plugin — content validation`, () => {
       stages: "stages/",
       scopes: "scopes/",
       knowledge: "knowledge/",
+      sensors: "sensors/",
+      tools: "tools/",
     });
   });
 });
