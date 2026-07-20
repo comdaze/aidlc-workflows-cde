@@ -79,6 +79,37 @@ replacement for the rules.
       values anywhere.
 - [ ] No customer-confidential material in repo docs; only synthetic or
       approved masked data anywhere in the deliverable.
+- [ ] Knowledge promoted out of the record (rules, industry knowledge)
+      follows the knowledge governance laws: customer-confirmed, sanitized,
+      generalization-graded, dated, and technical claims carry verification
+      evidence.
+
+## Knowledge governance (sedimentation and reuse)
+
+Knowledge harvested from a PoC serves four audiences — same-project members
+(automatic via the space layers), other projects (copy the team-knowledge
+directory), the team (industry packs + plugin releases), and the organization
+(generalized methodology into the plugin). Three conservation laws govern
+every promotion out of the workflow record:
+
+1. **Confirm, sanitize, then promote.** Raw captures leave the record only
+   after customer confirmation; promoted content carries a generalization
+   grade (industry-generic vs. needs-recalibration) so the next user knows
+   what to trust and what to re-ask.
+2. **Technical claims carry verification evidence.** A promoted technical
+   assertion (an API's regional availability, an endpoint behavior) must cite
+   its test evidence — wrong context reused is costlier than one extra
+   verification at harvest time.
+3. **Freshness check on reuse; a reference renews life.** Entries carry
+   learned/corrected dates. When importing knowledge older than 6 months with
+   no intervening reference, re-confirm or delete the entry — do not build on
+   it silently.
+
+**Team-knowledge file convention:** classify entries as **knows** (what it
+is, how it connects — so the agent can find it) or **judges** (what may be
+touched, who owns it — so the agent can decide). "Judges" entries are the
+first thing to verify when reusing a pack: they define the new PoC's safety
+boundaries and carry the highest cost of error.
 
 ## Completion definition
 

@@ -33,7 +33,13 @@ MANDATORY: Follow stage-protocol.md for approval gates, question format, and com
 ### Step 1: Load PoC Context
 
 Load `aidlc-product-agent` and the PoC playbook. Read the confirmed intent,
-customer-provided context, and existing project rules. Treat customer data as
+customer-provided context, and existing project rules. If team knowledge was
+imported from another project (an industry pack in the space knowledge
+layer), apply the playbook's freshness law before relying on it: entries
+older than 6 months without an intervening reference are flagged into this
+stage's customer calibration list for re-confirmation, and "judges"-class
+entries (safety boundaries, data red lines) are verified first — do not
+silently build on stale or unverified imports. Treat customer data as
 restricted by default: do not request, copy, or process real production data
 unless the customer and the GenAIIC (Generative AI Innovation Center)
 co-creation process have explicitly approved it.
