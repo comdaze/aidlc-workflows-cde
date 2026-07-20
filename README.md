@@ -23,6 +23,15 @@ The methodology lives once, in a harness-neutral `core/`; each harness adds a th
 
 To learn more about AI-DLC, read this [blog post](https://aws.amazon.com/blogs/devops/ai-driven-development-life-cycle/) and the [Method Definition Paper](https://prod.d13rzhkk8cj2z0.amplifyapp.com/) it references.
 
+> [!TIP]
+> **Here for the CDE PoC accelerator?** This fork ships the
+> [poc-accelerator plugin](plugins/poc-accelerator/README.md) — five install
+> steps take you from clone to `/aidlc pocx "<customer scenario>"`, an
+> eight-step, 3–5-day customer PoC delivery flow with CDK deployment, a
+> three-tier cost analysis, and a handoff quality checklist. Install the base
+> framework via the [Quick Start](#quick-start) below, then follow the plugin
+> README.
+
 ## Why AI-DLC
 
 Ad-hoc AI coding works until the project gets real. Then context drifts between prompts, the reasoning behind a decision goes unrecorded, and the model quietly does something you never asked for. AI-DLC puts structure around the work: each stage has a clear owner, every decision passes an approval gate before the next one starts, and this implementation records what it learns from your corrections so it stops repeating them. The same engine runs a throwaway proof-of-concept and a regulated enterprise rollout — it just runs more of the stages, in more depth.
