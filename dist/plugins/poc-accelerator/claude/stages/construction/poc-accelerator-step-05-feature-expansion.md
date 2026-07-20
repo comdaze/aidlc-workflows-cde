@@ -49,25 +49,40 @@ features, and unconfirmed industry rules to the extension recommendations.
 
 ### Step 2: Implement Core Behavior
 
-Extend the workspace code and TypeScript CDK definitions sequentially. Validate
-CDK/CloudFormation changes through the AWS IaC MCP server before each deploy,
-and consult the AWS documentation/knowledge MCP servers for service behavior
-instead of guessing API semantics. Keep a trace from each change to an
-acceptance criterion; add or update tests alongside the change. Apply the
-redaction placeholder to every data-handling path and use only approved
-synthetic or masked data.
+Extend the workspace code and TypeScript CDK definitions sequentially, filling
+in the layout the skeleton established (per the PoC code organization
+knowledge): new behavior goes in small, single-purpose files named for what
+they do, store and external-system access stays behind the client/adapter
+seams, and nothing accumulates in a `utils` file. A file crossing ~500 lines
+is a split signal. Follow the robust-portable-code knowledge as behavior
+grows: every new external call is wrapped in its own named function with a
+safe, specific error message; async consumers get a dead-letter queue in CDK;
+environment-specific values go to configuration, and account/region/partition
+always come from `Stack.of(this)`. Validate CDK/CloudFormation changes through
+the AWS IaC MCP server before each deploy, and consult the AWS
+documentation/knowledge MCP servers for service behavior instead of guessing
+API semantics. Keep a trace
+from each change to an acceptance criterion; add or update tests alongside the
+change. Apply the redaction placeholder to every data-handling path and use
+only approved synthetic or masked data.
 
 ### Step 3: Verify Locally and in the PoC Environment
 
 Run build, lint, type checks, tests, `cdk synth`, and the safe deployed flow.
 Capture any intentional shortfall with its owner and follow-up path rather than
-quietly treating it as done.
+quietly treating it as done. In the diff review, treat test-suite tampering as
+a first-class signal: a skipped test, a weakened assertion, or modified test
+setup usually means the implementation is wrong and the evidence is being
+hidden — the fix is the implementation, never the test.
 
 ### Step 4: Write the Reviewable Summary
 
 Create `poc-accelerator-feature-summary.md` (changes, criterion traceability,
 tests, and deployment impact) and `poc-accelerator-feature-review.md` (open
-risks, exclusions, and review decision).
+risks, exclusions, and review decision). Keep the workspace README current
+with the growing behavior, and write an ADR (`docs/adr/`) for each decision a
+customer engineer would question — data store, model choice, sync vs. async,
+runtime fallback — per the documentation guide knowledge.
 
 ### Step 5: SA Review Gate
 

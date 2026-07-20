@@ -58,7 +58,9 @@ in the record.
 ### Step 3: Smoke Test the Deployed Flow
 
 Run the documented safe smoke flow with synthetic or masked data. Record output
-and health result in `poc-accelerator-smoke-test-results.md`.
+and health result in `poc-accelerator-smoke-test-results.md`; the recorded
+output must not contain internals (ARNs, account IDs, stack traces) — a leak
+here is a failed smoke check, not a formatting nit.
 
 ### Step 4: Capture Deployment Evidence
 

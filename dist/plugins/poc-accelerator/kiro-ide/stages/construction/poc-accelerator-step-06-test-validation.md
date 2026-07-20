@@ -39,7 +39,16 @@ MANDATORY: Follow stage-protocol.md for approval gates, question format, and com
 
 Load the quality persona and map each acceptance criterion to the smallest
 meaningful unit or integration test. Include the safe demo path, a key invalid
-input, and the redaction behavior. State explicitly which production test types
+input, and the redaction behavior; the invalid-input case must show the error
+response is specific and leaks no internals (ARNs, account IDs, stack traces).
+For LLM-driven behavior, do not exact-match unit-test the model: build a small
+eval set (15–30 representative cases from the acceptance criteria and any
+customer-calibrated examples), pick a grader per case type, and assert on
+aggregate accuracy against a stated threshold — per the LLM evaluation
+knowledge. The deterministic code around the LLM call (prompt
+assembly, parsing, guardrails) still gets normal tests. The eval set is a
+handoff deliverable: it is what makes a later model or prompt swap safely
+evaluable. State explicitly which production test types
 are out of scope for this PoC.
 
 ### Step 2: Execute Repeatable Checks

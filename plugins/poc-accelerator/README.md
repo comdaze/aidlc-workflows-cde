@@ -1,5 +1,7 @@
 # poc-accelerator — customer-delivery PoC plugin
 
+**English** | [中文](README.zh-CN.md)
+
 A first-party AIDLC plugin for a **customer-facing, CDK-deployed PoC**. It adds
 a focused eight-step delivery scope without changing core `poc`, which remains
 a throwaway feasibility spike.
@@ -15,25 +17,78 @@ a throwaway feasibility spike.
 5. Feature expansion — only validated core behavior
 6. Test validation — repeatable unit/integration evidence
 7. CDK deployment — deployed stack and smoke-test evidence
-8. Demo and handoff — demo package, extension advice, a cost projection (PoC running cost plus production-scale estimate), and a value-metrics register
+8. Demo and handoff — demo package, extension advice, a three-tier cost analysis (pilot / production / over-production with per-service breakdown), and a value-metrics register
 
 The plugin uses only existing AIDLC personas: product, architect, developer,
 quality, and pipeline/deploy. It has no new agent implementation and does not
 silently claim production readiness.
 
-## Use it
+## Install and run (Kiro, five steps to `/aidlc pocx`)
 
-Build every projection from the repository root:
+Everything installs from this repository's **committed `dist/`** — no build
+needed. (Rebuild with `bun scripts/package.ts` only if you edited `plugins/`
+or `core/`.) `<repo>` below is your clone of this repository; `<project>` is
+the customer PoC project directory.
+
+**Step 1 — Base framework** (skip if the project already has `.kiro/` +
+`aidlc/`):
 
 ```bash
-bun scripts/package.ts
+# Kiro IDE — for Kiro CLI use dist/kiro/ instead of dist/kiro-ide/
+cp -r <repo>/dist/kiro-ide/.kiro     <project>/.kiro
+cp -r <repo>/dist/kiro-ide/aidlc     <project>/aidlc
+cp    <repo>/dist/kiro-ide/AGENTS.md <project>/AGENTS.md
 ```
 
-Install the emitted plugin using the host-native route described in the
-[plugin mechanism](../../docs/reference/18-plugin-mechanism.md). All four
-harness projections are emitted (`claude`, `codex`, `kiro`, `kiro-ide`);
-the same composer runs on each. For Claude Code and Codex, use the host's
-plugin commands:
+**Step 2 — Compose the plugin.** No pre-copy into the project: the composer
+reads from `AIDLC_PLUGIN_ROOT` and writes only into the project's `.kiro/`.
+
+```bash
+PLUGIN_ROOT="<repo>/dist/plugins/poc-accelerator/kiro-ide"   # kiro for Kiro CLI
+AIDLC_PLUGIN_ROOT="$PLUGIN_ROOT" AIDLC_PROJECT_DIR="<project>" \
+  AIDLC_HARNESS_DIR=.kiro bun "$PLUGIN_ROOT/hooks/compose.ts"
+```
+
+**Step 3 — Select plugins** (run inside the project directory):
+
+```bash
+cd <project>
+bun .kiro/tools/aidlc-utility.ts select-plugins aidlc,poc-accelerator
+```
+
+**Step 4 — MCP configuration (required).** Create `.kiro/settings/mcp.json`
+from the Global or China example in this plugin's knowledge file
+`knowledge/aidlc-pipeline-deploy-agent/mcp-setup.md` (composed into the
+install at `.kiro/knowledge/aidlc-pipeline-deploy-agent/`). The eight-step
+flow depends on it — regional availability checks, CDK validation, and the
+step-8 cost analysis all run through these servers.
+
+**Step 5 — Verify, then start:**
+
+```bash
+bun .kiro/tools/aidlc-utility.ts doctor    # all green = installed
+```
+
+```
+/aidlc pocx Build a safe customer demo for <scenario>
+```
+
+(`pocx` routes to the scope by keyword; the explicit form is
+`/aidlc --scope poc-accelerator-cde <scenario>`.)
+
+> **First-run tip:** write the org rule baseline into
+> `aidlc/spaces/default/memory/org.md` — deployment norms, security red
+> lines, and (if your team maintains one) the team knowledge repository
+> address. Step 1 of the flow checks that repository for a matching industry
+> pack, so a filled-in address is what activates cross-project knowledge
+> reuse.
+
+### Other harnesses
+
+Claude Code and Codex install through their native plugin commands; MCP
+configuration goes to `.mcp.json` (Claude Code) or `~/.codex/config.toml`
+(Codex). See the [plugin mechanism](../../docs/reference/18-plugin-mechanism.md)
+for details.
 
 ```bash
 # Claude Code
@@ -44,31 +99,6 @@ plugin commands:
 codex plugin marketplace add <repo>/dist/plugins/poc-accelerator/codex
 codex plugin add aidlc-poc-accelerator@aidlc-plugins  # approve the one-time hook trust
 ```
-
-For Kiro, use the explicit compose command:
-
-```bash
-PLUGIN_ROOT="$(pwd)/dist/plugins/poc-accelerator/kiro"
-cp -R "$PLUGIN_ROOT"/. <project>/
-AIDLC_PLUGIN_ROOT="$PLUGIN_ROOT" AIDLC_PROJECT_DIR="<project>" \
-  AIDLC_HARNESS_DIR=.kiro bun "$PLUGIN_ROOT/hooks/compose.ts"
-```
-
-Select it and start the dedicated scope:
-
-```bash
-bun <project>/.kiro/tools/aidlc-utility.ts select-plugins aidlc,poc-accelerator
-# In Kiro:
-/aidlc --scope poc-accelerator-cde Build a safe customer demo for <scenario>
-```
-
-Install the base framework into your project per the repository README
-(Kiro: copy `dist/kiro-ide/.kiro/`, `dist/kiro-ide/aidlc/`, and `AGENTS.md`),
-then compose this plugin as above. Regional MCP configuration examples
-(Global and China) live in this plugin's knowledge at
-`knowledge/aidlc-pipeline-deploy-agent/mcp-setup.md` — create the harness's
-MCP configuration (Kiro: `.kiro/settings/mcp.json`; Claude Code: `.mcp.json`;
-Codex: `~/.codex/config.toml`) from the matching example before the first run.
 
 ## Guardrails
 
@@ -81,6 +111,27 @@ Codex: `~/.codex/config.toml`) from the matching example before the first run.
   fabricate business values or connect to those systems without approval.
 - Cost figures in the handoff projection are estimates with cited pricing
   sources and inline assumptions — never quotes or commitments.
+
+## Upstream upgrades
+
+This plugin never edits `core/` — all CDE-specific content (stages, scope,
+and every knowledge file, including additions for the quality and
+pipeline-deploy personas) lives under `plugins/poc-accelerator/` and composes
+additively. Upgrading the framework from upstream is therefore:
+
+```bash
+git fetch github            # the awslabs upstream remote
+git merge github/v2         # or rebase; plugin files never conflict
+bun scripts/package.ts      # regenerate every dist projection
+bash tests/run-tests.sh --smoke
+```
+
+Expected conflict surface: only `CHANGELOG.md` / `README.md` badge /
+`core/tools/aidlc-version.ts` (this fork's release-note entries) and the
+small security-compliance string edits in `core/tools/aidlc-utility.ts` +
+`harness/*/onboarding.fills.ts` (GitFarm-mandated; candidates for
+upstreaming). Resolve by taking upstream and re-applying the compliance
+strings if upstream has not absorbed them.
 
 ## Validate plugin content
 

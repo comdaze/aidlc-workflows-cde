@@ -43,10 +43,14 @@ MANDATORY: Follow stage-protocol.md for approval gates, question format, and com
 
 ### Step 1: Select One Vertical Slice
 
-Load the developer, architecture, and quality personas. Choose the smallest
-customer-visible path that crosses the planned application and CDK-managed AWS
-boundary: one input, one business decision, one visible outcome. It must be a
-real runnable slice, not a mock-only slide deck.
+Load the developer, architecture, and quality personas and the PoC code
+organization and robust-portable-code knowledge. Choose the smallest customer-visible path that crosses
+the planned application and CDK-managed AWS boundary: one input, one business
+decision, one visible outcome. It must be a real runnable slice, not a
+mock-only slide deck. The skeleton establishes the project layout: layered
+modules (api/service/client/adapter/model), action-oriented file names with no
+`utils` dumping ground, and explicit seams between layers so the extension
+path can later swap parts without a rewrite.
 
 ### Step 2: Implement and Deploy the Slice
 
@@ -57,12 +61,18 @@ working code examples when a construct is unfamiliar. Add a focused automated
 test, run lint/type checks and the test command, deploy through CDK, and prove
 the path in the approved non-production environment — confirm the deployed
 resources through the AWS API MCP server. Keep sample payloads synthetic or
-masked.
+masked. From the first slice, apply the robust-portable-code rules: wrap every
+external call with a safe, specific error message (no ARNs, account IDs, or
+stack traces in responses), and take account/region/partition from
+`Stack.of(this)` — never hardcode them.
 
 ### Step 3: Capture Demo Evidence
 
 Create `poc-accelerator-skeleton-demo.md` with launch command/URL, safe sample
-input, expected output, deployment reference, and test result. Create
+input, expected output, deployment reference, and test result. Start the
+workspace README now (purpose, prerequisites, run, teardown for this first
+slice — per the documentation guide knowledge); it grows with each expansion
+instead of being written in a handoff-day sprint. Create
 `poc-accelerator-skeleton-review.md` with what was demonstrated, customer
 feedback, and the decision to continue, change direction, or stop.
 
