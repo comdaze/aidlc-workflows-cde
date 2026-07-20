@@ -1,5 +1,7 @@
 # AI-DLC — one core, many harnesses
 
+**English** | [中文](README.zh-CN.md)
+
 > [!WARNING]
 > **GA Preview — under active development.** AI-DLC Workflows 2.0 is a GA Preview release. Interfaces, stage definitions, the agent roster, and the install model are still evolving, and breaking changes can land between releases. Expect rough edges, pin a known-good version for anything you depend on, and review all generated output before you act on it. See the [roadmap](roadmap.md) for what's shipped, in flight, and planned.
 > **For production use, stay on the stable [`main`](https://github.com/awslabs/aidlc-workflows/tree/main) branch.**
@@ -23,14 +25,43 @@ The methodology lives once, in a harness-neutral `core/`; each harness adds a th
 
 To learn more about AI-DLC, read this [blog post](https://aws.amazon.com/blogs/devops/ai-driven-development-life-cycle/) and the [Method Definition Paper](https://prod.d13rzhkk8cj2z0.amplifyapp.com/) it references.
 
-> [!TIP]
-> **Here for the CDE PoC accelerator?** This fork ships the
-> [poc-accelerator plugin](plugins/poc-accelerator/README.md) — five install
-> steps take you from clone to `/aidlc pocx "<customer scenario>"`, an
-> eight-step, 3–5-day customer PoC delivery flow with CDK deployment, a
-> three-tier cost analysis, and a handoff quality checklist. Install the base
-> framework via the [Quick Start](#quick-start) below, then follow the plugin
-> README.
+## CDE PoC Accelerator — this fork's headline
+
+This fork ships the **[poc-accelerator plugin](plugins/poc-accelerator/README.md)**:
+an eight-step, 3–5 working-day **customer PoC delivery flow** for
+CDE-certified SAs — CDK-first deployment, a three-tier cost analysis
+(pilot / production / over-production), a recorded handoff quality
+checklist, and team knowledge reuse wired into both ends of the flow.
+
+Five steps from clone to running (Kiro IDE; full detail and other harnesses
+in the [plugin README](plugins/poc-accelerator/README.md)):
+
+```bash
+# 1. Base framework into your project (skip if .kiro/ + aidlc/ already exist)
+cp -r dist/kiro-ide/.kiro <project>/.kiro && cp -r dist/kiro-ide/aidlc <project>/aidlc && cp dist/kiro-ide/AGENTS.md <project>/AGENTS.md
+
+# 2. Compose the plugin (reads from dist; writes only into <project>/.kiro/)
+PLUGIN_ROOT="$(pwd)/dist/plugins/poc-accelerator/kiro-ide"
+AIDLC_PLUGIN_ROOT="$PLUGIN_ROOT" AIDLC_PROJECT_DIR="<project>" AIDLC_HARNESS_DIR=.kiro bun "$PLUGIN_ROOT/hooks/compose.ts"
+
+# 3. Select plugins (inside the project)
+cd <project> && bun .kiro/tools/aidlc-utility.ts select-plugins aidlc,poc-accelerator
+
+# 4. MCP config: create .kiro/settings/mcp.json from the Global or China
+#    example in .kiro/knowledge/aidlc-pipeline-deploy-agent/mcp-setup.md
+
+# 5. Verify — all green means installed
+bun .kiro/tools/aidlc-utility.ts doctor
+```
+
+Then, in Kiro:
+
+```
+/aidlc pocx Build a safe customer demo for <customer scenario>
+```
+
+The rest of this README documents the underlying AI-DLC framework the plugin
+runs on. bun is the one prerequisite — see [Quick Start](#quick-start).
 
 ## Why AI-DLC
 

@@ -1,5 +1,7 @@
 # poc-accelerator — customer-delivery PoC plugin
 
+**English** | [中文](README.zh-CN.md)
+
 A first-party AIDLC plugin for a **customer-facing, CDK-deployed PoC**. It adds
 a focused eight-step delivery scope without changing core `poc`, which remains
 a throwaway feasibility spike.
