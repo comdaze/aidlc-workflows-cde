@@ -39,6 +39,18 @@ runtime:
 - Do not start a new PoC on Bedrock Agents Classic — it is closed to new
   customers as of 2026-07-30; AgentCore is its successor.
 
+**Decision authority (field-proven):** when agent decisions carry safety,
+financial, or regulatory consequences, fix the orchestration order so a
+**deterministic rules engine decides before the LLM speaks** — the rules
+engine runs first and can return a first-class blocked result; the LLM only
+translates the settled decision into user-facing language, with a
+deterministic fallback template so the demo never depends on LLM
+availability, and a standing "not an instruction to act" disclaimer in every
+narration. This keeps safety behavior unit-testable and makes the LLM a
+swappable narrator, not an authority. Corollary: anything nondeterministic
+goes behind a seam (an MCP tool service or client interface) with an eval
+set, so swapping it later is a real two-way door.
+
 **Region gate (decides the pattern):** AgentCore is available in a subset of
 regions and is **not yet available in the China partition (BJS/ZHY — planned,
 verify current status)**. Confirm availability for the target region at
