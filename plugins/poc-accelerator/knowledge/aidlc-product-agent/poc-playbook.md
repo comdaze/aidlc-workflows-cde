@@ -82,15 +82,27 @@ replacement for the rules.
 - [ ] Knowledge promoted out of the record (rules, industry knowledge)
       follows the knowledge governance laws: customer-confirmed, sanitized,
       generalization-graded, dated, and technical claims carry verification
-      evidence.
+      evidence — and the harvest is submitted to the team knowledge
+      repository per its contribution process (or the absence of a team
+      repository is noted).
 
 ## Knowledge governance (sedimentation and reuse)
 
 Knowledge harvested from a PoC serves four audiences — same-project members
 (automatic via the space layers), other projects (copy the team-knowledge
 directory), the team (industry packs + plugin releases), and the organization
-(generalized methodology into the plugin). Three conservation laws govern
-every promotion out of the workflow record:
+(generalized methodology into the plugin).
+
+**The team knowledge repository closes the loop at both ends.** If the team
+maintains a knowledge repository (its address lives in the install's org
+rules, not in this plugin): at PoC start, check it for an industry pack
+matching the customer's domain and copy the pack into the project's
+team-knowledge seat before step 1; at PoC close, the promoted harvest is
+submitted back to that repository through its contribution process (merge
+request with the conservation-law checklist). Knowledge that stays in one
+project's seat helps no one else.
+
+Three conservation laws govern every promotion out of the workflow record:
 
 1. **Confirm, sanitize, then promote.** Raw captures leave the record only
    after customer confirmation; promoted content carries a generalization

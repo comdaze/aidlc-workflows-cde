@@ -33,9 +33,13 @@ MANDATORY: Follow stage-protocol.md for approval gates, question format, and com
 ### Step 1: Load PoC Context
 
 Load `aidlc-product-agent` and the PoC playbook. Read the confirmed intent,
-customer-provided context, and existing project rules. If team knowledge was
-imported from another project (an industry pack in the space knowledge
-layer), apply the playbook's freshness law before relying on it: entries
+customer-provided context, and existing project rules. If the org rules name
+a team knowledge repository, check it for an industry pack matching the
+customer's domain and surface the finding (pack imported, or none exists) —
+do not start domain capture from scratch when the team has already paid for
+that knowledge. If team knowledge was imported (an industry pack in the
+space knowledge layer), apply the playbook's freshness law before relying on
+it: entries
 older than 6 months without an intervening reference are flagged into this
 stage's customer calibration list for re-confirmation, and "judges"-class
 entries (safety boundaries, data red lines) are verified first — do not
