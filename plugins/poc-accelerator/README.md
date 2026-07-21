@@ -23,7 +23,7 @@ The plugin uses only existing AIDLC personas: product, architect, developer,
 quality, and pipeline/deploy. It has no new agent implementation and does not
 silently claim production readiness.
 
-## Install and run (Kiro, five steps to `/aidlc pocx`)
+## Install and run (Kiro, five steps to the CDE flow)
 
 Everything installs from this repository's **committed `dist/`** — no build
 needed. (Rebuild with `bun scripts/package.ts` only if you edited `plugins/`
@@ -69,19 +69,31 @@ step-8 cost analysis all run through these servers.
 bun .kiro/tools/aidlc-utility.ts doctor    # all green = installed
 ```
 
-```
-/aidlc pocx Build a safe customer demo for <scenario>
+```text
+/poc-accelerator-cde Build a safe customer demo for <scenario>
+# or
+/aidlc --scope poc-accelerator-cde Build a safe customer demo for <scenario>
 ```
 
-(`pocx` routes to the scope by keyword; the explicit form is
-`/aidlc --scope poc-accelerator-cde <scenario>`.)
+Both are **supported explicit activation commands**: the direct runner fixes
+the CDE scope, while the `/aidlc` form passes the same scope to the
+orchestrator. Do not use `/aidlc pocx`, `/aidlc poc cde`, or bare `/aidlc
+poc`: `pocx` is not an alias, and core `poc` is the separate throwaway
+feasibility-spike scope. The plugin declares no shortcut keywords so the
+customer-delivery flow is never selected by ambiguous inference.
 
 > **First-run tip:** write the org rule baseline into
 > `aidlc/spaces/default/memory/org.md` — deployment norms, security red
-> lines, and (if your team maintains one) the team knowledge repository
-> address. Step 1 of the flow checks that repository for a matching industry
-> pack, so a filled-in address is what activates cross-project knowledge
-> reuse.
+> lines, and (if your team maintains one) a `## Team Knowledge Repository`
+> section naming an approved local checkout or repository URL. Step 1 always
+> searches the active space's local knowledge first, then searches that source
+> for a matching industry pack. If no source is configured, access is blocked,
+> or no pack matches, Step 1 explicitly asks you to provide an approved team
+> knowledge URL/local path or to skip team knowledge for this PoC. It never
+> treats silence as a skip — the plugin ships a deterministic TypeScript
+> sensor (`poc-accelerator-team-knowledge-preflight`, advisory like every
+> framework sensor) that checks the preflight artifact records a pack import,
+> your provided source, or an explicit skip with a named decider.
 
 ### Other harnesses
 

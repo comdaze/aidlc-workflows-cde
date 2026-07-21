@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.26] - 2026-07-16
+
+PoC accelerator requirements capture now performs a mandatory, auditable team-knowledge preflight before customer domain discovery, so configured knowledge sources cannot be silently skipped. **Upgrade:** re-run `bun scripts/package.ts`, re-compose `dist/plugins/poc-accelerator/<harness>/`, and add an approved local checkout or repository URL under `## Team Knowledge Repository` in `aidlc/spaces/<space>/memory/org.md` when your team maintains shared packs.
+
+* Step 1 searches the active space's local shared and product knowledge seats, then checks any Team Knowledge Repository named in org, team, or project memory for a domain-matching pack.
+* Step 1 writes `poc-accelerator-team-knowledge-preflight.md` with its sources, queries, result, revision/date, import path, and blocked/absent-source status. A missing, unavailable, or non-matching source now explicitly asks the user to provide an approved URL/local path or to skip team knowledge for this PoC; silence is not a skip.
+* The plugin ships a deterministic TypeScript sensor gate, `poc-accelerator-team-knowledge-preflight` (advisory, fired by the existing sensor pipeline — no core changes): the preflight artifact must end with a fenced `preflight:` yaml block recording `resolution: pack-imported | user-source-provided | skipped-by-user` plus the fields that resolution requires, or the write reports `SENSOR_FAILED` with the missing fields.
+* Plugin version bumps to 0.21.0.
+
+## [2.3.25] - 2026-07-16
+
+The customer-delivery PoC accelerator now requires an explicit CDE scope selection, preventing the unsupported `pocx` shorthand from being confused with the core throwaway `poc` scope. **Upgrade:** re-run `bun scripts/package.ts`, re-compose `dist/plugins/poc-accelerator/<harness>/`, then start new customer PoC workflows with either `/poc-accelerator-cde <scenario>` or `/aidlc --scope poc-accelerator-cde <scenario>`.
+
+* `/aidlc pocx` and `/aidlc poc cde` are no longer documented or registered as keyword routes for `poc-accelerator-cde`; the plugin declares no shortcut keywords.
+* The plugin, English/Chinese READMEs, and customization guide now identify the direct `/poc-accelerator-cde <scenario>` runner and `/aidlc --scope poc-accelerator-cde <scenario>` as the two supported customer-delivery entry points. Bare `/aidlc poc` continues to select the separate disposable feasibility-spike flow.
+* Plugin version bumps to 0.20.0.
+
 ## [2.3.24] - 2026-07-17
 
 Zero-core-divergence restoration: the CDE knowledge added to core in 2.3.20–2.3.23 moves into the poc-accelerator plugin, restoring the upstream core files byte-identical (only the GitFarm-mandated 2.3.14 compliance strings remain as core divergence). **Upgrade:** re-run `bun scripts/package.ts` and re-compose the plugin; if you copied the 2.3.20–2.3.23 core knowledge into an install, re-copy the shell to revert it.

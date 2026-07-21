@@ -2,14 +2,9 @@
 name: poc-accelerator-cde
 plugin: poc-accelerator
 depth: Minimal
-keywords:
-  - pocx
-  - poc cde
-  - cde poc
-  - poc accelerator
-  - customer poc
-  - customer prototype
-  - poc delivery
+# Deliberately empty: the customer-delivery workflow must be selected with
+# `--scope poc-accelerator-cde`, not inferred from a short PoC keyword.
+keywords: []
 description: Deliver a customer-facing, CDK-deployed proof of concept in eight focused steps
 skeleton: off
 runner: true
@@ -32,11 +27,24 @@ It deliberately omits the full production lifecycle, compliance assessment,
 and enterprise operational design. Those are follow-on `feature` or
 `enterprise` work, not shortcuts to production readiness.
 
-## Membership
+## Activation (required)
 
-Use `/aidlc --scope poc-accelerator-cde <customer scenario>` after composing
-and selecting the `poc-accelerator` plugin — or simply `/aidlc pocx <scenario>`
-/ `/aidlc poc cde <scenario>`, which route here via keyword inference. The
-eight `poc-accelerator-*` stages execute in order; framework Initialization
-stages remain the engine preamble and are not part of the customer-facing
-eight-step flow.
+After composing and selecting the `poc-accelerator` plugin, start this flow
+with either explicit scope entry:
+
+```text
+/poc-accelerator-cde <customer scenario>
+# or
+/aidlc --scope poc-accelerator-cde <customer scenario>
+```
+
+The direct runner has `poc-accelerator-cde` fixed as its scope; the `/aidlc`
+form passes the same scope to the orchestrator. Do **not** use `/aidlc pocx`,
+`/aidlc poc cde`, or bare `/aidlc poc`. `pocx` is not a supported alias, and
+core `poc` intentionally remains the throwaway feasibility-spike scope. This
+scope declares no keywords so a short free-form request cannot silently select
+the wrong workflow.
+
+The eight `poc-accelerator-*` stages execute in order; framework
+Initialization stages remain the engine preamble and are not part of the
+customer-facing eight-step flow.

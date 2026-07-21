@@ -93,14 +93,29 @@ Knowledge harvested from a PoC serves four audiences — same-project members
 directory), the team (industry packs + plugin releases), and the organization
 (generalized methodology into the plugin).
 
-**The team knowledge repository closes the loop at both ends.** If the team
-maintains a knowledge repository (its address lives in the install's org
-rules, not in this plugin): at PoC start, check it for an industry pack
-matching the customer's domain and copy the pack into the project's
-team-knowledge seat before step 1; at PoC close, the promoted harvest is
-submitted back to that repository through its contribution process (merge
-request with the conservation-law checklist). Knowledge that stays in one
-project's seat helps no one else.
+**The team knowledge repository closes the loop at both ends.** The first
+action of requirements capture is a mandatory team-knowledge preflight, not
+an optional reminder. First search the active space's local knowledge seats:
+`aidlc/spaces/<space>/knowledge/aidlc-shared/` and
+`aidlc/spaces/<space>/knowledge/aidlc-product-agent/`. Then read
+`aidlc/spaces/<space>/memory/{org,team,project}.md` for any approved Team
+Knowledge Repository location. Search its available local checkout for an
+industry pack matching the customer's domain; if it names only a remote URL,
+ask the user to approve reading or cloning it before claiming there is no pack.
+When no repository is configured, a source is blocked, or no pack matches, ask
+the user to provide an approved team-knowledge URL/local path **or explicitly
+skip team knowledge for this PoC**. Do not continue on silence. Record all
+sources, queries, matches, revision/date, import path, the user-provided
+location or explicit skip, and any blocked/absent source in the stage's
+team-knowledge preflight artifact — ending with the fenced `preflight:` yaml
+block the plugin's deterministic `poc-accelerator-team-knowledge-preflight`
+sensor verifies (a missing resolution, empty search record, or a skip without
+a named decider is reported as `SENSOR_FAILED`). Import an approved,
+sanitized pack into the active space before customer domain capture, then
+apply the freshness law. At PoC close, submit the promoted harvest back through
+the repository's contribution process (a merge request with the
+conservation-law checklist). Knowledge that stays in one project's seat helps
+no one else.
 
 Three conservation laws govern every promotion out of the workflow record:
 

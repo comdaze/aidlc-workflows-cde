@@ -22,6 +22,16 @@
 三档费用分析（pilot / 生产 / 超产能）、留痕的交接质量清单、双端接线的团队
 知识复用。
 
+### 在聊天窗口快速安装
+
+在目标项目的 Kiro 聊天会话窗口中输入：
+
+```text
+安装https://github.com/comdaze/aidlc-workflows的poc 加速插件到这个项目
+```
+
+如需可复现的手动安装流程，或使用其他 harness，请使用下方步骤。
+
 从 clone 到跑起来共五步（Kiro IDE；完整细节与其他 harness 见
 [插件中文 README](plugins/poc-accelerator/README.zh-CN.md)）：
 
@@ -43,11 +53,16 @@ cd <project> && bun .kiro/tools/aidlc-utility.ts select-plugins aidlc,poc-accele
 bun .kiro/tools/aidlc-utility.ts doctor
 ```
 
-然后在 Kiro 中：
+然后在 Kiro 中通过任一显式入口启动客户交付流程：
 
+```text
+/poc-accelerator-cde Build a safe customer demo for <客户场景>
+# 或
+/aidlc --scope poc-accelerator-cde Build a safe customer demo for <客户场景>
 ```
-/aidlc pocx Build a safe customer demo for <客户场景>
-```
+
+不要使用 `/aidlc pocx` 或裸 `/aidlc poc`：`pocx` 不是别名，核心 `poc`
+仍是独立的、用完即弃的可行性 spike scope。
 
 > 首次运行：把组织规则基线（部署规范、安全红线、团队知识仓库地址）写入
 > `aidlc/spaces/default/memory/org.md`——填了仓库地址，流程步骤 1 才会自动

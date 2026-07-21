@@ -120,11 +120,19 @@ AIDLC_PLUGIN_ROOT="$PLUGIN_ROOT" AIDLC_PROJECT_DIR="<project>" \
 bun <project>/.kiro/tools/aidlc-utility.ts select-plugins aidlc,poc-accelerator
 ```
 
-Start it explicitly so the core spike scope cannot be selected by mistake:
+Start it with either explicit scope entry, so the core spike scope cannot be
+selected by mistake:
 
 ```text
+/poc-accelerator-cde Build a safe customer demo for <scenario>
+# or
 /aidlc --scope poc-accelerator-cde Build a safe customer demo for <scenario>
 ```
+
+The direct runner fixes the CDE scope and the `/aidlc` form passes the same
+scope to the orchestrator. Do not use `/aidlc pocx`, `/aidlc poc cde`, or bare
+`/aidlc poc`: `pocx` is not an alias, and the plugin intentionally declares
+no shortcut keywords.
 
 Before the first run, create `.kiro/settings/mcp.json` from one of the regional
 examples (Global or China) documented in the plugin's knowledge file
