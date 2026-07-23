@@ -4,7 +4,7 @@
 
 ## What is AI-DLC?
 
-AI-DLC (AI-Driven Development Life Cycle) is a methodology for structuring AI-assisted software development into repeatable, traceable phases. It originated from the [AWS AI-DLC methodology](https://aws.amazon.com/blogs/devops/ai-driven-development-life-cycle/). This repository implements it natively from one harness-neutral core, so it runs inside the CLI harness you already use — today Claude Code, Kiro CLI, Kiro IDE, or Codex CLI. This guide is harness-neutral; where a detail differs by harness, it says so and points you to your harness's chapter (see [Running on other harnesses](harnesses/README.md)). Examples are shown in Claude Code unless noted.
+AI-DLC (AI-Driven Development Life Cycle) is a methodology for structuring AI-assisted software development into repeatable, traceable phases. It originated from the [AWS AI-DLC methodology](https://aws.amazon.com/blogs/devops/ai-driven-development-life-cycle/). This repository implements it natively from one harness-neutral core, so it runs inside the CLI harness you already use — today Claude Code, Kiro CLI, Kiro IDE, Codex CLI, or opencode. This guide is harness-neutral; where a detail differs by harness, it says so and points you to your harness's chapter (see [Running on other harnesses](harnesses/README.md)). Examples are shown in Claude Code unless noted.
 
 You invoke it with a single command:
 
@@ -27,10 +27,10 @@ At its core, AI-DLC runs a simple loop. A deterministic **engine** decides what 
 1. **Reads stage files** — 32 stage definitions across 5 phases, each specifying inputs, steps, outputs, and the lead agent
 2. **Loads agent personas** — Activates domain-expert perspectives (architect, developer, product manager, etc.) with specialized knowledge
 3. **Manages state and audit** — Tracks progress in `aidlc-state.md` and logs every decision to the intent's `audit/` shards for traceability
-4. **Delegates to subagents** — For stages requiring focused, autonomous work (reverse engineering, code generation), spawns a subprocess
+4. **Delegates across stage topologies** — For focused autonomous work and multi-agent collaboration, dispatches subagents as a hub-and-spoke, pipeline, or mob
 5. **Presents approval gates** — After each stage, you review and approve before the workflow advances
 
-The engine owns the routing (which stage is next, which scope, when to stop); the conductor owns execution quality (running the stage well, asking good questions, surfacing decisions to you). Most stages run **inline**: the conductor adopts the agent's perspective and works directly with you in conversation. Two stages run as **subagents**: the work is delegated to a background subprocess and results are presented when done. For the full architecture, see the Developer Reference's [Engine and Skill System](../reference/17-skill-system.md).
+The engine owns the routing (which stage is next, which scope, when to stop); the conductor owns execution quality (running the stage well, asking good questions, surfacing decisions to you). Most stages run **inline**: the conductor adopts the agent's perspective and works directly with you in conversation. Four stages use dispatched topologies: Practices Discovery and Code Generation run as `subagent` hubs, Reverse Engineering as a two-link `pipeline`, and User Stories as a `mob`. The complete topology is 28 inline / 2 subagent / 1 pipeline / 1 mob. For the full architecture, see the Developer Reference's [Engine and Skill System](../reference/17-skill-system.md).
 
 ## Who This Guide Is For
 
@@ -48,11 +48,11 @@ To reshape *how* AI-DLC behaves — add a stage or an agent, define a scope, aut
 |--------|-------|
 | Phases | 5 (Initialization, Ideation, Inception, Construction, Operation) |
 | Stages | 32 |
-| Agents | 11 domain-expert personas |
+| Agents | 14 total: 11 domain experts, 2 reviewers, and the composer |
 | Scopes | 9 (enterprise through workshop) + auto-detect |
 | Depth levels | 3 (Minimal, Standard, Comprehensive) |
 | Test strategy levels | 3 (Minimal, Standard, Comprehensive) |
-| Audit event types | 68 |
+| Audit event types | 74 |
 
 ## Guide Map
 
@@ -63,7 +63,7 @@ To reshape *how* AI-DLC behaves — add a stage or an agent, define a scope, aut
 | [Spaces and Intents](03-spaces-and-intents.md) | The workspace layout: running many pieces of work across spaces and intents |
 | [Phases and Stages](04-phases-and-stages.md) | The 5 phases and 32 stages explained |
 | [Scopes, Depth, and Test Strategy](05-scopes-and-depth.md) | How to choose and override scope/depth/test strategy |
-| [Agents](06-agents.md) | The 11 agents: who does what and when |
+| [Agents](06-agents.md) | The 14-agent roster: 11 domain experts, 2 reviewers, and the composer |
 | [Agent deep dives](agents/README.md) | Per-agent reference pages: responsibilities, stages, knowledge |
 | [Interaction Modes](07-interaction-modes.md) | Guide Me / Edit File / Chat and approval gates |
 | [Knowledge](08-knowledge.md) | Adding company standards and conventions |
@@ -77,5 +77,5 @@ To reshape *how* AI-DLC behaves — add a stage or an agent, define a scope, aut
 | [Worked Examples](16-worked-examples.md) | Full bugfix and feature walkthroughs |
 | [Skills and Runner Commands](17-skills.md) | The `/aidlc-*` stage- and scope-runner commands and the author-your-own-runner path |
 | [Workshop Mode](workshop-mode.md) | Multi-developer manual recipe for the workshop scope (claim semantics via git push) |
-| [Running on other harnesses](harnesses/README.md) | Install and run on Kiro IDE or Codex CLI, and what differs per harness |
+| [Running on other harnesses](harnesses/README.md) | Install and run on Kiro CLI, Kiro IDE, Codex CLI, or opencode, and what differs per harness |
 | [Glossary](glossary.md) | All terminology defined |

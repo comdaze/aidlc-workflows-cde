@@ -18,10 +18,10 @@
 //     source: "read-only-flag" } — NO `arg` field.
 //   - A WORKSPACE_VERBS token matches ONLY at index 0 (the `i === 0` guard).
 //     A leading verb returns { subcommand: verb, source: "workspace-verb" },
-//     and { arg: args[1] } too IFF args[1] exists and does NOT start with "--".
-//   - The loop returns on the FIRST match scanning i = 0..n, so a read-only
-//     flag at any position is reported even when a workspace verb leads (the
-//     flag wins only if it is the earlier index; a leading verb returns first).
+//     with the shared workspace parser deciding list/switch/create/birth forms.
+//   - A leading workspace command wins over a later read-only-looking token;
+//     that token belongs to the workspace command argv, not global mode
+//     selection.
 //   - Everything else (a verb NOT at index 0, freeform prose, a --scope/--stage
 //     jump, an empty arg list) returns null — it carries workflow work / is not
 //     terminal.
@@ -72,6 +72,34 @@ describe("classifyTerminalCommand() — read-only flags (match anywhere)", () =>
     });
   });
 
+  test("--doctor carries allowlisted export args (--export, --output <dir>) as args", () => {
+    // The diagnostic export surface must reach the tool through the terminal
+    // path the Kiro adapter runs, so --doctor collects its allowlisted trailing
+    // flags into args. A bare --doctor has none (no spurious key).
+    expect(classifyTerminalCommand(["--doctor", "--export", "--output", "/tmp/x"])).toEqual({
+      subcommand: "doctor",
+      source: "read-only-flag",
+      args: ["--export", "--output", "/tmp/x"],
+    });
+    expect(classifyTerminalCommand(["--doctor", "--export"])).toEqual({
+      subcommand: "doctor",
+      source: "read-only-flag",
+      args: ["--export"],
+    });
+    // Bare --doctor: no args field at all.
+    expect(classifyTerminalCommand(["--doctor"])).toEqual({
+      subcommand: "doctor",
+      source: "read-only-flag",
+    });
+    // Only the allowlist rides through: an arbitrary trailing token is ignored,
+    // never captured into args.
+    expect(classifyTerminalCommand(["--doctor", "--export", "--evil"])).toEqual({
+      subcommand: "doctor",
+      source: "read-only-flag",
+      args: ["--export"],
+    });
+  });
+
   test("the exported READ_ONLY_FLAGS set is exactly the four utility flags", () => {
     // Pins the set classifyTerminalCommand reads from; a drift here would
     // silently change what the seam treats as terminal.
@@ -107,13 +135,19 @@ describe("classifyTerminalCommand() — workspace verbs (leading token only)", (
     });
   });
 
-  test("a --flag following a leading verb is NOT taken as the arg", () => {
-    // args[1] starts with "--", so `arg` is omitted. The verb still classifies
-    // as terminal with no positional name.
-    expect(classifyTerminalCommand(["space", "--json"])).toEqual({
+  test("a --json following a leading verb is preserved as workspace list argv", () => {
+    // --json is meaningful on list forms, so the classifier carries it as the
+    // utility tail rather than dropping it or treating it as a switch target.
+    const cmd = classifyTerminalCommand(["space", "--json"]) as unknown as {
+      subcommand: string;
+      source: string;
+      args?: string[];
+    };
+    expect(cmd).toMatchObject({
       subcommand: "space",
       source: "workspace-verb",
     });
+    expect(cmd.args).toEqual(["--json"]);
   });
 
   test("a workspace verb NOT at index 0 is freeform -> null", () => {

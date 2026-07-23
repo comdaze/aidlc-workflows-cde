@@ -71,12 +71,8 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   cleanupTestProject,
@@ -117,6 +113,10 @@ function makeProject(): string {
   copyFileSync(
     join(SRC_TOOLS, "aidlc-lib.ts"),
     join(proj, ".claude", "tools", "aidlc-lib.ts"),
+  );
+  copyFileSync(
+    join(SRC_TOOLS, "aidlc-runtime-paths.ts"),
+    join(proj, ".claude", "tools", "aidlc-runtime-paths.ts"),
   );
   copyFileSync(
     join(SRC_TOOLS, "aidlc-audit.ts"),

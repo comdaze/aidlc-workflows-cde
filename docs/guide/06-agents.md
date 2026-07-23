@@ -1,6 +1,6 @@
 # Agents
 
-AI-DLC uses 11 domain-expert agent personas that the conductor activates during stages. This chapter explains the philosophy behind the agent design, what each agent does, and when they appear.
+AI-DLC ships 14 agent personas: 11 domain experts that execute stage work, 2 review-only agents, and the adaptive-workflows composer. This chapter explains the full roster, beginning with the domain agents and then covering the reviewers and composer.
 
 ---
 
@@ -16,7 +16,7 @@ In human software teams, a mob of 3-5 people covers an entire feature from requi
 
 - **Fewer agents means fewer handoffs.** Every agent boundary is a potential information loss point. When the same aidlc-architect-agent leads both Application Design and Functional Design, it retains context naturally instead of requiring an explicit handoff artifact.
 
-- **Support roles enable collaboration without proliferation.** Rather than creating a "security-reviewer-agent" and a "compliance-reviewer-agent" and a "cost-reviewer-agent," the aidlc-devsecops-agent and aidlc-compliance-agent participate as support agents in stages led by others. On an inline stage (every multi-agent stage in the shipped graph) the conductor adopts each support agent as a persona in its own context rather than dispatching it as a `Task`; `Task` is reserved for `mode: subagent` stages. Either way the conductor performs every delegation — agents never invoke each other.
+- **Support roles enable collaboration without proliferation.** Rather than creating a "security-reviewer-agent" and a "compliance-reviewer-agent" and a "cost-reviewer-agent," the aidlc-devsecops-agent and aidlc-compliance-agent participate as support agents in stages led by others. HOW they participate is the stage's `mode` — its communication topology: on an `inline` stage the conductor adopts each support agent as a persona in its own context; on `subagent` (hub-and-spoke) and `mob` (mesh) stages each support agent is dispatched as a real, independent collaborator that writes its own contribution file for the lead to integrate (everyone writes, the lead owns the final artifacts; user-stories ships as the mob showcase), and on `pipeline` (chain) stages the links advance the artifacts directly in sequence (reverse-engineering is the shipped chain). On every topology the conductor performs every delegation — agents never invoke each other.
 
 - **Knowledge loading is per-agent.** Each agent loads methodology knowledge from `.claude/knowledge/<agent-name>/` and team knowledge from the space-level `aidlc/knowledge/<agent-name>/` (if the team created it). Fewer agents means fewer knowledge directories to manage and fewer opportunities for contradictory guidance.
 
@@ -83,9 +83,9 @@ flowchart TD
 
 ---
 
-## The 11 Agents
+## The 11 Domain Agents
 
-> **Customizing what a shipped agent knows?** Do not edit the shipped 11 agent files at `.claude/agents/*.md` — they're framework files and get overwritten on upgrade. Add your company standards to the space-level `aidlc/knowledge/<agent-name>/` instead. See [Knowledge](08-knowledge.md) for the full workflow. Teams that want a *new* agent (not just knowledge for the existing 11) can drop a file at `.claude/agents/<slug>.md` with the required frontmatter — that file is user-owned. See [Contributing: Adding an Agent](../reference/11-contributing.md#adding-an-agent).
+> **Customizing what a shipped agent knows?** Do not edit the 14 shipped agent files at `.claude/agents/*.md` — they're framework files and get overwritten on upgrade. Add your company standards to the space-level `aidlc/knowledge/<agent-name>/` instead. See [Knowledge](08-knowledge.md) for the full workflow. Teams that want a *new* agent can drop a file at `.claude/agents/<slug>.md` with the required frontmatter — that file is user-owned. See [Contributing: Adding an Agent](../reference/11-contributing.md#adding-an-agent).
 
 Each agent below has a **deep-dive page** — its full responsibilities, the stages it leads and supports, and the knowledge it loads. The [agent deep-dive index](agents/README.md) lists all 11; the per-agent links are inline under each heading.
 
@@ -123,7 +123,7 @@ The aidlc-delivery-agent acts as the engineering manager. It assesses team capac
 
 **Domain:** Application design, domain modelling, NFRs, component decomposition
 
-The aidlc-architect-agent is the central design authority. It has the broadest stage involvement (9 stages across 3 phases) and carries the `judgment` tier — alongside seven other high-judgment agents (product, design, developer, quality, devsecops, compliance, aws-platform). A judgment agent inherits your session's own model and effort, so it is never downgraded below what you chose. Only delivery, pipeline-deploy, and operations carry the `templated` tier (a mid-size model at reduced effort), because their output is dominantly templated planning, CI/CD YAML, and runbook scaffolding.
+The aidlc-architect-agent is the central design authority. It has the broadest stage involvement (9 stages across 3 phases) and carries the `judgment` tier — alongside seven other high-judgment agents (product, design, developer, quality, devsecops, compliance, aws-platform). A judgment agent inherits your session's own model and effort, so it is never downgraded below what you chose. Only delivery, pipeline-deploy, and operations carry the `templated` tier (a mid-size model at reduced effort on Claude Code, Codex, and opencode; on Kiro all tiers inherit the session model and effort), because their output is dominantly templated planning, CI/CD YAML, and runbook scaffolding.
 
 - **Leads:** feasibility, application-design, units-generation, functional-design, nfr-requirements, nfr-design
 - **Supports:** intent-capture, reverse-engineering (synthesis), delivery-planning
@@ -160,14 +160,14 @@ The aidlc-devsecops-agent reviews designs for security, defines security require
 
 ### [aidlc-developer-agent](agents/developer-agent.md)
 
-**Domain:** Code implementation, code analysis, workspace detection
+**Domain:** Code implementation, code analysis, data modelling
 
 The aidlc-developer-agent spans three phases — from reverse engineering in Inception through deployment support in Operation. It runs code scans of existing codebases and generates implementation code.
 
 - **Leads:** reverse-engineering (code scan), code-generation
-- **Supports:** practices-discovery, functional-design, deployment-execution
+- **Supports:** practices-discovery, user-stories, functional-design, deployment-execution
 
-Workspace detection (workspace-detection) used to be a subagent of the aidlc-developer-agent; it now runs deterministically inside `aidlc-utility init` using rule-based file and manifest detection.
+Workspace detection (workspace-detection) used to be a subagent of the aidlc-developer-agent; it now runs deterministically inside `aidlc-utility intent-birth` using rule-based file and manifest detection.
 - **Special tools:** Bash (for build and run commands)
 
 ### [aidlc-quality-agent](agents/quality-agent.md)
@@ -177,7 +177,7 @@ Workspace detection (workspace-detection) used to be a subagent of the aidlc-dev
 The aidlc-quality-agent defines test strategy, generates test suites, validates quality gates, and runs performance testing.
 
 - **Leads:** build-and-test, performance-validation
-- **Supports:** practices-discovery, nfr-requirements
+- **Supports:** practices-discovery, user-stories, nfr-requirements
 - **Special tools:** Bash (for test execution)
 
 ### [aidlc-pipeline-deploy-agent](agents/pipeline-deploy-agent.md)
@@ -215,8 +215,8 @@ This table shows which agents are active in which phases, and whether they serve
 | aidlc-aws-platform-agent | — | S (feasibility) | S (application-design) | L (infrastructure-design), S (nfr-design) | L (environment-provisioning), S (feedback-optimization) |
 | aidlc-compliance-agent | — | S (feasibility) | — | S (nfr-requirements, infrastructure-design) | S (environment-provisioning) |
 | aidlc-devsecops-agent | — | — | S (practices-discovery) | S (nfr-requirements, infrastructure-design, build-and-test) | S (environment-provisioning) |
-| aidlc-developer-agent | — | — | L (reverse-engineering), S (practices-discovery) | L (code-generation), S (functional-design) | S (deployment-execution) |
-| aidlc-quality-agent | — | — | S (practices-discovery) | L (build-and-test), S (nfr-requirements) | L (performance-validation) |
+| aidlc-developer-agent | — | — | L (reverse-engineering), S (practices-discovery, user-stories) | L (code-generation), S (functional-design) | S (deployment-execution) |
+| aidlc-quality-agent | — | — | S (practices-discovery, user-stories) | L (build-and-test), S (nfr-requirements) | L (performance-validation) |
 | aidlc-pipeline-deploy-agent | — | — | L (practices-discovery) | L (ci-pipeline) | L (deployment-pipeline, deployment-execution) |
 | aidlc-operations-agent | — | — | — | — | L (observability-setup, incident-response, feedback-optimization) |
 
@@ -231,11 +231,11 @@ This table shows which agents are active in which phases, and whether they serve
 
 ## Agent Tool Access
 
-Every agent inherits the **full session toolset** — all of Claude Code's built-in tools plus any MCP tools provisioned to the session. The one shipped restriction is `disallowedTools: Task` (only the conductor spawns subagents); none of the 11 agents declare a `tools:` allowlist. So the table below is not a set of per-agent grants — it records which tools each persona is *expected* to exercise in its stage work.
+Every agent inherits the **full session toolset** — all of Claude Code's built-in tools plus any MCP tools provisioned to the session. The one shipped restriction is `disallowedTools: Task` (only the conductor spawns subagents); none of the 14 agents declare a `tools:` allowlist. So the table below is not a set of per-agent grants — it records which tools each persona is *expected* to exercise in its work.
 
 | Tool | Expected to exercise it |
 |------|-------------|
-| Read, Edit, Write, Glob, Grep, AskUserQuestion | All 11 agents |
+| Read, Edit, Write, Glob, Grep, AskUserQuestion | All 14 agents |
 | Bash | aidlc-aws-platform-agent, aidlc-devsecops-agent, aidlc-developer-agent, aidlc-quality-agent, aidlc-pipeline-deploy-agent, aidlc-operations-agent |
 | WebSearch | aidlc-product-agent, aidlc-design-agent, aidlc-compliance-agent |
 | Task | None (blocked on every agent via `disallowedTools: Task`) |
@@ -244,7 +244,7 @@ To genuinely narrow a persona, add an optional `tools:` allowlist to its frontma
 
 ### MCP servers are shared, not per-agent
 
-The table above shows the built-in tools each persona is expected to use; in practice every agent inherits all of them. MCP servers follow the same inherit-all model: this implementation declares them once in `.mcp.json` at the project root (beside `.claude/`), Claude Code provisions them to the session, and every agent inherits all of them — there is no per-agent grant. Each of the 11 agents can reach every declared server (`context7` and the four AWS servers) with no further configuration, and a server you lack credentials for is simply unavailable rather than a blocker. To stop a specific agent from reaching a server, narrow that agent's `tools:` allowlist to the fully-qualified `mcp__<server>__<tool>` ids it should keep (for example `mcp__context7__<tool>`); this implementation ships no such restrictions today.
+The table above shows the built-in tools each persona is expected to use; in practice every agent inherits all of them. MCP servers follow the same inherit-all model: this implementation declares them once in `.mcp.json` at the project root (beside `.claude/`), Claude Code provisions them to the session, and every agent inherits all of them — there is no per-agent grant. Each of the 14 agents can reach every declared server (`context7` and the four AWS servers) with no further configuration, and a server you lack credentials for is simply unavailable rather than a blocker. To stop a specific agent from reaching a server, narrow that agent's `tools:` allowlist to the fully-qualified `mcp__<server>__<tool>` ids it should keep (for example `mcp__context7__<tool>`); this implementation ships no such restrictions today.
 
 See [Getting Started](01-getting-started.md) for the server registry and credentials, and [Harness Primitives Mapping](../reference/14-claude-features.md#mcp-servers) for how MCP maps onto Claude Code's native tool model.
 
@@ -263,7 +263,7 @@ challenge it, representing the customer (or the review board) at the gate.
 
 ## The Composer Agent
 
-One more agent sits outside both groups: `aidlc-composer-agent`, the adaptive-workflows composer. The conductor dispatches it on a compose request (`/aidlc compose`, a compose offer on a cold start, `--report`, or `--new-scope`). It reads the task and the workspace scan, proposes the EXECUTE/SKIP stage grid with a per-SKIP rationale, and - only after your approval at the gate - authors the composed scope (front/report) or proposes pending-stage flips the deterministic `recompose` verb applies (in-flight). Its persona is deliberately keep-biased: it justifies presence and interrogates absence, never strips stages to "go faster". See [Scopes and Depth - The Adaptive Composer](05-scopes-and-depth.md#the-adaptive-composer).
+One more agent sits outside both groups: `aidlc-composer-agent`, the adaptive-workflows composer. The conductor dispatches it on a compose request (`/aidlc compose`, a compose offer on a cold start, `--report`, or `--new-scope`). It estimates the task's implementation entropy (five components: intent ambiguity, structural uncertainty, verification entropy, risk, unresolved assumptions - grounded in CodeKB MCP analysis when configured, the workspace scan otherwise), proposes the minimum viable EXECUTE/SKIP grid with the score breakdown and a per-stage rationale, and - only after your approval at the gate - authors the composed scope (front/report) or proposes pending-stage flips the deterministic `recompose` verb applies (in-flight). Its persona justifies both presence and absence against the entropy profile: every EXECUTE names the component it reduces, every SKIP names what already covers it, and cutting the spine (core, verification, the load-bearing discovery stage) is treated as the dangerous failure. See [Scopes and Depth - The Adaptive Composer](05-scopes-and-depth.md#the-adaptive-composer).
 
 A reviewer fires only when a stage declares a `reviewer:` field. Today the product
 lead reviews `rough-mockups`, `refined-mockups`, `requirements-analysis`, and

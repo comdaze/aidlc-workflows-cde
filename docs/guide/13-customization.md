@@ -7,9 +7,12 @@ AI-DLC is designed to adapt to your team's needs. This chapter covers settings o
 > mechanism-level config in this chapter (`settings.json` / `settings.local.json`,
 > the statusline command, `$CLAUDE_PROJECT_DIR`, tool-permission blocks) is
 > **Claude Code-specific**. Kiro configures the equivalents in
-> `.kiro/settings/cli.json` + its agent config, and Codex in `.codex/config.toml`
-> + Starlark rules — see [Running on Kiro CLI](harnesses/kiro-cli.md) and
-> [Running on Codex CLI](harnesses/codex-cli.md) for each harness's surfaces.
+> `.kiro/settings/cli.json` + its agent config, Codex in `.codex/config.toml`
+> + Starlark rules, and opencode in the project-root `opencode.json` — see
+> [Running on Kiro CLI](harnesses/kiro-cli.md),
+> [Running on Kiro IDE](harnesses/kiro-ide.md),
+> [Running on Codex CLI](harnesses/codex-cli.md), and
+> [AI-DLC on opencode](harnesses/opencode.md) for each harness's surfaces.
 
 ---
 
@@ -31,9 +34,9 @@ This file is listed in `.gitignore` so your personal changes are never committed
 
 ## Agent Models and Effort (Tiers)
 
-Shipped agents are authored with a `tier:` (`judgment` | `balanced` | `templated`) that the build projects into each harness's native model/effort keys — judgment agents inherit your session's model and effort, balanced agents pin a mid-size model, and templated agents additionally reduce effort. See [Agent System](../reference/05-agent-system.md) for the full projection table.
+Shipped agents are authored with a `tier:` (`judgment` | `balanced` | `templated`) that the build projects into each harness's native model/effort keys — judgment agents inherit your session's model and effort, balanced agents pin a mid-size model (on Claude Code, Codex, and opencode; on Kiro all tiers inherit the session model), and templated agents additionally reduce effort on those same non-Kiro harnesses. See [Agent System](../reference/05-agent-system.md) for the full projection table.
 
-To change ONE agent's behavior in your installed copy, edit the projected value directly — for example, set `model: opus` in a Claude agent's `.claude/agents/aidlc-*-agent.md` frontmatter, or change the `"model"` field in a Kiro agent JSON. The edit survives until you re-copy the `dist/<harness>/` shell. To cap EVERY agent when building your own distribution from source, set a `tier_cap:` in `core/memory/org.md`/`project.md` frontmatter or run the packager with `AIDLC_TIER_CAP=<tier>` — both are pack-time knobs on `bun scripts/package.ts`, not runtime settings.
+To change ONE agent's behavior in your installed copy, edit the projected value directly — for example, set `model: opus` in a Claude agent's `.claude/agents/aidlc-*-agent.md` frontmatter. On Kiro the surface depends on the harness: on Kiro CLI add a `"model"` field to the agent's `.kiro/agents/aidlc-*-agent.json`, and on Kiro IDE set a `model:` line in the agent's `.kiro/agents/aidlc-*-agent.md` frontmatter (the agent JSON files are CLI-only — the IDE reads the `.md` frontmatter when spawning). In both cases use a model ID enabled on your install; Kiro agents ship without a model pin so they inherit the session model by default. The edit survives until you re-copy the `dist/<harness>/` shell. To cap EVERY agent when building your own distribution from source, set a `tier_cap:` in `core/memory/org.md`/`project.md` frontmatter or run the packager with `AIDLC_TIER_CAP=<tier>` — both are pack-time knobs on `bun scripts/package.ts`, not runtime settings.
 
 ---
 
@@ -78,7 +81,7 @@ Why only scope and not depth or test-strategy? Each scope already declares its o
 
 ## Scope Configuration
 
-Scopes control which stages execute and at what depth and test strategy. AI-DLC provides 9 named scopes; the full table (EXECUTE/total stage counts, default depth, test strategy, and use case for each) is the single source in [Scopes, Depth, and Test Strategy § The 9 Scopes](05-scopes-and-depth.md#the-9-scopes). This section covers *configuring* and overriding them.
+Scopes control which stages execute and at what depth and test strategy. AI-DLC provides 9 named scopes; the full table (EXECUTE/total stage counts, default depth, test strategy, and use case for each) is the single source in [Scopes, Depth, and Test Strategy § The 9 Scopes](05-scopes-and-depth.md#the-9-core-scopes). This section covers *configuring* and overriding them.
 
 ### Choosing a scope
 
@@ -178,7 +181,7 @@ You can override depth at any approval gate by requesting a different level.
 
 ## Statusline (Claude Code only)
 
-On **Claude Code**, this implementation displays a statusline in the terminal status bar showing workflow progress. Kiro and Codex have no statusline — they surface workflow position through `/aidlc --status` (Kiro) and the `update_plan` task-progress item plus `$aidlc --status` (Codex):
+On **Claude Code**, this implementation displays a statusline in the terminal status bar showing workflow progress. The other harnesses have no statusline — they surface workflow position through `/aidlc --status` (Kiro, opencode) and the `update_plan` task-progress item plus `$aidlc --status` (Codex):
 
 ```
 [AIDLC] IDEATION [▓▓▓▓▓░░░░░] 4/7 > Intent Capture -- Product Agent
@@ -235,7 +238,7 @@ Only add tools to the allow list if you create custom stages that need additiona
 
 ### Narrowing permissions
 
-Remove tools from the allow list to require manual approval for each use. Note that removing `Task` causes subagent stages (2.1 Reverse Engineering, 3.5 Code Generation) to prompt for permission on each delegation. Workspace detection (0.2) runs deterministically inside `aidlc-utility init` — it does not use `Task`.
+Remove tools from the allow list to require manual approval for each use. Note that removing `Task` causes the four dispatched stages (2.1 Reverse Engineering pipeline, 2.2 Practices Discovery subagent, 2.4 User Stories mob, 3.5 Code Generation subagent) to prompt for permission on each delegation. Workspace detection (0.2) runs deterministically inside `aidlc-utility intent-birth` — it does not use `Task`.
 
 ---
 

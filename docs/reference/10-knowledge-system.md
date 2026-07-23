@@ -20,7 +20,7 @@ AI-DLC uses a two-tier knowledge system that separates framework methodology fro
 |   +-- ai-dlc-principles.md       # Core methodology principles
 |   +-- verification.md            # Phase boundary verification rules
 |   +-- brownfield.md              # Brownfield safeguards
-|   +-- audit-format.md            # 68-event audit taxonomy
+|   +-- audit-format.md            # 74-event audit taxonomy
 |   +-- knowledge-readme-template.md  # Optional README template a team can copy into Tier 2
 |   +-- state-template.md          # State file contract
 +-- aidlc-product-agent/
@@ -77,7 +77,7 @@ sequenceDiagram
     participant TAK as Team Agent Knowledge
     participant PA as Prior Artifacts
 
-    O->>G: Step 1: Load aidlc/spaces/<space>/memory/
+    O->>G: Step 1: Load aidlc/spaces/<active-space>/memory/
     Note over G: org.md + team.md + project.md + phases/<phase>.md
     G-->>O: Rules loaded (strict-additive — all layers present)
 
@@ -106,7 +106,7 @@ sequenceDiagram
 
 | Step | Source | Tier | Managed By | Loaded |
 |------|--------|------|-----------|--------|
-| 1 | `aidlc/spaces/<space>/memory/` | -- | Framework + self-learning | First |
+| 1 | `aidlc/spaces/<active-space>/memory/` | -- | Framework + self-learning | First |
 | 2 | `.claude/knowledge/aidlc-shared/` | 1 | Framework | Early |
 | 3 | `.claude/knowledge/[agent]/` | 1 | Framework | Early |
 | 4 | `aidlc/knowledge/aidlc-shared/` | 2 | Team | Mid |

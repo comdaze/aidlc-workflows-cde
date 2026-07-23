@@ -46,9 +46,14 @@
 //   - selecting "Request changes" -> aidlc-state.ts handleReject (:769): emits
 //     GATE_REJECTED + STAGE_REVISING, marks [?]->[R], Revision Count++ (:786).
 //     The orchestrator then re-runs the stage and re-presents the SAME gate.
-//   - bugfix scope: Ideation entirely SKIP; first post-init EXECUTE gate is
-//     requirements-analysis on a brownfield workspace (reverse-engineering runs
-//     first; scope-mapping.json "bugfix" + aidlc-utility.ts greenfield downgrade).
+//   - bugfix scope: Ideation entirely SKIP; on a brownfield workspace the first
+//     post-init approval gate is reverse-engineering's (it runs first and holds
+//     its own Request-Changes gate), then requirements-analysis
+//     (scope-mapping.json "bugfix" + aidlc-utility.ts greenfield downgrade).
+//     RE is a codekb stage: its revision at the gate is counted via the
+//     approve-time backstop's codekb arm (aidlc-state.ts producesArtifactFile;
+//     the 2026-07-13 live run proved the pre-fix gap - reject honored
+//     conversationally, Revision Count stuck at 0).
 //   - Completed counter == `- [x]` grid count (aidlc-state.ts:256-258 sync); the
 //     terminator + the cross-run comparison both read this field.
 //   - the AUQ gate footer + caret signal is gridHasMenu (tui-drive.ts; `❯` on
@@ -80,14 +85,25 @@ const IS_WIN = os.platform() === "win32";
 const WIN_NODE = IS_WIN ? resolveWinNode() : null;
 const DRIVE_BIN = IS_WIN ? (WIN_NODE as string) : process.execPath;
 const DRIVE_PREFIX = IS_WIN ? ["--experimental-strip-types", DRIVER] : [DRIVER];
+const LIVE_CHILD_ENV = { ...process.env };
+delete LIVE_CHILD_ENV.AIDLC_SKIP_REVISION_BACKSTOP;
 
 // Two full run-throughs back-to-back. The bun:test cap is the hard ceiling; each
 // run's pass condition is its on-disk Completed milestone, not the clock.
-const TIMEOUT_S = Number.parseInt(process.env.AIDLC_TEST_TIMEOUT ?? "2400", 10);
-const TEST_TIMEOUT_MS = (Number.isFinite(TIMEOUT_S) ? TIMEOUT_S : 2400) * 1000;
-// Each run gets ~half the overall ceiling as its answer-gate hang-backstop; they
-// run sequentially so neither alone needs the full budget.
-const PER_RUN_OVERALL_MS = Math.max(120_000, Math.floor(TEST_TIMEOUT_MS / 2) - 30_000);
+// 3600s, not 2400s: the REVISED run is structurally longer than the clean one
+// (reject re-runs the full rejected stage plus its review iterations before the
+// re-presented gate), so a 50/50 split of 2400s starved it - a healthy revised
+// run blew the 1170s backstop mid-revision (observed 2026-07-13, trace
+// answer_gate_menu_timeout with the workflow still actively progressing).
+const TIMEOUT_S = Number.parseInt(process.env.AIDLC_TEST_TIMEOUT ?? "3600", 10);
+const TEST_TIMEOUT_MS = (Number.isFinite(TIMEOUT_S) ? TIMEOUT_S : 3600) * 1000;
+// The CLEAN run gets a fixed ~40% backstop; the REVISED run then gets whatever
+// actually remains of the ceiling (they run sequentially, so a fast clean run
+// hands its unused budget to the longer revised run instead of wasting it).
+const CLEAN_RUN_OVERALL_MS = Math.max(120_000, Math.floor(TEST_TIMEOUT_MS * 0.4));
+// Slack reserved for the non-answer-gate work between the deadline and bun's
+// cap (launch/paint waits, kills, state reads).
+const REVISED_SLACK_MS = 60_000;
 
 // The post-init Completed milestone both runs terminate on (the t50 terminator):
 // init 3 + >= 2 Inception (reverse-engineering + requirements-analysis) >= 5.
@@ -99,7 +115,10 @@ interface Run {
   stderr: string;
 }
 function drive(args: string[]): Run {
-  const res = spawnSync(DRIVE_BIN, [...DRIVE_PREFIX, ...args], { encoding: "utf-8" });
+  const res = spawnSync(DRIVE_BIN, [...DRIVE_PREFIX, ...args], {
+    encoding: "utf-8",
+    env: LIVE_CHILD_ENV,
+  });
   return { rc: res.status ?? -1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
 }
 function waitFor(session: string, pattern: string, timeoutMs: number, stableMs: number): boolean {
@@ -142,15 +161,16 @@ const SKIP_REASON = skipReason();
 /** Run the answer-gate primitive to the Completed milestone. Approve-only by
  *  default (Enter = Recommended per menu); when rejectFirstGate is true it selects
  *  "Request changes" on the FIRST approval gate once, then approves the rest —
- *  driving one reject→revise→approve cycle (the gate is identified by its "Request
- *  Changes" option, so the clarifying-question menus that precede it are NOT
- *  mistaken for it; that mis-targeting was the first-attempt finding). Long-lived
+ *  driving one reject→revise→approve cycle (the gate is identified by the canonical
+ *  Approve + Request Changes pair, so the Looks correct + Request changes summary
+ *  confirmation is NOT mistaken for it). Long-lived
  *  subprocess; its own backstops error loud, so a hang exits nonzero (never a
  *  manufactured pass — IRON RULE). */
 function runAnswerGateToMilestone(
   session: string,
   sandbox: string,
   rejectFirstGate: boolean,
+  overallMs: number,
 ): Promise<number> {
   return new Promise<number>((resolve) => {
     const child = spawn(
@@ -165,10 +185,10 @@ function runAnswerGateToMilestone(
         "--until-state-field",
         UNTIL_COMPLETED,
         "--overall-timeout-ms",
-        String(PER_RUN_OVERALL_MS),
+        String(overallMs),
         ...(rejectFirstGate ? ["--reject-first-gate"] : []),
       ],
-      { stdio: "inherit" },
+      { stdio: "inherit", env: LIVE_CHILD_ENV },
     );
     child.on("exit", (code) => resolve(code ?? -1));
     child.on("error", () => resolve(-1));
@@ -217,6 +237,23 @@ function readTerminal(sandbox: string): Terminal {
 /** Launch claude on a fresh brownfield bugfix project, clear modals, submit the
  *  bugfix command. Returns the session name (caller drives gates + reads disk). */
 function launchBugfix(session: string, sandbox: string): void {
+  // run-tests.ts disables the approve-time revision backstop globally because
+  // most fixtures intentionally omit revision evidence. This test is the live
+  // reject/revise proof, so its Claude child must not inherit that bypass. On
+  // POSIX the private tmux server can retain the suite environment from an
+  // earlier test, hence the explicit `env -u` wrapper at the actual PTY child.
+  // Windows has no `env`; its daemon inherits LIVE_CHILD_ENV directly.
+  const claudeCommand = IS_WIN
+    ? ["claude", "--dangerously-skip-permissions"]
+    : [
+        "env",
+        "-u",
+        "AIDLC_SKIP_REVISION_BACKSTOP",
+        "claude",
+        "--setting-sources",
+        "project",
+        "--dangerously-skip-permissions",
+      ];
   expect(
     drive([
       "start",
@@ -229,8 +266,7 @@ function launchBugfix(session: string, sandbox: string): void {
       "--height",
       "45",
       "--",
-      "claude",
-      "--dangerously-skip-permissions",
+      ...claudeCommand,
     ]).rc,
   ).toBe(0);
   if (waitFor(session, "trust this folder", 60000, 600)) {
@@ -274,8 +310,14 @@ describe("t-tui-t139 revision-loop idempotency (reject->approve == clean approve
       let revisedSession = "";
       let revisedSandbox = "";
       try {
+        const testStartMs = Date.now();
         launchBugfix(cleanSession, cleanSandbox);
-        const cleanRc = await runAnswerGateToMilestone(cleanSession, cleanSandbox, false);
+        const cleanRc = await runAnswerGateToMilestone(
+          cleanSession,
+          cleanSandbox,
+          false,
+          CLEAN_RUN_OVERALL_MS,
+        );
         expect(cleanRc).toBe(0);
         const clean = readTerminal(cleanSandbox);
         drive(["kill", "--session", cleanSession]);
@@ -314,10 +356,19 @@ describe("t-tui-t139 revision-loop idempotency (reject->approve == clean approve
             const grid = drive(["capture", "--session", revisedSession]).stdout;
             if (gridHasMenu(grid)) sawMenu = true;
           }, 1000);
+          // The revised run's backstop is everything left of the ceiling: a
+          // fast clean run hands its unused budget to this structurally longer
+          // reject->revise->approve run. Floor keeps a degenerate remainder
+          // from starving it outright.
+          const revisedOverallMs = Math.max(
+            300_000,
+            TEST_TIMEOUT_MS - (Date.now() - testStartMs) - REVISED_SLACK_MS,
+          );
           const revisedRc = await runAnswerGateToMilestone(
             revisedSession,
             revisedSandbox,
             true, // reject the first approval gate once
+            revisedOverallMs,
           );
           if (pollTimer) clearInterval(pollTimer);
           pollTimer = undefined;

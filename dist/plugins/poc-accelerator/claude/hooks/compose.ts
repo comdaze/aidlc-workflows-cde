@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// compose.ts — AIDLC plugin SessionStart compose hook (single bun entry point).
+// compose.ts — AIDLC plugin SessionStart compose hook and importable composer.
 //
 // Replaces the former compose.sh + compose-contributions.ts + compose-fragments.ts
 // trio. Folding to one TS file removes the shell-portability bug class entirely:
@@ -46,6 +46,37 @@ const SCOPE_TABLE_END = "<!-- END: compiled scope grid -->";
 const STAGE_TABLE_BEGIN =
   "<!-- BEGIN: compiled stage graph via `bun aidlc-utility.ts stage-table` - do NOT hand-edit -->";
 const STAGE_TABLE_END = "<!-- END: compiled stage graph -->";
+type ParseStageFrontmatter = (raw: string) => Record<string, unknown>;
+interface InstalledAidlcLib {
+  hooksHealthDir?: (projectDir: string) => string;
+  parseStageFrontmatter?: ParseStageFrontmatter;
+}
+interface InstalledStageSchema {
+  validateStageFrontmatter?: (
+    obj: unknown,
+  ) => { valid: boolean; errors?: string[] };
+}
+
+let installedLibPromise: Promise<InstalledAidlcLib | null> | null = null;
+let installedSchemaPromise: Promise<InstalledStageSchema | null> | null = null;
+
+function installedAidlcLib(): Promise<InstalledAidlcLib | null> {
+  installedLibPromise ??= import(join(HARNESS_DIR, "tools", "aidlc-lib.ts"))
+    .then((module) => module as InstalledAidlcLib)
+    .catch(() => null);
+  return installedLibPromise;
+}
+
+function installedStageSchema(): Promise<InstalledStageSchema | null> {
+  installedSchemaPromise ??= import(join(HARNESS_DIR, "tools", "aidlc-stage-schema.ts"))
+    .then((module) => module as InstalledStageSchema)
+    .catch(() => null);
+  return installedSchemaPromise;
+}
+
+function slugFromPath(path: string): string {
+  return path.replace(/\\/g, "/").split("/").pop()!.replace(/\.md$/, "");
+}
 
 function pluginNameFromRoot(): string {
   if (!PLUGIN_ROOT) return "plugin";
@@ -104,10 +135,10 @@ let _healthDir: string | null = null;
 async function resolveHealthDir(): Promise<string> {
   if (_healthDir) return _healthDir;
   let dir: string;
-  try {
-    const lib = await import(join(HARNESS_DIR, "tools", "aidlc-lib.ts"));
-    dir = lib.hooksHealthDir(PROJECT_DIR) as string;
-  } catch {
+  const lib = await installedAidlcLib();
+  if (typeof lib?.hooksHealthDir === "function") {
+    dir = lib.hooksHealthDir(PROJECT_DIR);
+  } else {
     dir = join(PROJECT_DIR, "aidlc", "spaces", "default", "intents", ".aidlc-hooks-health");
   }
   _healthDir = dir;
@@ -166,7 +197,7 @@ function selectedPlugins(): Set<string> | null {
   try {
     const raw = readFileSync(join(HARNESS_DIR, "tools", "data", "harness.json"), "utf-8");
     const parsed = JSON.parse(raw) as { plugins?: unknown };
-    if (!Object.prototype.hasOwnProperty.call(parsed, "plugins")) return null;
+    if (!Object.hasOwn(parsed, "plugins")) return null;
     if (!Array.isArray(parsed.plugins)) return null;
     const names = parsed.plugins.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
     return new Set(names.map((s) => s.trim()));
@@ -186,6 +217,38 @@ function selectCommandForPlugin(): string {
   const names = new Set<string>(selected ?? ["aidlc"]);
   names.add(PLUGIN_NAME);
   return `bun ${HARNESS_LEAF}/tools/aidlc-utility.ts select-plugins ${[...names].sort().join(",")}`;
+}
+
+function installedToolCommand(tool: "utility" | "graph" | "runner", args: string[]): string[] {
+  const executable = process.env.AIDLC_COMPILED_EXECUTABLE?.trim();
+  if (!executable) {
+    const files = {
+      utility: "aidlc-utility.ts",
+      graph: "aidlc-graph.ts",
+      runner: "aidlc-runner-gen.ts",
+    };
+    return [process.execPath, join(HARNESS_DIR, "tools", files[tool]), ...args];
+  }
+  if (tool === "utility") return [executable, "gen", ...args];
+  if (tool === "graph") return [executable, "graph", ...args];
+  if (args[0] === "write") return [executable, "gen", "runners", ...args.slice(1)];
+  if (args[0] === "scopes") return [executable, "gen", "runner-scopes", ...args.slice(1)];
+  if (args[0] === "list") return [executable, "gen", "runner-list", ...args.slice(1)];
+  throw new Error(`No compiled dispatcher route for aidlc-runner-gen ${args.join(" ")}`);
+}
+
+function installedToolEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    AIDLC_HARNESS_DIR: HARNESS_LEAF,
+    AIDLC_STAGE_GRAPH: join(HARNESS_DIR, "tools", "data", "stage-graph.json"),
+    AIDLC_SCOPE_GRID: join(HARNESS_DIR, "tools", "data", "scope-grid.json"),
+    AIDLC_STAGES_DIR: STAGES_DIR,
+    AIDLC_SENSORS_DIR: join(HARNESS_DIR, "sensors"),
+    AIDLC_SCOPES_DIR: join(HARNESS_DIR, "scopes"),
+    AIDLC_AGENTS_DIR: join(HARNESS_DIR, "agents"),
+    AIDLC_RULES_DIR: join(PROJECT_DIR, "aidlc", "spaces", "default", "memory"),
+  };
 }
 
 function refreshSkillGeneratedRegion(
@@ -211,10 +274,11 @@ function refreshSkillGeneratedRegion(
     return;
   }
 
-  const r = spawnSync(process.execPath, [join(HARNESS_DIR, "tools", "aidlc-utility.ts"), verb], {
+  const [command, ...args] = installedToolCommand("utility", [verb]);
+  const r = spawnSync(command, args, {
     cwd: PROJECT_DIR,
     encoding: "utf-8",
-    env: { ...process.env, AIDLC_HARNESS_DIR: HARNESS_LEAF },
+    env: installedToolEnv(),
   });
   if (r.status !== 0) {
     recordDrop(`aidlc-utility ${verb} failed: ${(r.stderr || r.stdout || "").slice(0, 400)}`);
@@ -243,32 +307,36 @@ function refreshSkillGeneratedRegion(
 // OPEN (returns true) if the lib can't be loaded — a partial install already
 // can't compile, so we don't add a second failure mode.
 async function installedSchemaAccepts(key: string, sampleValue: unknown): Promise<boolean> {
-  try {
-    const schema = await import(join(HARNESS_DIR, "tools", "aidlc-stage-schema.ts"));
-    const base: Record<string, unknown> = {
-      slug: "probe-stage", phase: "construction", execution: "ALWAYS", condition: "always",
-      lead_agent: "aidlc-quality-agent", support_agents: [], mode: "inline",
-      produces: [], consumes: [], requires_stage: [], inputs: "x", outputs: "y",
-    };
-    const withKey = { ...base, [key]: sampleValue };
-    const res = schema.validateStageFrontmatter(withKey);
-    if (res.valid) return true;
-    // Rejected — is it BECAUSE of our key? (An unknown/!array error naming it.)
-    const errs: string[] = res.errors ?? [];
-    return !errs.some((e) => e.includes(key));
-  } catch {
-    return true; // can't probe → don't block (see note above)
+  const schema = await installedStageSchema();
+  if (typeof schema?.validateStageFrontmatter === "function") {
+    try {
+      const base: Record<string, unknown> = {
+        slug: "probe-stage", phase: "construction", execution: "ALWAYS", condition: "always",
+        lead_agent: "aidlc-quality-agent", support_agents: [], mode: "inline",
+        produces: [], consumes: [], requires_stage: [], inputs: "x", outputs: "y",
+      };
+      const withKey = { ...base, [key]: sampleValue };
+      const res = schema.validateStageFrontmatter(withKey);
+      if (res.valid) return true;
+      // Rejected — is it BECAUSE of our key? (An unknown/!array error naming it.)
+      const errs: string[] = res.errors ?? [];
+      return !errs.some((e) => e.includes(key));
+    } catch {
+      return true; // probe failed → don't block (see note above)
+    }
   }
+  return true; // module unavailable → don't block (see note above)
 }
 
 // Guard: only compose in an AIDLC project, with a resolvable plugin root.
+export async function compose(): Promise<void> {
 if (!existsSync(join(HARNESS_DIR, "tools", "aidlc-graph.ts"))) {
-  process.exit(0); // not an AIDLC project — nothing to do (no drop: not our project)
+  return; // not an AIDLC project — nothing to do (no drop: not our project)
 }
 if (!PLUGIN_ROOT) {
   recordDrop("plugin root env not set (CLAUDE_PLUGIN_ROOT/PLUGIN_ROOT/AIDLC_PLUGIN_ROOT)");
   await flushDrops();
-  process.exit(0);
+  return;
 }
 // A set-but-wrong PLUGIN_ROOT (e.g. a mistyped path from a hand-run command)
 // would otherwise pass the non-empty check and then find nothing to copy/merge —
@@ -276,7 +344,7 @@ if (!PLUGIN_ROOT) {
 if (!existsSync(PLUGIN_ROOT)) {
   recordDrop(`plugin root does not exist: "${PLUGIN_ROOT}" — check the AIDLC_PLUGIN_ROOT path`);
   await flushDrops();
-  process.exit(0);
+  return;
 }
 
 if (!pluginEnabledBySelection()) {
@@ -299,11 +367,33 @@ function walk(dir: string): string[] {
   return out;
 }
 
-type CopyPrecheck = (ctx: { file: string; rel: string; dest: string; content: string }) => boolean;
+type CopyContext = { file: string; rel: string; content: string };
+type CopyPrecheck = (ctx: CopyContext & { dest: string }) => boolean;
+type CopyTransform = (ctx: CopyContext) => string;
 
 function frontmatterName(content: string): string | null {
   const name = frontmatter(content).match(/^name:\s*(.+)$/m)?.[1].trim();
   return name || null;
+}
+
+// Read one top-level frontmatter scalar for parser-unavailable safety checks.
+// Handles the quoted and unquoted forms accepted by the real YAML parser.
+function frontmatterScalar(content: string, key: string): string | null {
+  const match = frontmatter(content).match(
+    new RegExp(`^${escapeRegExp(key)}:\\s*(.*?)\\s*$`, "m"),
+  );
+  if (!match) return null;
+  let value = match[1].trim();
+  if (
+    value.length >= 2 &&
+    ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'")))
+  ) {
+    value = value.slice(1, -1);
+  } else {
+    value = value.replace(/\s+#.*$/, "").trim();
+  }
+  return value;
 }
 
 function installedNameRoster(dir: string): Map<string, string> {
@@ -325,7 +415,7 @@ function installedNameRoster(dir: string): Map<string, string> {
 
 function installedNameCollisionPrecheck(dst: string, kind: "agents" | "scopes"): CopyPrecheck {
   const installedByName = installedNameRoster(dst);
-  return ({ file, rel, dest, content }) => {
+  return ({ file, dest, content }) => {
     if (!file.endsWith(".md")) return true;
     // `aidlc-` is core's namespace: a scope declaring an aidlc--prefixed
     // plugin: would generate a runner dir on core's `aidlc-<name>` path and
@@ -350,6 +440,363 @@ function installedNameCollisionPrecheck(dst: string, kind: "agents" | "scopes"):
   };
 }
 
+function projectOpencodeAgentMemory(raw: string): string {
+  return raw
+    .replaceAll(".aidlc/rules/aidlc-org.md", "aidlc/spaces/default/memory/org.md")
+    .replaceAll(".aidlc/rules/aidlc-team.md", "aidlc/spaces/default/memory/team.md")
+    .replaceAll(".aidlc/rules/aidlc-project.md", "aidlc/spaces/default/memory/project.md")
+    .replaceAll(".aidlc/rules/", "aidlc/spaces/default/memory/");
+}
+
+function opencodeNativeAgentPrecheck(dst: string): CopyPrecheck {
+  const collision = installedNameCollisionPrecheck(dst, "agents");
+  return (ctx) => {
+    if (!collision(ctx)) return false;
+    if (!ctx.content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/)) {
+      recordDrop(
+        `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" has no closed frontmatter block; not copied to OpenCode's native roster`,
+      );
+      return false;
+    }
+    const disallowed = frontmatter(ctx.content).match(/^disallowedTools:\s*(.*?)\s*$/m)?.[1];
+    if (disallowed && !/^\s*Task\s*$/i.test(disallowed)) {
+      recordDrop(
+        `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" cannot project disallowedTools "${disallowed}" to OpenCode; not copied`,
+      );
+      return false;
+    }
+    return true;
+  };
+}
+
+function emitOpencodeNativeAgent({ file, content }: CopyContext): string {
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  if (!m) throw new Error(`${file}: plugin agent has no closed frontmatter block`);
+  let fm = m[1]
+    .split(/\r?\n/)
+    .filter((line) =>
+      !/^disallowedTools:/.test(line) &&
+      !/^mode:/.test(line) &&
+      !/^tier:/.test(line) &&
+      !/^effort:/.test(line)
+    )
+    .filter((line) => {
+      const model = line.match(/^model:\s*(.*?)(?:\s+#.*)?\s*$/)?.[1];
+      return model === undefined || model.includes("/");
+    })
+    .join("\n");
+  if (/^permission:\s*$/m.test(fm)) {
+    if (/^ {2}task:/m.test(fm)) {
+      fm = fm.replace(/^ {2}task:.*$/m, "  task: deny");
+    } else {
+      fm = fm.replace(/^permission:\s*$/m, "permission:\n  task: deny");
+    }
+  } else {
+    fm += "\npermission:\n  task: deny";
+  }
+  fm += "\nmode: subagent";
+  return content.replace(m[0], () => `---\n${fm}\n---\n`);
+}
+
+function combinePrechecks(...checks: Array<CopyPrecheck | undefined>): CopyPrecheck {
+  return (ctx) => checks.every((check) => check === undefined || check(ctx));
+}
+
+// `agent-team` is accepted by the shared schema as a reserved future mode, but
+// no shipped conductor can execute it. Reject new plugin stages on every
+// harness until that runtime consumer exists. Existing no-clobber copies remain
+// on disk and are health-reported so an upgrade never hides the unsafe stage.
+async function unsupportedRuntimeModePrecheck(): Promise<CopyPrecheck> {
+  const lib = await installedAidlcLib();
+  const parse = typeof lib?.parseStageFrontmatter === "function"
+    ? lib.parseStageFrontmatter
+    : null;
+  const parsedModeAndSlug = (
+    content: string,
+    rel: string,
+  ): { mode: string | null; slug: string } => {
+    let parsed: Record<string, unknown> | null = null;
+    if (parse) {
+      try {
+        parsed = parse(content);
+      } catch {
+        // The installed schema precheck owns malformed-stage diagnostics.
+      }
+    }
+    return {
+      mode: typeof parsed?.mode === "string"
+        ? parsed.mode
+        : frontmatterScalar(content, "mode"),
+      slug: typeof parsed?.slug === "string"
+        ? parsed.slug
+        : slugFromPath(rel),
+    };
+  };
+
+  // copyTreeNoClobber skips prechecks when the destination exists. Audit
+  // installed reserved modes up front so upgrades cannot leave one silently.
+  const stagesRoot = join(PLUGIN_ROOT, "stages");
+  for (const file of walk(stagesRoot).filter((path) => path.endsWith(".md"))) {
+    const rel = relative(stagesRoot, file).replace(/\\/g, "/");
+    const dest = join(STAGES_DIR, rel);
+    if (!existsSync(dest)) continue;
+    let installed = "";
+    try {
+      installed = readFileSync(dest, "utf-8");
+    } catch {
+      continue;
+    }
+    const { mode, slug } = parsedModeAndSlug(installed, rel);
+    if (mode !== "agent-team") continue;
+    recordDrop(
+      `plugin "${PLUGIN_NAME}" stage "${slug}" is already composed with reserved mode "agent-team", which has no runtime consumer; change it to inline, subagent, pipeline, or mob, then remove/re-compose the installed stage`,
+    );
+  }
+
+  return ({ file, rel, dest, content }) => {
+    if (!file.endsWith(".md")) return true;
+    const { mode, slug } = parsedModeAndSlug(content, rel);
+    if (mode !== "agent-team") return true;
+    if (existsSync(dest)) {
+      recordDrop(
+        `plugin "${PLUGIN_NAME}" stage "${slug}" is already composed with reserved mode "agent-team", which has no runtime consumer; change it to inline, subagent, pipeline, or mob, then remove/re-compose the installed stage`,
+      );
+      return true;
+    }
+    composeDroppedStageSlugs.add(slugFromPath(rel));
+    composeDroppedStageSlugs.add(slug);
+    recordDrop(
+      `plugin "${PLUGIN_NAME}" stage "${slug}" uses reserved mode "agent-team" and was not composed: the mode has no runtime consumer yet; change it to inline, subagent, pipeline, or mob`,
+    );
+    return false;
+  };
+}
+
+interface KiroPluginAgentPrechecks {
+  stage: CopyPrecheck;
+  agent: CopyPrecheck;
+}
+
+// OpenCode's dispatch surface is the native roster `.opencode/agents/<a>.md`.
+// Unlike Kiro/Codex surfaces (which a plugin can never ship), a plugin's own
+// Markdown persona IS the source of the native twin compose emits later in
+// this same pass — so a stage may reference an agent whose surface arrives
+// with the plugin. Accept that only when the shipped file would survive the
+// full opencodeNativeAgentPrecheck: closed frontmatter, no un-projectable
+// disallowedTools, AND no name collision with a different installed native
+// agent — a collision-dropped twin would leave the accepted stage without its
+// dispatch target.
+function pluginShipsViableOpencodeAgent(agent: string): boolean {
+  const file = join(PLUGIN_ROOT, "agents", `${agent}.md`);
+  if (!existsSync(file)) return false;
+  let content = "";
+  try {
+    content = readFileSync(file, "utf-8");
+  } catch {
+    return false;
+  }
+  if (!content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/)) return false;
+  const declaredPlugin = frontmatter(content).match(/^plugin:\s*(.+)$/m)?.[1].trim();
+  if (declaredPlugin?.startsWith("aidlc-")) return false;
+  const disallowed = frontmatter(content).match(/^disallowedTools:\s*(.*?)\s*$/m)?.[1];
+  if (disallowed && !/^\s*Task\s*$/i.test(disallowed)) return false;
+  const nativeAgentsDir = join(PROJECT_DIR, ".opencode", "agents");
+  const name = frontmatterName(content);
+  if (!name) return true;
+  const collidingFile = installedNameRoster(nativeAgentsDir).get(name);
+  return !collidingFile || collidingFile === join(nativeAgentsDir, `${agent}.md`);
+}
+
+// Kiro, Codex, and OpenCode cannot dispatch a Markdown-only persona from the
+// engine roster. Kiro requires BOTH a hand-authored agent-v1 JSON and conductor
+// trustedAgents registration; Codex requires an agent config TOML; OpenCode
+// requires a native `.opencode/agents/<a>.md` subagent (installed, or viably
+// shipped by this plugin — see pluginShipsViableOpencodeAgent). Reject any
+// dispatched stage whose lead, support, or reviewer lacks that complete
+// surface. Markdown personas remain composable for accepted inline stages.
+async function kiroPluginAgentPrechecks(): Promise<KiroPluginAgentPrechecks | null> {
+  if (
+    HARNESS_LEAF !== ".kiro" &&
+    HARNESS_LEAF !== ".codex" &&
+    HARNESS_LEAF !== ".aidlc"
+  ) {
+    return null;
+  }
+  const surfaceExt = HARNESS_LEAF === ".kiro"
+    ? ".json"
+    : HARNESS_LEAF === ".codex"
+      ? ".toml"
+      : ".md";
+  const surfaceDir = HARNESS_LEAF === ".aidlc"
+    ? join(PROJECT_DIR, ".opencode", "agents")
+    : join(HARNESS_DIR, "agents");
+  const trustedAgents = new Set<string>();
+  if (HARNESS_LEAF === ".kiro") {
+    try {
+      const conductor = JSON.parse(
+        readFileSync(join(HARNESS_DIR, "agents", "aidlc.json"), "utf-8"),
+      ) as {
+        toolsSettings?: { subagent?: { trustedAgents?: unknown } };
+      };
+      const configured = conductor.toolsSettings?.subagent?.trustedAgents;
+      if (Array.isArray(configured)) {
+        for (const agent of configured) {
+          if (typeof agent === "string") trustedAgents.add(agent);
+        }
+      }
+    } catch {
+      // Empty set is fail-closed: a broken conductor cannot dispatch any agent.
+    }
+  }
+  interface DispatchGap {
+    agent: string;
+    missingSurface: boolean;
+    missingTrust: boolean;
+  }
+  const remediationFor = (gap: DispatchGap, isReviewer: boolean): string => {
+    const requirements: string[] = [];
+    if (gap.missingSurface) {
+      requirements.push(
+        HARNESS_LEAF === ".kiro"
+          ? `author ${HARNESS_LEAF}/agents/${gap.agent}.json (agent-v1 JSON)`
+          : HARNESS_LEAF === ".codex"
+            ? `author ${HARNESS_LEAF}/agents/${gap.agent}.toml (the shipped aidlc-*-agent.toml shape)`
+            : `author .opencode/agents/${gap.agent}.md (an OpenCode subagent with closed frontmatter)`,
+      );
+    }
+    if (gap.missingTrust) {
+      requirements.push(
+        `add "${gap.agent}" to toolsSettings.subagent.trustedAgents in ${HARNESS_LEAF}/agents/aidlc.json`,
+      );
+    }
+    const alternative = isReviewer
+      ? "remove the stage's reviewer: field"
+      : "change the stage's mode to inline";
+    return `${requirements.join(" and ")}, or ${alternative}`;
+  };
+
+  const stagesRoot = join(PLUGIN_ROOT, "stages");
+  const stageFiles = walk(stagesRoot).filter((path) => path.endsWith(".md"));
+  if (stageFiles.length === 0) return null;
+
+  // Existing stages cannot be deleted by a no-clobber compose hook, but they
+  // still need a degraded health row when unsafe. Otherwise an install upgraded
+  // from the pre-guard composer remains silently wedged forever.
+  const alreadyComposed = (rel: string): boolean => existsSync(join(STAGES_DIR, rel));
+  // The self-heal probe below filters expected graph slugs by FILENAME STEM,
+  // so bookkeeping must record the stem (the frontmatter slug is recorded too
+  // for human-readable drop correlation, but the stem is load-bearing).
+  const recordDroppedStage = (rel: string, slug: string | null): void => {
+    composeDroppedStageSlugs.add(slugFromPath(rel));
+    if (slug) composeDroppedStageSlugs.add(slug);
+  };
+
+  const lib = await installedAidlcLib();
+  const parse = typeof lib?.parseStageFrontmatter === "function"
+    ? lib.parseStageFrontmatter
+    : null;
+  if (!parse) {
+    // Without the installed parser, accept only an explicitly inline,
+    // reviewer-free stage. This scalar fallback handles quoted YAML values and
+    // fails closed on reserved, unknown, or missing modes.
+    const rejected = new Set<string>();
+    for (const file of stageFiles) {
+      let raw = "";
+      try {
+        raw = readFileSync(file, "utf-8");
+      } catch {
+        continue;
+      }
+      const rel = relative(stagesRoot, file).replace(/\\/g, "/");
+      const mode = frontmatterScalar(raw, "mode");
+      const reviewer = frontmatterScalar(raw, "reviewer");
+      if (mode === "inline" && !reviewer) continue;
+      if (alreadyComposed(rel)) {
+        recordDrop(
+          `plugin "${PLUGIN_NAME}" stage "${rel}" is already composed but its mode/reviewer dispatch safety cannot be validated because the installed stage parser is unavailable; restore tools/aidlc-lib.ts and re-run compose, then remediate or remove the installed stage`,
+        );
+        continue;
+      }
+      rejected.add(rel);
+      recordDroppedStage(rel, null);
+      recordDrop(
+        `plugin "${PLUGIN_NAME}" stage "${rel}" is not explicitly inline and reviewer-free and was not composed: the installed stage parser is unavailable, so its agent references cannot be validated for ${HARNESS_LEAF} dispatch; re-copy your dist/<harness>/ shell (restoring tools/aidlc-lib.ts) and re-run compose — explicitly inline stages and personas composed normally`,
+      );
+    }
+    return {
+      stage: ({ rel }) => !rejected.has(rel.replace(/\\/g, "/")),
+      agent: () => true,
+    };
+  }
+
+  const rejectedStageFiles = new Set<string>();
+  for (const file of stageFiles) {
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = parse(readFileSync(file, "utf-8"));
+    } catch {
+      continue;
+    }
+    const mode = typeof parsed.mode === "string" ? parsed.mode : "";
+    const rel = relative(stagesRoot, file).replace(/\\/g, "/");
+    const slug = typeof parsed.slug === "string"
+      ? parsed.slug
+      : slugFromPath(rel);
+    const supportAgents = Array.isArray(parsed.support_agents)
+      ? parsed.support_agents.filter((agent): agent is string => typeof agent === "string")
+      : [];
+    // Inline is the only topology that does not dispatch the stage body.
+    // Treat every other parsed mode as dispatched so future schema modes
+    // inherit agent surface/trust validation automatically.
+    const dispatches = mode !== "inline";
+
+    // The reviewer dispatches on EVERY gated stage — the conductor's §12a step
+    // fires whenever directive.reviewer is present, independent of the stage's
+    // body mode — so it is checked even on inline stages. Lead + supports
+    // dispatch only under a dispatched body topology.
+    const leadAgent = typeof parsed.lead_agent === "string" ? parsed.lead_agent : "";
+    const reviewer = typeof parsed.reviewer === "string" ? parsed.reviewer : "";
+    const dispatchedAgents = [
+      ...(dispatches ? [leadAgent, ...supportAgents] : []),
+      reviewer,
+    ];
+    const gaps = new Map<string, DispatchGap>();
+    for (const agent of dispatchedAgents) {
+      if (!agent || gaps.has(agent)) continue;
+      const gap = {
+        agent,
+        missingSurface: !existsSync(join(surfaceDir, `${agent}${surfaceExt}`)) &&
+          !(HARNESS_LEAF === ".aidlc" && pluginShipsViableOpencodeAgent(agent)),
+        missingTrust: HARNESS_LEAF === ".kiro" && !trustedAgents.has(agent),
+      };
+      if (gap.missingSurface || gap.missingTrust) gaps.set(agent, gap);
+    }
+    if (gaps.size === 0) continue;
+
+    const existing = alreadyComposed(rel);
+    if (!existing) {
+      rejectedStageFiles.add(rel);
+      recordDroppedStage(rel, slug);
+    }
+    for (const gap of gaps.values()) {
+      const agent = gap.agent;
+      const isReviewerOnly =
+        agent === reviewer && !(dispatches && (agent === leadAgent || supportAgents.includes(agent)));
+      const role = isReviewerOnly ? "as reviewer" : `with mode "${mode}"`;
+      recordDrop(
+        `plugin "${PLUGIN_NAME}" stage "${slug}" references agent "${agent}" ${role} and ${existing ? "is already composed but remains undispatchable" : "was not composed"}: ${remediationFor(gap, isReviewerOnly)}`,
+      );
+    }
+  }
+
+  return {
+    stage: ({ rel }) => !rejectedStageFiles.has(rel.replace(/\\/g, "/")),
+    // Markdown personas remain useful to accepted inline stages even when a
+    // different stage that references the same persona was rejected.
+    agent: () => true,
+  };
+}
+
 // Validate a plugin stage file against the INSTALLED engine's schema before
 // copying it into the install. Compile is all-or-nothing - aidlc-graph.ts
 // throws on the first schema-invalid stage file - so one bad copy (e.g. a
@@ -361,21 +808,24 @@ function installedNameCollisionPrecheck(dst: string, kind: "agents" | "scopes"):
 // and routes while being behaviorally dead. Fails OPEN (copies) when the
 // installed lib can't be loaded - a partial install already can't compile,
 // so we don't add a second failure mode.
-// Slugs the schema precheck refused, so the "did my stages reach the compiled
-// graph?" self-heal probe below doesn't see a deliberately-dropped stage as a
+// Slugs a compose precheck refused, so the "did my stages reach the compiled
+// graph?" self-heal probe below does not see a deliberately-dropped stage as a
 // failed compile and force a recompile every session.
-const schemaDroppedStageSlugs = new Set<string>();
+const composeDroppedStageSlugs = new Set<string>();
 async function installedStageSchemaPrecheck(): Promise<CopyPrecheck> {
-  let parse: ((raw: string) => Record<string, unknown>) | null = null;
+  let parse: ParseStageFrontmatter | null = null;
   let validate: ((obj: unknown) => { valid: boolean; errors?: string[] }) | null = null;
-  try {
-    const lib = await import(join(HARNESS_DIR, "tools", "aidlc-lib.ts"));
-    const schema = await import(join(HARNESS_DIR, "tools", "aidlc-stage-schema.ts"));
-    if (typeof lib.parseStageFrontmatter === "function" && typeof schema.validateStageFrontmatter === "function") {
-      parse = lib.parseStageFrontmatter;
-      validate = schema.validateStageFrontmatter;
-    }
-  } catch { /* fail open (see note above) */ }
+  const [lib, schema] = await Promise.all([
+    installedAidlcLib(),
+    installedStageSchema(),
+  ]);
+  if (
+    typeof lib?.parseStageFrontmatter === "function" &&
+    typeof schema?.validateStageFrontmatter === "function"
+  ) {
+    parse = lib.parseStageFrontmatter;
+    validate = schema.validateStageFrontmatter;
+  }
   return ({ file, rel, content }) => {
     if (!file.endsWith(".md") || !parse || !validate) return true;
     let errors: string[];
@@ -407,7 +857,7 @@ async function installedStageSchemaPrecheck(): Promise<CopyPrecheck> {
       }
     }
     if (errors.length === 0) return true;
-    schemaDroppedStageSlugs.add(rel.replace(/\\/g, "/").split("/").pop()!.replace(/\.md$/, ""));
+    composeDroppedStageSlugs.add(slugFromPath(rel));
     recordDrop(
       `plugin "${PLUGIN_NAME}" stage file "${rel}" not composed: ${errors.join("; ")} - fix the plugin's stage file and re-run compose`,
     );
@@ -423,7 +873,13 @@ async function installedStageSchemaPrecheck(): Promise<CopyPrecheck> {
 // trying to ship a file that shadows core or another plugin) and is dropped-with-
 // log — silently skipping it made a plugin "override" a no-op with no evidence
 // (round-4). An identical dest is a benign idempotent re-run (no log).
-function copyTreeNoClobber(src: string, dst: string, kind: string, precheck?: CopyPrecheck): boolean {
+function copyTreeNoClobber(
+  src: string,
+  dst: string,
+  kind: string,
+  precheck?: CopyPrecheck,
+  transform?: CopyTransform,
+): boolean {
   if (!existsSync(src)) return false;
   let wrote = false;
   for (const file of walk(src)) {
@@ -435,13 +891,32 @@ function copyTreeNoClobber(src: string, dst: string, kind: string, precheck?: Co
     }
     if (existsSync(dest)) {
       // no-clobber — never replace core/another plugin. Log only a genuine
-      // content collision, not an identical idempotent re-copy.
-      if (!readFileSync(dest).equals(buf)) {
+      // content collision, not an identical idempotent re-copy. The installed
+      // copy was written transformed, so transform before comparing; a source
+      // the transform rejects cannot equal any installed copy.
+      let current: Buffer | null = buf;
+      if (transform) {
+        try {
+          current = Buffer.from(transform({ file, rel, content: buf.toString("utf-8") }));
+        } catch {
+          current = null;
+        }
+      }
+      if (current === null || !readFileSync(dest).equals(current)) {
         recordDrop(`${kind} "${rel}" collides with an existing file (core or another plugin); not overwritten — rename it to a plugin-namespaced path`);
       }
       continue;
     }
+    // Precheck BEFORE transform, on the pre-transform text: the precheck is
+    // the skip-and-drop gate for exactly the shapes a transform throws on
+    // (emitOpencodeNativeAgent on a frontmatter-less persona), so transforming
+    // first turns a one-file drop into an aborted compose. It also keeps the
+    // precheck's shape checks live — the emitter strips disallowedTools, so a
+    // post-transform precheck could never reject an un-projectable value.
     if (precheck && !precheck({ file, rel, dest, content: buf.toString("utf-8") })) continue;
+    if (transform) {
+      buf = Buffer.from(transform({ file, rel, content: buf.toString("utf-8") }));
+    }
     mkdirSync(join(dest, ".."), { recursive: true });
     writeFileSync(dest, buf);
     wrote = true;
@@ -485,7 +960,7 @@ function mergeListField(content: string, field: string, items: string[], target:
     recordDrop(`contribution to ${target}: no '${field}:' field to append to (adds dropped)`);
     return content;
   }
-  const existing = new Set([...m[1].matchAll(/^  - (.+)$/gm)].map((x) => x[1].trim()));
+  const existing = new Set([...m[1].matchAll(/^ {2}- (.+)$/gm)].map((x) => x[1].trim()));
   const toAdd = items.filter((i) => !existing.has(i));
   if (toAdd.length === 0) return content;
   added?.push(...toAdd);
@@ -510,7 +985,7 @@ function mergeConsumes(content: string, entries: ConsumeEntry[], target: string,
   // an append AFTER the last core entry — omit `conditional_on` and the block
   // ends early, splicing the new entry INSIDE a core entry and stealing its
   // brownfield gate (round-2 major). The new entries land past the whole block.
-  const blockRe = /^(consumes:\n(?:  - artifact:.*\n(?:    (?:required|conditional_on):.*\n)*)*)/m;
+  const blockRe = /^(consumes:\n(?: {2}- artifact:.*\n(?: {4}(?:required|conditional_on):.*\n)*)*)/m;
   const m = content.match(blockRe);
   if (!m) {
     recordDrop(`contribution to ${target}: no 'consumes:' field to append to`);
@@ -537,10 +1012,10 @@ function mergeRequiredSections(content: string, items: string[], target: string,
     added?.push(...items);
     return content.replace(emptyRe, "required_sections:\n" + render(items));
   }
-  const blockRe = /^(required_sections:\n(?:  - .+\n)*)/m;
+  const blockRe = /^(required_sections:\n(?: {2}- .+\n)*)/m;
   const m = content.match(blockRe);
   if (m) {
-    const existing = new Set([...m[1].matchAll(/^  - (.+?)\s*$/gm)].map((x) => x[1].replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1")));
+    const existing = new Set([...m[1].matchAll(/^ {2}- (.+?)\s*$/gm)].map((x) => x[1].replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1")));
     const toAdd = items.filter((s) => !existing.has(s));
     if (toAdd.length === 0) return content;
     added?.push(...toAdd);
@@ -685,11 +1160,38 @@ try {
       "plugin-owned stages/scopes/agents not composed: installed engine predates the plugin: ownership key - re-copy your dist/<harness>/ shell, then re-run compose",
     );
   } else {
-    changed = copyTreeNoClobber(join(PLUGIN_ROOT, "stages"), STAGES_DIR, "stage", await installedStageSchemaPrecheck()) || changed;
+    const kiroAgentPrechecks = await kiroPluginAgentPrechecks();
+    const stagePrecheck = combinePrechecks(
+      await unsupportedRuntimeModePrecheck(),
+      kiroAgentPrechecks?.stage,
+      await installedStageSchemaPrecheck(),
+    );
+    changed = copyTreeNoClobber(join(PLUGIN_ROOT, "stages"), STAGES_DIR, "stage", stagePrecheck) || changed;
     const scopesDir = join(HARNESS_DIR, "scopes");
     const agentsDir = join(HARNESS_DIR, "agents");
     changed = copyTreeNoClobber(join(PLUGIN_ROOT, "scopes"), scopesDir, "scopes", installedNameCollisionPrecheck(scopesDir, "scopes")) || changed;
-    changed = copyTreeNoClobber(join(PLUGIN_ROOT, "agents"), agentsDir, "agents", installedNameCollisionPrecheck(agentsDir, "agents")) || changed;
+    changed = copyTreeNoClobber(
+      join(PLUGIN_ROOT, "agents"),
+      agentsDir,
+      "agents",
+      combinePrechecks(
+        kiroAgentPrechecks?.agent,
+        installedNameCollisionPrecheck(agentsDir, "agents"),
+      ),
+      HARNESS_LEAF === ".aidlc"
+        ? ({ content }) => projectOpencodeAgentMemory(content)
+        : undefined,
+    ) || changed;
+    if (HARNESS_LEAF === ".aidlc") {
+      const nativeAgentsDir = join(PROJECT_DIR, ".opencode", "agents");
+      changed = copyTreeNoClobber(
+        join(PLUGIN_ROOT, "agents"),
+        nativeAgentsDir,
+        "OpenCode native agents",
+        opencodeNativeAgentPrecheck(nativeAgentsDir),
+        (ctx) => projectOpencodeAgentMemory(emitOpencodeNativeAgent(ctx)),
+      ) || changed;
+    }
   }
   changed = copyTreeNoClobber(join(PLUGIN_ROOT, "knowledge"), join(HARNESS_DIR, "knowledge"), "knowledge") || changed;
   changed = copyTreeNoClobber(join(PLUGIN_ROOT, "sensors"), join(HARNESS_DIR, "sensors"), "sensor") || changed;
@@ -717,7 +1219,8 @@ try {
   })();
   const recordContrib = (target: string, field: keyof StageContribRecord, values: string[]): void => {
     if (values.length === 0) return;
-    const rec = (contribManifest[target] ??= {});
+    contribManifest[target] ??= {};
+    const rec = contribManifest[target];
     if (field === "required_sections_created") return; // set directly, not via list
     const prior = new Set((rec[field] as string[] | undefined) ?? []);
     for (const v of values) prior.add(v);
@@ -776,9 +1279,9 @@ try {
       // regex stops at the first non-4-space entry, so a mis-indented line
       // silently truncated the list (entries after it vanished with no log).
       const listOf = (f: string): string[] => {
-        const s = addsBlock.match(new RegExp(`^  ${f}:\\n((?:    - [\\w-]+\\n?)*)`, "m"));
-        const parsed = s ? [...s[1].matchAll(/^    - ([\w-]+)/gm)].map((x) => x[1]) : [];
-        const declaredBlock = addsBlock.match(new RegExp(`^  ${f}:\\n((?:\\s+- .*\\n?)*)`, "m"))?.[1] ?? "";
+        const s = addsBlock.match(new RegExp(`^ {2}${f}:\\n((?: {4}- [\\w-]+\\n?)*)`, "m"));
+        const parsed = s ? [...s[1].matchAll(/^ {4}- ([\w-]+)/gm)].map((x) => x[1]) : [];
+        const declaredBlock = addsBlock.match(new RegExp(`^ {2}${f}:\\n((?:\\s+- .*\\n?)*)`, "m"))?.[1] ?? "";
         const declared = (declaredBlock.match(/^\s+- /gm) ?? []).length;
         if (declared > parsed.length) {
           recordDrop(`contribution to ${target}: parsed ${parsed.length} of ${declared} adds.${f} entries (check indentation - entries must be 4-space "    - kebab-name"); some dropped`);
@@ -791,7 +1294,7 @@ try {
         // bind to the artifact above it, or entry 2+ is dropped and required flips
         // (round-2 blocker). Each entry starts at `- artifact:` and owns every
         // following indented non-dash line until the next `- artifact:`.
-        const block = addsBlock.match(/^  consumes:\n((?:    -? .*\n?)*)/m)?.[1];
+        const block = addsBlock.match(/^ {2}consumes:\n((?: {4}-? .*\n?)*)/m)?.[1];
         if (!block) return [];
         const out: Array<{ artifact: string; required: boolean; conditional_on?: string }> = [];
         // Split on ANY-indent `- artifact:` (a YAML-legal 6-space list must still
@@ -819,7 +1322,7 @@ try {
       // author sees it had no effect, per the no-silent-failures contract. (When a
       // surface graduates, add it to IMPLEMENTED_ADDS + a merge call below.)
       const IMPLEMENTED_ADDS = new Set(["produces", "sensors", "consumes", "required_sections"]);
-      for (const km of addsBlock.matchAll(/^  ([a-z_]+):/gm)) {
+      for (const km of addsBlock.matchAll(/^ {2}([a-z_]+):/gm)) {
         if (!IMPLEMENTED_ADDS.has(km[1])) {
           recordDrop(`contribution to ${target}: adds.${km[1]} is not yet an implemented merge surface (only produces/sensors/consumes/required_sections); ignored`, "advisory");
         }
@@ -830,10 +1333,10 @@ try {
       // only a MATCHED pair of outer quotes — a `[^"]` class dropped any value
       // with an interior quote (`"Say "Hi" Section"`) silently (round-5).
       const requiredSections = (() => {
-        const s = addsBlock.match(/^  required_sections:\n((?:    - .*\n?)*)/m)?.[1];
+        const s = addsBlock.match(/^ {2}required_sections:\n((?: {4}- .*\n?)*)/m)?.[1];
         if (!s) return [];
         const out: string[] = [];
-        for (const x of s.matchAll(/^    - (.+?)\s*$/gm)) {
+        for (const x of s.matchAll(/^ {4}- (.+?)\s*$/gm)) {
           const v = x[1].replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1").trim();
           // An empty (or quote-only) value would merge a useless `- ""` into the
           // stage with no signal — drop-log it instead (round-6).
@@ -863,7 +1366,10 @@ try {
       recordContrib(target, "sensors", addedSensors);
       recordContrib(target, "consumes", addedConsumes);
       recordContrib(target, "required_sections", addedSections);
-      if (sectionsMeta.created) (contribManifest[target] ??= {}).required_sections_created = true;
+      if (sectionsMeta.created) {
+        contribManifest[target] ??= {};
+        contribManifest[target].required_sections_created = true;
+      }
       if (addedProduces.length || addedSensors.length || addedConsumes.length || addedSections.length) {
         contribManifestDirty = true;
       }
@@ -967,9 +1473,9 @@ try {
     if (!existsSync(dir)) continue;
     for (const f of readdirSync(dir)) if (f.endsWith(".md")) pluginStages.push({ slug: f.slice(0, -3), phase });
   }
-  // A schema-dropped stage never landed on disk, so it can never reach the
+  // A compose-dropped stage never landed on disk, so it can never reach the
   // graph - expecting it there would force a futile recompile every session.
-  const pluginSlugs = pluginStages.map((s) => s.slug).filter((s) => !schemaDroppedStageSlugs.has(s));
+  const pluginSlugs = pluginStages.map((s) => s.slug).filter((s) => !composeDroppedStageSlugs.has(s));
   const graphPath = join(HARNESS_DIR, "tools", "data", "stage-graph.json");
   const readGraph = (): Array<{ slug?: string; plugin?: string; phase?: string; enabled?: boolean }> | null => {
     try {
@@ -1016,11 +1522,11 @@ try {
   const retryPending = existsSync(retryMarker);
   let recompiled = false;
   if (changed || graphMissingPluginStage || retryPending) {
-    const bun = process.execPath;
-    const r = spawnSync(bun, [join(HARNESS_DIR, "tools", "aidlc-graph.ts"), "compile"], {
+    const [command, ...args] = installedToolCommand("graph", ["compile"]);
+    const r = spawnSync(command, args, {
       cwd: PROJECT_DIR,
       encoding: "utf-8",
-      env: { ...process.env, AIDLC_HARNESS_DIR: HARNESS_LEAF },
+      env: installedToolEnv(),
     });
     if (r.status !== 0) {
       recordDrop(`aidlc-graph compile failed: ${(r.stderr || "").slice(0, 400)}`);
@@ -1042,10 +1548,10 @@ try {
     if (!skillsDirExists) {
       recordDrop(`runner regeneration skipped: ${HARNESS_LEAF}/skills not present in this install`, "advisory");
     } else {
-      const bun = process.execPath;
-      const runnerEnv = { ...process.env, AIDLC_HARNESS_DIR: HARNESS_LEAF };
+      const runnerEnv = installedToolEnv();
       const runRunnerGen = (args: string[], label: string): boolean => {
-        const r = spawnSync(bun, [join(HARNESS_DIR, "tools", "aidlc-runner-gen.ts"), ...args], {
+        const [command, ...commandArgs] = installedToolCommand("runner", args);
+        const r = spawnSync(command, commandArgs, {
           cwd: PROJECT_DIR,
           encoding: "utf-8",
           env: runnerEnv,
@@ -1068,3 +1574,6 @@ try {
 // Flush any recorded drops to the installed hooks-health dir (--doctor surfaces
 // them). Best-effort — flushDrops swallows its own errors.
 await flushDrops();
+}
+
+if (import.meta.main) await compose();

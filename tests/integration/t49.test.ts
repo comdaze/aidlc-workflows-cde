@@ -92,6 +92,7 @@ const REPO_ROOT = join(import.meta.dir, "..", "..");
 const TOOLS = join(REPO_ROOT, "dist", "claude", ".claude", "tools");
 const STATE = join(TOOLS, "aidlc-state.ts");
 const UTIL = join(TOOLS, "aidlc-utility.ts");
+const LOG = join(TOOLS, "aidlc-log.ts");
 
 // P4: init births a per-intent record (aidlc/spaces/<space>/intents/<slug>-<id8>/);
 // state lands at <record>/aidlc-state.md and audit in per-clone shards under
@@ -141,6 +142,10 @@ interface CliResult {
 function run(tool: string, args: string[], p: string): CliResult {
   const res = spawnSync(BUN, [tool, ...args, "--project-dir", p], {
     encoding: "utf-8",
+    env: {
+      ...process.env,
+      AIDLC_ALLOW_DIRECT_STATE_TRANSITIONS: "1",
+    },
   });
   const stdout = res.stdout ?? "";
   return {
@@ -277,7 +282,7 @@ beforeAll(() => {
   proj = createTestProject();
 
   // init --scope bugfix (the .sh's `bun "$UTIL" init --scope bugfix`).
-  const init = run(UTIL, ["init", "--scope", "bugfix"], proj);
+  const init = run(UTIL, ["intent-birth", "--scope", "bugfix"], proj);
   expect(init.status).toBe(0);
   // P4: resolve the state path only AFTER init — birth creates the per-intent
   // record + active-intent cursor that statePath/recordDirOf follow. Computing
@@ -301,6 +306,10 @@ beforeAll(() => {
   // Step 3: revise [R] -> [?]
   expect(run(STATE, ["revise", "requirements-analysis"], proj).status).toBe(0);
   stateAfterRevise = readFileSync(sp, "utf-8");
+  // requirements-analysis declares a reviewer; record a fresh terminal review
+  // (after the revise) so the §12a gate precondition passes. This test targets
+  // the reject/revise transition trail, not the reviewer gate.
+  run(LOG, ["review", "--stage", "requirements-analysis", "--reviewer", "aidlc-product-lead-agent", "--iteration", "1", "--verdict", "READY"], proj);
   // Step 4: approve [?] -> [x] (auto-advances to the next in-scope stage).
   approveAck = run(
     STATE,

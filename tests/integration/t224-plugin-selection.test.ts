@@ -29,7 +29,13 @@ function harnessPath(project: string): string {
   return join(project, ".claude", "tools", "data", "harness.json");
 }
 
-function graph(project: string): Array<Record<string, any>> {
+interface GraphStage {
+  slug?: string;
+  enabled?: false;
+  produces?: string[];
+  sensors?: string[];
+}
+function graph(project: string): GraphStage[] {
   return JSON.parse(readFileSync(graphPath(project), "utf-8"));
 }
 
@@ -489,7 +495,7 @@ describe("t224 plugin selection - install chooses visible plugin surfaces", () =
     expect(selectedBoth.status).toBe(0);
     expect(JSON.stringify(grid(composedProj)[scopeName])).toBe(seededEntryJson);
 
-    const init = runUtility(composedProj, ["init", "--scope", scopeName, "--project-dir", composedProj]);
+    const init = runUtility(composedProj, ["intent-birth", "--scope", scopeName, "--project-dir", composedProj]);
     expect(init.status).toBe(0);
 
     const next = runOrchestrate(composedProj, ["next", "--scope", scopeName]);

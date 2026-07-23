@@ -44,16 +44,6 @@ export type EmitContext = {
    * plugin must not re-resolve it.
    */
   tierCap: "judgment" | "balanced" | "templated" | null;
-  /** True for a --check run (verify only, write nothing). */
-  check: boolean;
-};
-
-/** The result of an emit() run: the files it owns, for the orphan scan + --check. */
-export type EmitResult = {
-  /** Absolute paths the emit plugin wrote (or would write under --check). */
-  written: string[];
-  /** Problems found under --check (MISSING/DIFFERS/...), empty on a clean run. */
-  problems: string[];
 };
 
 /**
@@ -77,7 +67,7 @@ export type OnboardingSpec = {
 export type HarnessManifest = {
   /** Harness name; matches the dist/<name>/ and harness/<name>/ dir. */
   name: string;
-  /** The harness directory the token substitutes to (".claude" | ".kiro" | ".codex"). */
+  /** The harness directory the token substitutes to (".claude" | ".kiro" | ".codex" | ".aidlc"). */
   harnessDir: string;
   /**
    * Which tier-projection flavor this harness's agent surfaces use
@@ -85,7 +75,7 @@ export type HarnessManifest = {
    * new harness picks its projection shape in its manifest - the packager
    * never infers it from the harness name.
    */
-  tierFlavor: "claude" | "codex" | "kiro";
+  tierFlavor: "claude" | "codex" | "kiro" | "opencode";
   /** core/<src> → <harnessDir>/<dst> projections. */
   coreDirs: DirMap[];
   /** harness/<name>/<src> → <harnessDir>/<dst> authored-file copies. */
@@ -111,8 +101,6 @@ export type HarnessManifest = {
   onboarding?: OnboardingSpec | null;
   /** Rename core's rules/ dir to this (kiro: "steering", codex: "aidlc-rules", claude: null). */
   rulesRename: string | null;
-  /** Authored files allowed inside generated/copied dirs (skip the orphan scan). */
-  authoredExempt: RegExp[];
   /**
    * Skip the packager's standard runner-gen step (write + scopes into
    * <harnessDir>/skills/). Codex sets this: it ships NO skills inside
@@ -122,8 +110,12 @@ export type HarnessManifest = {
    * needs the compiled .codex/tools/data/*.json). Claude/Kiro leave this false.
    */
   skipRunnerGen?: boolean;
-  /** Optional per-shell emission plugin (codex only today). */
-  emit: ((ctx: EmitContext) => EmitResult) | null;
+  /**
+   * Optional per-shell emission plugin (codex only today). It always writes
+   * into ctx.distRoot; under --check the packager supplies a temporary root and
+   * compares the complete generated tree with the committed distribution.
+   */
+  emit: ((ctx: EmitContext) => void) | null;
   /**
    * How AIDLC plugins project into THIS harness (the hybrid delivery seam).
    * Optional: when omitted, the packager derives a sensible default from

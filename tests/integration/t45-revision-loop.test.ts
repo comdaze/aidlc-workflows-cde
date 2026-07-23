@@ -70,6 +70,7 @@ import {
 const BUN = process.execPath; // the bun running this test
 const UTIL = join(AIDLC_SRC, "tools", "aidlc-utility.ts");
 const STATE = join(AIDLC_SRC, "tools", "aidlc-state.ts");
+const LOG = join(AIDLC_SRC, "tools", "aidlc-log.ts");
 
 const SLUG = "requirements-analysis";
 
@@ -117,6 +118,10 @@ function readAudit(p: string): string {
 function state(args: string[]): void {
   const r = spawnSync(BUN, [STATE, ...args, "--project-dir", proj], {
     encoding: "utf-8",
+    env: {
+      ...process.env,
+      AIDLC_ALLOW_DIRECT_STATE_TRANSITIONS: "1",
+    },
   });
   expect(
     r.status,
@@ -167,7 +172,7 @@ beforeAll(() => {
   // Init bugfix scope — leaves requirements-analysis in [-] ready to gate.
   const init = spawnSync(
     BUN,
-    [UTIL, "init", "--scope", "bugfix", "--project-dir", proj],
+    [UTIL, "intent-birth", "--scope", "bugfix", "--project-dir", proj],
     { encoding: "utf-8", env: { ...process.env, AIDLC_WORKFLOW_INTENT: "revision loop test" } },
   );
   expect(init.status, `init stderr=${init.stderr ?? ""}`).toBe(0);
@@ -192,6 +197,10 @@ beforeAll(() => {
 
   // --- Final: revise -> approve (lands [x]) ---
   state(["revise", SLUG]);
+  // requirements-analysis declares a reviewer; the §12a gate precondition needs
+  // a fresh terminal REVIEW_COMPLETED (after the last revise) before approve
+  // commits. This test targets the revision loop, not the reviewer gate.
+  spawnSync(BUN, [LOG, "review", "--stage", SLUG, "--reviewer", "aidlc-product-lead-agent", "--iteration", "1", "--verdict", "READY", "--project-dir", proj], { encoding: "utf-8" });
   state(["approve", SLUG, "--user-input", "accept as-is"]);
   snap.cbFinal = checkboxMarker(readState());
 });

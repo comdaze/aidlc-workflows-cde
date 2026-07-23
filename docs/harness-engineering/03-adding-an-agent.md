@@ -1,12 +1,13 @@
 # Adding an Agent
 
 An agent is the *who* of the framework — a persona with a domain, a tool
-allowlist, and a tier. The 11 shipped agents cover product, design, delivery,
-architecture, AWS platform, compliance, DevSecOps, development, quality,
-pipeline-deploy, and operations. When your team needs a domain the framework
-doesn't cover (a data-governance reviewer or a mobile specialist, say), you
-add a persona by dropping a single Markdown file
-into `core/agents/`. No TypeScript.
+allowlist, and a tier. The 14 shipped agents comprise 11 domain experts
+covering product, design, delivery, architecture, AWS platform, compliance,
+DevSecOps, development, quality, pipeline-deploy, and operations; two
+review-only agents; and the adaptive-workflows composer. When your team needs
+a domain the framework doesn't cover (a data-governance reviewer or a mobile
+specialist, say), you add a persona by dropping a single Markdown file into
+`core/agents/`. No TypeScript.
 
 This chapter walks the workflow: what a persona file is, the judgment calls in
 its frontmatter, and the two-step truth that an agent which is *visible* is not
@@ -21,7 +22,7 @@ Agents](../guide/06-agents.md).
 Every agent is one flat file at `core/agents/<slug>-agent.md`: YAML
 frontmatter on top, a Markdown body below. The shipped files all carry the
 `aidlc-` prefix (`aidlc-architect-agent.md`, `aidlc-developer-agent.md`); a file
-you add is yours and need not use that prefix. Treat the shipped 11 as
+you add is yours and need not use that prefix. Treat the shipped 14 as
 framework files — they get overwritten on upgrade, so customize *what an
 existing agent knows* through team knowledge rather than editing the file (see
 [Team knowledge](07-team-knowledge.md)). A genuinely new persona is a different
@@ -64,7 +65,7 @@ The parser keys off this, and a mismatch is the easiest way to author an agent
 that never resolves. The loader rejects duplicate agent `name` values across
 files and names both files in the error.
 
-**An agent inherits the full session toolset by default.** None of the 11
+**An agent inherits the full session toolset by default.** None of the 14
 shipped agents declare a `tools:` allowlist, so each one reaches every tool the
 session provides — `Read`, `Edit`, `Write`, `Glob`, `Grep`, `AskUserQuestion`,
 `Bash`, `WebSearch`, and the inherited MCP tools alike. To narrow a persona,
@@ -94,7 +95,9 @@ never silently downgraded. Pick `balanced` for reviewer-shaped personas that
 judge novel input against explicit criteria. Pick `templated` only when the
 output is dominantly pattern-following and the methodology is already encoded
 in the agent's knowledge files, as with delivery plans, CI/CD YAML, and
-runbook scaffolding -- templated is the one tier that steps effort down. When
+runbook scaffolding -- templated is the one tier that steps effort down (on
+Claude Code, Codex, and opencode; on Kiro all tiers inherit the session model
+and effort, so the tier changes nothing there). When
 in doubt, use `judgment`: the projection table (and a project's `tier_cap`)
 can always step cost down later, but a persona authored too low silently
 under-reasons. See [Agent System](../reference/05-agent-system.md) for the
@@ -160,7 +163,7 @@ Mirroring the reference recipe, here is the workflow end to end.
    where it leads or supports, then recompile (`bun .claude/tools/aidlc-graph.ts compile`)
    so `stage-graph.json` regenerates. Never hand-edit `stage-graph.json` — it is
    a build artifact, and the next compile overwrites a manual change (see
-   [Adding a Stage](02-adding-a-stage.md#4-compile-so-stage-graphjson-regenerates)).
+   [Adding a Stage](02-adding-a-stage.md#4-regenerate-the-harnesses-so-stage-graphjson-recompiles)).
    This is the step that makes it active.
 4. **Document the team-knowledge directory** — note that a team adds its
    standards under the space-level `aidlc/knowledge/<slug>-agent/`. The engine
@@ -201,7 +204,7 @@ one, see [Agent System: How to Modify an Agent](../reference/05-agent-system.md#
   Update them in the same change that adds the agent.
 - **The agent file's body.** Only the frontmatter is parsed; the body prose is
   read by the agent itself when it activates, so write it carefully to match the
-  shipped 11.
+  shipped 14.
 
 ---
 

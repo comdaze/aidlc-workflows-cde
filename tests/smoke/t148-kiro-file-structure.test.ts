@@ -13,6 +13,10 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  HARNESS_MATRIX,
+  manifestGrantsIdeAgentTools,
+} from "../harness/harness-matrix.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const KIRO = join(REPO_ROOT, "dist", "kiro");
@@ -20,6 +24,32 @@ const K = join(KIRO, ".kiro");
 
 function readJson(p: string): Record<string, unknown> {
   return JSON.parse(readFileSync(p, "utf-8")) as Record<string, unknown>;
+}
+
+interface StageNode {
+  mode?: string;
+  lead_agent?: string;
+  support_agents?: string[];
+  reviewer?: string;
+}
+
+function dispatchedSpaceWriters(harness: "kiro" | "kiro-ide"): string[] {
+  const graph = JSON.parse(
+    readFileSync(
+      join(REPO_ROOT, "dist", harness, ".kiro", "tools", "data", "stage-graph.json"),
+      "utf-8",
+    ),
+  ) as StageNode[];
+  return [...new Set(
+    graph
+      .flatMap((stage) => [
+        ...(stage.mode !== "inline"
+          ? [stage.lead_agent, ...(stage.support_agents ?? [])]
+          : []),
+        stage.reviewer,
+      ])
+      .filter((agent): agent is string => typeof agent === "string"),
+  )].sort();
 }
 
 describe("t148 dist/kiro file structure", () => {
@@ -88,6 +118,62 @@ describe("t148 dist/kiro file structure", () => {
     }
   });
 
+  test("IDE-agent capability ignores unrelated frontmatter additions", () => {
+    expect(
+      manifestGrantsIdeAgentTools({
+        frontmatterAdditions: [
+          { file: "agents/aidlc-example-agent.md", lines: ["badge: example"] },
+          { file: "skills/aidlc/SKILL.md", lines: [`tools: ["read"]`] },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      manifestGrantsIdeAgentTools({
+        frontmatterAdditions: [
+          { file: "agents/aidlc-example-agent.md", lines: [`tools: ["read"]`] },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  test("every dispatched graph writer has a space-scoped write grant on Kiro CLI and IDE", () => {
+    for (const harness of ["kiro", "kiro-ide"] as const) {
+      const agentsDir = join(REPO_ROOT, "dist", harness, ".kiro", "agents");
+      const writers = dispatchedSpaceWriters(harness);
+      expect(writers.length).toBeGreaterThan(0);
+      for (const agent of writers) {
+        const config = readJson(join(agentsDir, `${agent}.json`));
+        expect(config.tools as string[]).toContain("fs_write");
+        const settings = config.toolsSettings as Record<string, { allowedPaths?: string[] }>;
+        expect(settings.fs_write?.allowedPaths).toContain("aidlc/spaces/**");
+      }
+    }
+  });
+
+  test("shared Kiro CLI and IDE agent JSON sources remain byte-identical", () => {
+    const cliDir = join(REPO_ROOT, "harness", "kiro", "agents");
+    const ideDir = join(REPO_ROOT, "harness", "kiro-ide", "agents");
+    const intentionalReviewerDifferences = new Set([
+      "aidlc-architecture-reviewer-agent.json",
+      "aidlc-product-lead-agent.json",
+    ]);
+    const shared = readdirSync(cliDir)
+      .filter((name) => name.endsWith("-agent.json"))
+      .filter((name) => !intentionalReviewerDifferences.has(name))
+      .sort();
+    expect(
+      readdirSync(ideDir)
+        .filter((name) => name.endsWith("-agent.json"))
+        .filter((name) => !intentionalReviewerDifferences.has(name))
+        .sort(),
+    ).toEqual(shared);
+    for (const name of shared) {
+      expect(readFileSync(join(ideDir, name), "utf-8")).toBe(
+        readFileSync(join(cliDir, name), "utf-8"),
+      );
+    }
+  });
+
   test("IDE-native tools: frontmatter grant on delegation targets - kiro-ide ONLY", () => {
     // The Kiro IDE resolves a delegated subagent's tools from the agent .md
     // frontmatter, not from the agent-v1 JSON the CLI reads (field-proven:
@@ -104,28 +190,36 @@ describe("t148 dist/kiro file structure", () => {
     // The delegation-target roster IS the set of hand-authored agent JSONs
     // (minus the conductor aidlc.json) - derive it from disk so a future
     // delegate added without a grant reds here instead of shipping toolless
-    // (the original field bug). Every delegate gets read+write+shell:
-    // builders author artifacts and reviewers append a `## Review` section
-    // to the primary artifact (stage protocol 12a - the same fs_write their
-    // CLI JSONs grant). Every NON-delegate kiro-ide agent must have NO grant
-    // (catches the injection landing on the wrong file).
+    // (the original field bug). Every delegate carries fs_write in its CLI
+    // JSON (builders author artifacts; reviewers append `## Review` per 12a;
+    // ensemble collaborators (2.5.0) write their own contribution files per
+    // stage-protocol §11 - everyone writes, the lead owns the produces[]
+    // artifacts), so every delegate's IDE grant is read+write+shell. The
+    // grant is still DERIVED from the CLI JSON rather than hardcoded, so a
+    // future read-only delegate stays expressible. Every NON-delegate
+    // kiro-ide agent must have NO grant (catches the injection landing on
+    // the wrong file).
     const delegates = readdirSync(IDE_AGENTS)
       .filter((n) => n.endsWith("-agent.json"))
       .map((n) => n.replace(/\.json$/, ".md"));
-    expect(delegates.length).toBeGreaterThanOrEqual(5);
+    expect(delegates.length).toBeGreaterThanOrEqual(14);
     for (const f of readdirSync(IDE_AGENTS).filter((n) => n.endsWith(".md"))) {
       if (delegates.includes(f)) {
-        expect(fmToolsOf(join(IDE_AGENTS, f))).toBe(`["read", "write", "shell"]`);
+        const cliJson = readJson(join(IDE_AGENTS, f.replace(/\.md$/, ".json")));
+        const writes = ((cliJson.tools as string[]) ?? []).includes("fs_write");
+        expect(fmToolsOf(join(IDE_AGENTS, f))).toBe(
+          writes ? `["read", "write", "shell"]` : `["read", "shell"]`,
+        );
       } else {
         expect(fmToolsOf(join(IDE_AGENTS, f))).toBeUndefined();
       }
     }
     // Leak guard: the grant is IDE-native and must not ship anywhere else.
-    for (const tree of [
-      join(REPO_ROOT, "dist", "claude", ".claude", "agents"),
-      join(K, "agents"), // dist/kiro (CLI)
-      join(REPO_ROOT, "dist", "codex", ".codex", "agents"),
-    ]) {
+    const nonIdeAgentTrees = HARNESS_MATRIX.filter(
+      (harness) => !harness.capabilities.ideAgentTools,
+    ).map((harness) => join(harness.engineRoot, "agents"));
+    expect(nonIdeAgentTrees.length).toBeGreaterThan(0);
+    for (const tree of nonIdeAgentTrees) {
       for (const f of readdirSync(tree).filter((n) => n.endsWith(".md"))) {
         expect(fmToolsOf(join(tree, f))).toBeUndefined();
       }
@@ -155,26 +249,28 @@ describe("t148 dist/kiro file structure", () => {
     expect(s["chat.defaultAgent"]).toBe("aidlc");
   });
 
-  test("workspace pins per-model efforts via chat.modelDefaults (orchestrator + tier models)", () => {
-    // The shipped cli.json carries one entry per model AIDLC pins: the
-    // authored orchestrator entry (claude-opus-4.8 -> xhigh, exactly as
-    // agents/aidlc.json pins it) plus one tier-projected entry per distinct
-    // model the tier table names (claude-sonnet-4.5 -> high — balanced's
-    // effort wins the balanced/templated collapse; judgment pins no model so
-    // it has no entry). Kiro's per-model default sub-path is
-    // output_config.effort (per kiro.dev/docs/cli/chat/effort). Pin the whole
-    // map so neither the authored default nor the projection can regress.
+  test("workspace pins per-model efforts via chat.modelDefaults (authored conditional entries only)", () => {
+    // The shipped cli.json carries ONLY the authored orchestrator entry
+    // (claude-opus-4.8 -> xhigh): a CONDITIONAL per-model effort default that
+    // applies only when the session actually runs that model — inert for
+    // spawns and harmless when the model isn't enabled. No agent surface
+    // pins a model anymore (#601: shipped IDs resolve only when enabled on
+    // the user's install), and no tier pins a Kiro model, so no tier-derived
+    // entry ships. Kiro's per-model default sub-path is output_config.effort
+    // (per kiro.dev/docs/cli/chat/effort). Pin the whole map so neither the
+    // authored default nor a resurrected projection pin can regress.
     const s = readJson(join(K, "settings", "cli.json"));
     const defaults = s["chat.modelDefaults"] as Record<
       string,
       { output_config?: { effort?: string } }
     >;
     expect(defaults?.["claude-opus-4.8"]?.output_config?.effort).toBe("xhigh");
-    expect(defaults?.["claude-sonnet-4.5"]?.output_config?.effort).toBe("high");
-    expect(Object.keys(defaults ?? {}).sort()).toEqual([
-      "claude-opus-4.8",
-      "claude-sonnet-4.5",
-    ]);
+    expect(Object.keys(defaults ?? {}).sort()).toEqual(["claude-opus-4.8"]);
+  });
+
+  test("no shipped Kiro agent surface pins a model (#601: agents inherit the session model)", () => {
+    const a = readJson(join(K, "agents", "aidlc.json"));
+    expect("model" in a).toBe(false);
   });
 
   test("kiro skills carry the kiro tool prefix, never the claude one", () => {

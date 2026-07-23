@@ -2,10 +2,13 @@
 
 All AI-DLC commands start with the orchestrator invocation. This chapter is a complete reference for every invocation pattern and flag.
 
-> **Invocation prefix differs by harness.** On Claude Code and Kiro IDE you type
-> `/aidlc`; on Codex CLI it is `$aidlc` (or `/skills` → aidlc). The flags and
-> behaviour below are identical either way — only the prefix changes. The examples
-> use `/aidlc`; substitute `$aidlc` on Codex. See [Running on Codex CLI](harnesses/codex-cli.md).
+> **Invocation prefix differs by harness.** On Claude Code, Kiro IDE, Kiro CLI,
+> and opencode you type `/aidlc`; on Codex CLI it is `$aidlc` (or `/skills` →
+> aidlc). The flags and behaviour below are identical either way — only the
+> prefix changes. The examples use `/aidlc`; substitute `$aidlc` on Codex. See
+> the [Kiro CLI](harnesses/kiro-cli.md), [Kiro IDE](harnesses/kiro-ide.md),
+> [Codex CLI](harnesses/codex-cli.md), and
+> [opencode](harnesses/opencode.md) harness guides.
 
 ---
 
@@ -19,17 +22,26 @@ All AI-DLC commands start with the orchestrator invocation. This chapter is a co
 | `/aidlc compose --report <path>` | Compose from a scan report (triage findings into a compact fix-and-ship run) |
 | `/aidlc --new-scope "<task>"` | Force the composer to synthesize a custom scope even when a stock scope matches |
 | `/aidlc` | Resume an existing workflow (if an intent exists) or birth the first intent and start new |
+| `/aidlc intent [name]` | List intents in the active space, or switch to an existing intent |
+| `/aidlc space [name]` | List spaces, or switch to an existing space |
+| `/aidlc space-create <name>` | Create a new space from the framework baseline |
 | `/aidlc --status` | Display a read-only status summary |
 | `/aidlc --doctor` | Run a health check on your setup |
+| `/aidlc --doctor --export` | Run a fresh health check, then write a small, redacted diagnostic report for sharing |
 | `/aidlc --stage <slug\|#>` | Jump to a specific stage |
 | `/aidlc --stage <slug> --single` | Run one stage in isolation, without advancing your workflow |
 | `/aidlc --phase <name\|#>` | Jump to the start of a phase |
 | `/aidlc --scope <name>` | Change the active scope |
 | `/aidlc --depth <level>` | Override depth level (minimal, standard, comprehensive) |
 | `/aidlc --test-strategy <level>` | Override test strategy (minimal, standard, comprehensive) |
+| `/aidlc config get <key>` | Print active workflow config (`depth`, `test-strategy`) |
+| `/aidlc config set <key> <value>` | Change active workflow config (`depth`, `test-strategy`) |
+| `/aidlc config list` | List active workflow config (`--json` for structured output) |
+| `/aidlc plugin list` | List installed plugins and enabled state |
+| `/aidlc plugin sync` | Compose installed plugin roots into the current install |
 | `/aidlc --version` | Print the framework version |
 | `/aidlc --help` | Display usage information |
-| `bun .claude/tools/aidlc-utility.ts select-plugins [names]` | Show or set the enabled plugin list for this install |
+| `bun .claude/tools/aidlc-utility.ts select-plugins [names]` | Direct-only: show or set the enabled plugin list for this install |
 
 ---
 
@@ -133,7 +145,7 @@ Force the composer even when a stock scope would match. Works in three moments:
 /aidlc compose            (mid-workflow: re-shape the pending stages)
 ```
 
-**Behavior:** the conductor dispatches the composer agent, which reads your task (or the scan report, or the running workflow's state), runs the read-only `detect` scan, and proposes an EXECUTE/SKIP grid with a reason for every SKIP. You approve, edit, or reject at a gate. On approve: a stock match births directly; a custom grid is authored as a real scope (two files in the installed tree) and the workflow births on it in the same turn; an in-flight proposal lands as pending-stage suffix flips via the `recompose` verb (under the audit lock, strict-validated, `RECOMPOSED` audited). `--new-scope` forces synthesis; `--report <path>` seeds the triaged findings into the intent. The `/aidlc-compose` skill is a typeable shortcut over the same path. Mid-workflow you can also just say it in chat ("can we skip market research?") - the conductor recognizes a reshape request and routes it through the same gate and verb, no literal `compose` needed (on Kiro and Codex the literal verb remains the documented reliable path).
+**Behavior:** the conductor dispatches the composer agent, which reads your task (or the scan report, or the running workflow's state), runs the read-only `detect` scan, estimates the five implementation-entropy components (intent ambiguity, structural uncertainty, verification entropy, risk, unresolved assumptions - grounded in CodeKB MCP analysis when configured, the workspace scan otherwise), and proposes the minimum viable EXECUTE/SKIP grid with the score breakdown and a reason for every EXECUTE and SKIP. You approve, edit, or reject at a gate. On approve: a stock match births directly; a custom grid is authored as a real scope (two files in the installed tree) and the workflow births on it in the same turn; an in-flight proposal lands as pending-stage suffix flips via the `recompose` verb (under the audit lock, strict-validated, `RECOMPOSED` audited). `--new-scope` forces synthesis; `--report <path>` seeds the triaged findings into the intent. The `/aidlc-compose` skill is a typeable shortcut over the same path. Mid-workflow you can also just say it in chat ("can we skip market research?") - the conductor recognizes a reshape request and routes it through the same gate and verb, no literal `compose` needed (on the non-Claude harnesses the literal verb remains the documented reliable path).
 
 See [Scopes and Depth - The Adaptive Composer](05-scopes-and-depth.md#the-adaptive-composer) for the full flow.
 
@@ -192,6 +204,30 @@ workspace/project dir). See [Artifacts Reference](14-artifacts-reference.md).
 
 ---
 
+### `/aidlc intent [name]` — List or switch intents
+
+Bare `/aidlc intent` lists the intents in the active space; add `--json` for
+structured output. `/aidlc intent <name>` switches the per-user active-intent
+cursor to an existing intent by unambiguous slug or full record-dir name. It
+never creates an intent or advances a workflow.
+
+### `/aidlc space [name]` — List or switch spaces
+
+Bare `/aidlc space` lists spaces; add `--json` for structured output.
+`/aidlc space <name>` switches the per-user active-space cursor and re-points
+the harness-native method include to that space. It never creates a space or
+advances an intent.
+
+### `/aidlc space-create <name>` — Create a space
+
+Creates a new team space with the full `memory/`, `knowledge/`, `codekb/`, and
+`intents/` shape, seeded from the framework baseline rather than another
+team's learned practices. It does not switch spaces automatically. See
+[Spaces and Intents](03-spaces-and-intents.md) for the workspace model,
+switching examples, and what is committed.
+
+---
+
 ### `/aidlc --status` — Read-only status
 
 Display current workflow progress without modifying anything.
@@ -210,6 +246,8 @@ Display current workflow progress without modifying anything.
 
 Validate that all of this implementation's prerequisites, configuration, and stage-graph integrity are in place. Exits 0 on full pass, 1 on any failure; the full report writes to stdout in both cases so the orchestrator surfaces it either way. `--doctor` is **read-only** — on a fresh shell with no intent yet (no `audit/` shards) it creates no files, so it is safe to run before the first intent is born; once an intent exists it records a `HEALTH_CHECKED` audit row.
 
+When a workflow has issues, `--doctor` also prints a **Workflow diagnosis** section listing the structured findings (e.g. `gate-unresolved`, `runtime-graph-stale`) for unresolved gates, a stale or missing runtime graph, cold hooks, and similar "it will not advance" causes. The live report and `--export` share one analysis, so the findings are identical either way.
+
 **Syntax:**
 
 ```
@@ -221,7 +259,7 @@ Validate that all of this implementation's prerequisites, configuration, and sta
 | Check | What it validates |
 |-------|-------------------|
 | Prerequisites | `bun` is installed and on PATH |
-| Hook presence | Every hook `settings.json` wires (its `hooks` blocks + the `statusLine` command — all 12 framework hooks) exists in `.claude/hooks/`; a wired-but-missing hook fails loudly. Sourcing the expected roster from `settings.json` means adding a hook there auto-checks it |
+| Hook presence | Every hook `settings.json` wires (its `hooks` blocks + the `statusLine` command — all 13 framework hooks) exists in `.claude/hooks/`; a wired-but-missing hook fails loudly. Sourcing the expected roster from `settings.json` means adding a hook there auto-checks it |
 | Project structure | `.claude/settings.json` exists (file presence only, no content validation) |
 | Workspace shell | `.claude/` + `aidlc/spaces/default/memory/` are present (the shipped shell) |
 | Submodules | If a `.gitmodules` is present, reports how many submodule paths are declared and how many are uninitialized, naming `git submodule update --init --recursive` when any are (advisory - never fails) |
@@ -272,6 +310,70 @@ Validate that all of this implementation's prerequisites, configuration, and sta
 
 ---
 
+### `/aidlc --doctor --export` — Write a diagnostic report
+
+Add `--export` to `--doctor` to write a small, redacted diagnostic report so a
+misbehaving workflow can be debugged without sharing your whole project
+directory. It runs a **fresh** doctor pass first (the report never reflects a
+cached diagnosis), then writes the report. The report write never changes
+doctor's exit code.
+
+**Syntax:**
+
+```
+/aidlc --doctor --export
+/aidlc --doctor --export --output <dir>
+```
+
+`--output <dir>` overrides the output location; the default is
+`aidlc/diagnostics/` under the project.
+
+**What it produces:** a timestamped `.tar.gz` when a system `tar` is available,
+otherwise the report directory is retained with instructions to compress it
+yourself before sharing (no new package dependency, no bespoke archive writer).
+The report contains:
+
+| File | Contents |
+|------|----------|
+| `report.md` | Human-readable workflow timeline plus findings |
+| `report.json` | Machine-readable timeline, findings, and summary |
+| `manifest.json` | Report schema version, AI-DLC version, harness, hashed intent id, per-file SHA-256 checksums, applied redactions, truncation notices, and the excluded list |
+| `evidence/normalized.json` | Allowlisted, normalized fields only — never raw files |
+
+**What it diagnoses:** the report reconstructs the workflow **timeline** from the
+audit trail (stage durations, gates, revisions, gaps, and abnormal/incomplete
+flags), then runs **deterministic** condition→remedy rules (no LLM) for the
+common "it will not advance" causes: unresolved approval gates, state/audit
+drift, and a stale or missing runtime graph / cold or frozen hook heartbeats.
+Findings come from the same shared `DoctorFinding` model the
+live `--doctor` uses, so the command and the report can never diverge. A remedy
+that names a recovery bypass (for example an `AIDLC_DISABLE_*` env var or an
+"archive your workspace" instruction) is always flagged as not safe to automate.
+
+**Safety.** The report never includes workspace source, raw state/audit/
+runtime-graph files, artifact/contribution/question/memory bodies, environment
+variables, or command output. Every emitted string is redacted: your home dir
+becomes `~`, the project root becomes `<project>`, intent ids are hashed, and
+secret-like values are scrubbed. Inputs whose real path escapes the project root
+are refused (a symlinked leaf or parent is not followed out of the tree),
+per-file and total size are capped (truncations are recorded in the manifest),
+and files are created owner-only where the platform supports it.
+
+**Example output:**
+
+```
+Diagnostic report created:
+  aidlc/diagnostics/aidlc-diagnostic-report-20260714-153000-3f9a1c22.tar.gz
+
+Findings:
+  ERROR gate-unresolved
+  WARNING runtime-graph-stale
+
+No source files or artifact bodies were included.
+```
+
+---
+
 ### `/aidlc --stage <slug|#>` — Jump to stage
 
 Jump directly to a specific stage by slug or number.
@@ -300,6 +402,9 @@ workflow. The stage runs, writes its artifact, and stops; your workflow's
 `Current Stage` is never advanced — the isolation is enforced by the engine, not
 by convention. Use it to apply one piece of methodology (a requirements
 analysis, a reverse-engineering scan) without committing to a full lifecycle.
+The isolated run still uses the stage's configured agents and reviewer, but it
+does not run workflow learnings or ask for a workflow approval. Its synthetic
+completion is recorded in the audit log, then the command stops.
 
 ```
 /aidlc --stage requirements-analysis --single
@@ -434,9 +539,29 @@ Display a summary of available commands and flags.
 
 ## Deterministic CLI Tools
 
-Beyond the `/aidlc` flags above, this implementation ships three Bun/TypeScript tools that the hooks call automatically as a workflow runs. You rarely invoke them by hand — they keep the audit trail, the Sensor results, and the runtime graph in sync without you asking. They are documented here because they surface in `--doctor` output and in the `audit/` shards, and because each one is a useful debug handle when you want to see what the framework saw.
+Beyond the `/aidlc` flags above, this implementation ships several
+Bun/TypeScript tools that the hooks and stage protocol call as a workflow runs.
+You rarely invoke them by hand, but each is also a useful debug handle.
 
-Run any of them with `bun .claude/tools/<tool>.ts <subcommand>`.
+Use `bun <harness-dir>/tools/<tool>.ts <subcommand>`, where `<harness-dir>` is
+`.claude` on Claude Code, `.kiro` on Kiro CLI and Kiro IDE, and `.codex` on
+Codex CLI.
+
+### `aidlc-utility codekb-path` - resolve the code knowledge directory
+
+This is a **direct utility invocation**, not an `/aidlc codekb-path` command:
+
+```bash
+bun .claude/tools/aidlc-utility.ts codekb-path --repo <repo>
+bun .kiro/tools/aidlc-utility.ts codekb-path --repo <repo>
+bun .codex/tools/aidlc-utility.ts codekb-path --repo <repo>
+```
+
+It prints the active space's deterministic
+`aidlc/spaces/<space>/codekb/<repo>/` path. Add `--json` for
+`{space, repo, dir}`. The query writes nothing, creates no directory, and emits
+no audit event; reverse-engineering stage prose invokes it directly so paths
+are never derived by hand.
 
 ### `aidlc-utility detect` - read-only workspace scan
 
@@ -444,7 +569,11 @@ Run any of them with `bun .claude/tools/<tool>.ts <subcommand>`.
 
 ### `aidlc-utility select-plugins` - install plugin selection
 
-`bun .claude/tools/aidlc-utility.ts select-plugins` prints the current selection (`all enabled (no selection)` when the `plugins` key is absent) and the known plugin names. Pass a comma-separated list to set it:
+`/aidlc plugin list` prints installed plugin names and whether each is enabled.
+`select-plugins` is a **direct utility invocation**, not an `/aidlc select-plugins` command.
+`bun .claude/tools/aidlc-utility.ts select-plugins` prints the current selection
+(`all enabled (no selection)` when the `plugins` key is absent) and the known
+plugin names. Pass a comma-separated list to set it:
 
 ```bash
 bun .claude/tools/aidlc-utility.ts select-plugins test-pro
@@ -452,6 +581,8 @@ bun .claude/tools/aidlc-utility.ts select-plugins aidlc,test-pro
 ```
 
 The command validates names, writes `.claude/tools/data/harness.json`, strips a newly disabled plugin's merged contributions from core stage source (structural adds via the compose-written sidecar, spliced prose via its sentinel markers; re-enabling restores them on the next session start), recompiles the full graph with disabled nodes marked `enabled:false`, prunes/regenerates stage and scope runners, and refreshes the generated SKILL.md scope/stage tables in one transaction. `aidlc` is core; omitting it disables core surfaces except the always-on Initialization stages. A change that would strand an active workflow (its scope, or a pending EXECUTE stage in its plan, owned by a plugin the new selection disables) is refused with each dependency named - complete or park the workflow first, or keep the plugin enabled.
+
+`/aidlc plugin sync` runs installed plugin compose hooks. It is safe to run repeatedly; when no plugin roots are present it exits 0 with `no installed plugins; nothing to sync`.
 
 ### `aidlc-utility recompose` - in-flight plan flips
 
@@ -488,7 +619,7 @@ This is the deterministic half of the §13 learning gate. After a stage is appro
 | Subcommand | What it does |
 |------------|--------------|
 | `surface --slug <stage-slug>` | Read the just-approved stage's `memory.md` and print structured candidates (Interpretations, Deviations, Tradeoffs) plus any parked open questions. Read-only |
-| `persist --slug <stage-slug> --selections-json <path>` | Write the confirmed learnings (a confirmed learning is a practice) to the space memory layer — `aidlc/spaces/<space>/memory/project.md` / `memory/team.md` (and, for a Sensor-binding learning, scaffold and bind a project-tier Sensor), emitting `RULE_LEARNED` / `SENSOR_PROPOSED` |
+| `persist --slug <stage-slug> --selections-json <path>` | Write the confirmed learnings (a confirmed learning is a practice) to `aidlc/spaces/<active-space>/memory/project.md` / `team.md` (and, for a Sensor-binding learning, scaffold and bind a project-tier Sensor), emitting `RULE_LEARNED` / `SENSOR_PROPOSED` |
 
 Confirmed learnings apply on the next workflow, not the current one.
 

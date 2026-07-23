@@ -43,8 +43,9 @@ once). `/aidlc --doctor` fails its "workspace shell ready" check if it is missin
 
 Open `your-project/` in Kiro IDE. The install ships:
 
-- `.kiro/settings/cli.json` with `chat.defaultAgent: "aidlc"`, so the AI-DLC
-  conductor agent is active by default — `/aidlc` just works.
+- `.kiro/skills/aidlc/SKILL.md` — the conductor loaded when you invoke
+  `/aidlc`. The shipped `.kiro/settings/cli.json` and agent-v1 JSON files are
+  CLI-only compatibility surfaces; they do not select an IDE default agent.
 - `.kiro/hooks/*.kiro.hook` — the framework hooks registered in the IDE's
   native hook format. They appear in the IDE's Agent Hooks panel.
 
@@ -111,7 +112,7 @@ ways to enable it, either works:
 | Hook registration | `settings.json` `hooks` block | `.kiro/hooks/*.kiro.hook` files (shown in the Agent Hooks panel) |
 | Gates & questions | `AskUserQuestion` widget | Numbered prose options (reply with a number); the questions FILE with `[Answer]:` tags stays the source of truth |
 | Statusline | Current stage + model + context % | Not available — use `/aidlc --status` and the progress line at each gate |
-| Subagent stages (2.1, 3.5) | `Task` tool | Kiro `subagent` tool → `aidlc-developer-agent` / `aidlc-architect-agent`; the IDE reads a delegate's tool grants from the agent `.md` frontmatter (`tools:`), injected at packaging - the agent-v1 JSONs are CLI-only |
+| Dispatched stages (2.1 pipeline, 2.2 subagent, 2.4 mob, 3.5 subagent) | `Task` tool | Kiro `subagent` tool → the agent configs (all 14 personas); the IDE reads a delegate's tool grants from the agent `.md` frontmatter (`tools:`), injected at packaging - the agent-v1 JSONs are CLI-only |
 | Construction swarm | Parallel `Task` floor, optional ultracode Workflow | Subagent fan-out only; `AIDLC_USE_SWARM=1` is announced as a no-op |
 | Session audit events | `SESSION_STARTED/RESUMED/ENDED`, `SESSION_COMPACTED` | `SESSION_STARTED` / `SESSION_ENDED` (no pre-compaction event) |
 | MCP servers | Ships 5 (`.mcp.json`: `context7` + four AWS servers) | None shipped |
@@ -133,19 +134,20 @@ workflow.
 substituted to `.kiro` and the `rules/` → `steering/` rename). `bun
 scripts/package.ts --check` is the drift guard and runs in CI. The authored
 Kiro IDE surfaces live in `harness/kiro-ide/`: the orchestrator skill
-(`skills/aidlc/`), the agent JSONs (`agents/`), the hook adapter and
-`.kiro.hook` files (`hooks/`), `settings/cli.json`, and `AGENTS.md` — edit
-those (or `core/`), never the generated `dist/kiro-ide`.
+(`skills/aidlc/`), CLI-compatibility agent JSONs (`agents/`), the hook adapter
+and `.kiro.hook` files (`hooks/`), CLI-only `settings/cli.json`, and
+`AGENTS.md` — edit those (or `core/`), never the generated `dist/kiro-ide`.
 
 The IDE harness differs from the CLI harness (`harness/kiro/`) in three ways:
-it ships `.kiro.hook` files (the CLI relies on the agent-JSON `hooks` block,
-which the IDE ignores); its `aidlc.json` omits that dead `hooks` block; and
-its manifest injects a `tools:` frontmatter grant into the delegation-target
-agent `.md` files (`frontmatterAdditions`), because the IDE resolves a
-delegated subagent's tools from the `.md` frontmatter rather than the agent-v1
-JSON - without the grant an IDE delegate runs toolless. Note the frontmatter
-grant is unscoped (the IDE has no `allowedCommands`/`allowedPaths` equivalent
-there), wider than the CLI JSON sandbox.
+the `/aidlc` skill is its conductor rather than an agent selected through
+`settings/cli.json`; it ships `.kiro.hook` files (the CLI relies on the
+agent-JSON `hooks` block, which the IDE ignores); and its manifest injects a
+`tools:` frontmatter grant into the delegation-target agent `.md` files
+(`frontmatterAdditions`), because the IDE resolves a delegated subagent's tools
+from the `.md` frontmatter rather than the agent-v1 JSON - without the grant an
+IDE delegate runs toolless. Note the frontmatter grant is unscoped (the IDE has
+no `allowedCommands`/`allowedPaths` equivalent there), wider than the CLI JSON
+sandbox.
 See [Porting to a New Harness](../../harness-engineering/09-porting-to-a-new-harness.md).
 
 ## Next steps

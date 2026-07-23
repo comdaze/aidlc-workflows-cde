@@ -30,6 +30,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -39,6 +40,7 @@ import { hostname, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { seedCustomHarness } from "./custom-harness.ts";
+import type { ShippedHarnessName } from "./harness-matrix.ts";
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
 const requireHere = createRequire(import.meta.url);
@@ -182,6 +184,15 @@ export function seededRecordDir(proj: string, space = DEFAULT_SPACE): string {
   return join(intentsDirOf(proj, space), DEFAULT_RECORD_DIR);
 }
 
+/** The seeded space-level codekb directory for a repository. */
+export function seededCodekbDir(
+  proj: string,
+  repo = basename(proj),
+  space = DEFAULT_SPACE,
+): string {
+  return join(proj, "aidlc", "spaces", space, "codekb", repo);
+}
+
 /** The seeded state file path: `<record>/aidlc-state.md`. */
 export function seededStateFile(proj: string, space = DEFAULT_SPACE): string {
   return join(seededRecordDir(proj, space), "aidlc-state.md");
@@ -209,6 +220,44 @@ export function seededAuditShard(proj: string, space = DEFAULT_SPACE): string {
   return join(seededAuditDir(proj, space), `${host}-${FIXTURE_CLONE_ID}.md`);
 }
 
+export interface BoltDagUnit {
+  name: string;
+  kind?: string;
+  depends_on?: string[];
+}
+
+/** Seed the active intent's cached Bolt DAG. */
+export function seedBoltDag(
+  proj: string,
+  units: Array<string | BoltDagUnit>,
+  batches?: string[][],
+): void {
+  const normalized = units.map((unit) =>
+    typeof unit === "string"
+      ? { name: unit, depends_on: [] }
+      : { ...unit, depends_on: unit.depends_on ?? [] }
+  );
+  writeFileSync(
+    join(seededRecordDir(proj), "runtime-graph.json"),
+    `${JSON.stringify(
+      {
+        bolt_dag: {
+          units: normalized,
+          batches: batches ?? [normalized.map((unit) => unit.name)],
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf-8",
+  );
+}
+
+/** Seed a Bolt DAG whose topological batches are already known. */
+export function seedBoltDagBatches(proj: string, batches: string[][]): void {
+  seedBoltDag(proj, batches.flat(), batches);
+}
+
 /**
  * Seed a SEED-style workspace shell plus ONE default intent record + cursors +
  * registry, so the path helpers resolve the per-intent record. This is the
@@ -233,6 +282,7 @@ function seedWorkspaceShell(proj: string, space = DEFAULT_SPACE): void {
         {
           uuid: DEFAULT_INTENT_UUID,
           slug: DEFAULT_RECORD_DIR.replace(/-[0-9a-f]+$/, ""),
+          dirName: DEFAULT_RECORD_DIR,
           status: "in-flight",
         },
       ],
@@ -512,7 +562,7 @@ export function setupIntegrationProject(
   }
 
   if (opts.withReArtifacts) {
-    const dest = join(seededRecordDir(proj), "inception", "reverse-engineering");
+    const dest = seededCodekbDir(proj);
     mkdirSync(dest, { recursive: true });
     cpSync(join(FIXTURES_DIR, "re-artifacts"), dest, { recursive: true });
   }
@@ -578,19 +628,12 @@ export function setupIntegrationProject(
 // its own git-init'd sibling repos makes toplevel == dirname(common-dir) hold
 // for each repo, so the guard passes (the same posture setupCodexProject takes).
 //
-// Harness-parameterized so all three logic drivers (Claude SDK · Kiro ACP ·
-// Codex exec) reuse ONE fixture: each copies the shipped dist/<harness>/ shell
-// (engine dir + the sibling aidlc/ memory shell) into the root, exactly as
-// setupIntegrationProject / setupTuiProject / setupCodexProject do.
+// Harness-parameterized so every shipped distribution can reuse ONE fixture:
+// the matrix resolves any discovered harness's dist root, so live drivers and
+// deterministic fixture tests alike pick their row without touching this file.
 // ============================================================================
 
-/** Per-harness dist source paths for the journey shell. Reuses the same dist
- *  trees the other fixtures copy (AIDLC_SRC / KIRO_SRC / the codex shell). */
-const CLAUDE_DIST = join(REPO_ROOT, "dist", "claude");
-const KIRO_DIST = join(REPO_ROOT, "dist", "kiro");
-const CODEX_DIST = join(REPO_ROOT, "dist", "codex");
-
-export type JourneyHarness = "claude" | "kiro" | "codex";
+export type JourneyHarness = ShippedHarnessName;
 
 export interface WorkspaceJourney {
   /** The tmp workspace root (canonical realpath) — the project dir every driver
@@ -642,20 +685,19 @@ export function setupWorkspaceJourney(harness: JourneyHarness = "claude"): Works
   const home = join(root, ".home");
   mkdirSync(home, { recursive: true });
 
-  // 1. Copy the shipped harness shell: the engine dir + the sibling aidlc/ memory
-  //    shell (all three dist trees ship dist/<h>/aidlc/{active-space,spaces/default}).
-  if (harness === "kiro") {
-    cpSync(join(KIRO_DIST, ".kiro"), join(root, ".kiro"), { recursive: true });
-    cpSync(join(KIRO_DIST, "AGENTS.md"), join(root, "AGENTS.md"));
-    cpSync(join(KIRO_DIST, "aidlc"), join(root, "aidlc"), { recursive: true });
-  } else if (harness === "codex") {
-    cpSync(join(CODEX_DIST, ".codex"), join(root, ".codex"), { recursive: true });
-    cpSync(join(CODEX_DIST, ".agents"), join(root, ".agents"), { recursive: true });
-    cpSync(join(CODEX_DIST, "AGENTS.md"), join(root, "AGENTS.md"));
-    cpSync(join(CODEX_DIST, "aidlc"), join(root, "aidlc"), { recursive: true });
-  } else {
-    cpSync(join(CLAUDE_DIST, ".claude"), join(root, ".claude"), { recursive: true });
-    cpSync(join(CLAUDE_DIST, "aidlc"), join(root, "aidlc"), { recursive: true });
+  // 1. Copy the complete shipped distribution root. The matrix resolves the
+  //    manifest-backed dist row; copying its entries keeps this fixture agnostic
+  //    to engine-dir, root-file, and emitted-skill layout differences.
+  //    Loaded lazily, NOT at module scope: harness-matrix.ts walks harness/ and
+  //    dist/ at import time, and fixtures.ts is imported by sandbox tests (t52's
+  //    t48 sandbox) whose trees ship neither - a top-level import throws ENOENT
+  //    there. Same posture as resetSelectionSensitiveCaches above.
+  const { harnessByName } = requireHere(
+    "./harness-matrix.ts",
+  ) as typeof import("./harness-matrix.ts");
+  const distRoot = harnessByName(harness).distRoot;
+  for (const entry of readdirSync(distRoot)) {
+    cpSync(join(distRoot, entry), join(root, entry), { recursive: true });
   }
 
   // Pin the per-clone audit-shard token (gitignored on a real project) so any

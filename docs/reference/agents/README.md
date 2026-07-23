@@ -1,14 +1,14 @@
 # Agent Reference
 
-Technical reference for the 11 AI-DLC agents: configuration, stage ownership,
-collaboration patterns, and comparison data.
+Technical reference for AI-DLC's 14-agent roster: 11 domain experts, 2
+review-only agents, and the adaptive-workflows composer.
 
 For design philosophy and rationale, see the
 [Agents chapter in the User Guide](../../guide/06-agents.md).
 
 ---
 
-## The 13 Agents (11 domain experts + 2 reviewers)
+## The 14 Agents (11 domain experts + 2 reviewers + composer)
 
 | # | Agent | Domain |
 |---|-------|--------|
@@ -19,12 +19,13 @@ For design philosophy and rationale, see the
 | 5 | [aidlc-aws-platform-agent](aws-platform-agent.md) | AWS infrastructure, IaC, FinOps, environment provisioning |
 | 6 | [aidlc-compliance-agent](compliance-agent.md) | GRC, regulatory mapping, data classification, risk |
 | 7 | [aidlc-devsecops-agent](devsecops-agent.md) | Threat modelling, security pipeline, secure design review |
-| 8 | [aidlc-developer-agent](developer-agent.md) | Code generation, workspace detection, reverse engineering |
-| 9 | [aidlc-quality-agent](quality-agent.md) | Test strategy, test generation, performance validation |
+| 8 | [aidlc-developer-agent](developer-agent.md) | Code generation, reverse engineering, implementation guidance |
+| 9 | [aidlc-quality-agent](quality-agent.md) | Test strategy, acceptance criteria, performance validation |
 | 10 | [aidlc-pipeline-deploy-agent](pipeline-deploy-agent.md) | CI/CD pipelines, deployment strategy, release execution |
 | 11 | [aidlc-operations-agent](operations-agent.md) | Observability, incident response, feedback loops |
 | 12 | aidlc-product-lead-agent | Review-only: requirements / user-story / UX quality gate (balanced tier) |
 | 13 | aidlc-architecture-reviewer-agent | Review-only: technical-design soundness / implementability gate (balanced tier) |
+| 14 | aidlc-composer-agent | Adaptive workflow composition: proposes tailored stage plans and pending-stage reshapes |
 
 ---
 
@@ -85,8 +86,9 @@ under dense context, risk-based test strategy, threat prioritisation,
 regulatory edge-cases, and cloud architecture trade-offs all fall in this
 category. The two balanced reviewers evaluate novel input against explicit
 criteria — the checklist encodes the method, so a mid-size model at session
-effort suffices. See the projection table and the `tier_cap` override in
-[Agent System](../05-agent-system.md).
+effort suffices (on Claude Code, Codex, and opencode; on Kiro all tiers
+inherit the session model and effort). See the projection table and the
+`tier_cap` override in [Agent System](../05-agent-system.md).
 
 ---
 
@@ -101,8 +103,8 @@ effort suffices. See the projection table and the `tier_cap` override in
 | [aidlc-aws-platform-agent](aws-platform-agent.md) | infrastructure-design, environment-provisioning | feasibility, application-design, nfr-design, feedback-optimization | judgment | Bash |
 | [aidlc-compliance-agent](compliance-agent.md) | (none) | feasibility, nfr-requirements, infrastructure-design, environment-provisioning | judgment | WebSearch |
 | [aidlc-devsecops-agent](devsecops-agent.md) | (none) | practices-discovery, nfr-requirements, infrastructure-design, build-and-test, environment-provisioning | judgment | Bash |
-| [aidlc-developer-agent](developer-agent.md) | reverse-engineering (code scan), code-generation | practices-discovery, functional-design, deployment-execution | judgment | Bash |
-| [aidlc-quality-agent](quality-agent.md) | build-and-test, performance-validation | practices-discovery, nfr-requirements | judgment | Bash |
+| [aidlc-developer-agent](developer-agent.md) | reverse-engineering (code scan), code-generation | practices-discovery, user-stories, functional-design, deployment-execution | judgment | Bash |
+| [aidlc-quality-agent](quality-agent.md) | build-and-test, performance-validation | practices-discovery, user-stories, nfr-requirements | judgment | Bash |
 | [aidlc-pipeline-deploy-agent](pipeline-deploy-agent.md) | practices-discovery, ci-pipeline, deployment-pipeline, deployment-execution | (none) | templated | Bash |
 | [aidlc-operations-agent](operations-agent.md) | observability-setup, incident-response, feedback-optimization | (none) | templated | Bash |
 
@@ -110,8 +112,11 @@ effort suffices. See the projection table and the `tier_cap` override in
 
 ## Agent Comparison Matrix
 
-| Agent | Bash | WebSearch | Tier | Lead Stages | Support Stages | Total Stage Involvement |
-|-------|------|-----------|------|-------------|----------------|-------------------------|
+`Yes` in the next two columns means the methodology expects the persona to use
+that inherited tool; it does not grant or withhold access.
+
+| Agent | Bash Expected Use | WebSearch Expected Use | Tier | Lead Stages | Support Stages | Total Stage Involvement |
+|-------|-------------------|------------------------|------|-------------|----------------|-------------------------|
 | aidlc-product-agent | No | Yes | judgment | 5 | 3 | 8 |
 | aidlc-design-agent | No | Yes | judgment | 2 | 2 | 4 |
 | aidlc-delivery-agent | No | No | templated | 3 | 2 | 5 |
@@ -119,17 +124,17 @@ effort suffices. See the projection table and the `tier_cap` override in
 | aidlc-aws-platform-agent | Yes | No | judgment | 2 | 4 | 6 |
 | aidlc-compliance-agent | No | Yes | judgment | 0 | 4 | 4 |
 | aidlc-devsecops-agent | Yes | No | judgment | 0 | 5 | 5 |
-| aidlc-developer-agent | Yes | No | judgment | 2 | 3 | 5 |
-| aidlc-quality-agent | Yes | No | judgment | 2 | 2 | 4 |
+| aidlc-developer-agent | Yes | No | judgment | 2 | 4 | 6 |
+| aidlc-quality-agent | Yes | No | judgment | 2 | 3 | 5 |
 | aidlc-pipeline-deploy-agent | Yes | No | templated | 4 | 0 | 4 |
 | aidlc-operations-agent | Yes | No | templated | 3 | 0 | 3 |
 
 **Observations:**
 - The aidlc-architect-agent has the broadest stage involvement (9 stages across 3 phases), reflecting its role as the central design authority.
-- Across the full 14-agent roster, nine agents carry the `judgment` tier and five step down (the two `balanced` reviewers plus the three `templated` planners); the stepped-down agents produce reviews against explicit checklists or dominantly templated planning, CI/CD, and runbook work. The matrix above covers the 11 domain-expert agents.
+- Across the full 14-agent roster, nine agents carry the `judgment` tier and five step down on Claude Code, Codex, and opencode (the two `balanced` reviewers plus the three `templated` planners; on Kiro all tiers inherit the session model and effort, so no agent steps down there); the stepped-down agents produce reviews against explicit checklists or dominantly templated planning, CI/CD, and runbook work. The matrix above covers the 11 domain-expert agents.
 - The aidlc-compliance-agent operates purely in an advisory capacity (4 support stages across Ideation, Construction, and Operation; no lead stages).
-- Six of 11 agents have Bash access, all in roles that need CLI interaction (infrastructure, security, development, testing, deployment, operations).
-- Three agents have WebSearch access for research tasks (product, design, compliance).
+- Six of 11 agents are expected to use Bash for CLI interaction (infrastructure, security, development, testing, deployment, operations).
+- Three agents are expected to use WebSearch for research tasks (product, design, compliance).
 
 ---
 
@@ -147,8 +152,8 @@ serve as lead (L) or support (S) in that phase.
 | aidlc-aws-platform-agent | -- | S (feasibility) | S (application-design) | L (infrastructure-design), S (nfr-design) | L (environment-provisioning), S (feedback-optimization) |
 | aidlc-compliance-agent | -- | S (feasibility) | -- | S (nfr-requirements, infrastructure-design) | S (environment-provisioning) |
 | aidlc-devsecops-agent | -- | -- | S (practices-discovery) | S (nfr-requirements, infrastructure-design, build-and-test) | S (environment-provisioning) |
-| aidlc-developer-agent | -- | -- | L (reverse-engineering), S (practices-discovery) | L (code-generation), S (functional-design) | S (deployment-execution) |
-| aidlc-quality-agent | -- | -- | S (practices-discovery) | L (build-and-test), S (nfr-requirements) | L (performance-validation) |
+| aidlc-developer-agent | -- | -- | L (reverse-engineering), S (practices-discovery, user-stories) | L (code-generation), S (functional-design) | S (deployment-execution) |
+| aidlc-quality-agent | -- | -- | S (practices-discovery, user-stories) | L (build-and-test), S (nfr-requirements) | L (performance-validation) |
 | aidlc-pipeline-deploy-agent | -- | -- | L (practices-discovery) | L (ci-pipeline) | L (deployment-pipeline, deployment-execution) |
 | aidlc-operations-agent | -- | -- | -- | -- | L (observability-setup, incident-response, feedback-optimization) |
 

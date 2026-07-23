@@ -40,7 +40,7 @@ MANDATORY: Follow stage-protocol.md for state tracking and audit logging.
 
 ### Step 2: Scan Workspace
 
-The scanner walks the project directory one level deep plus known source directories (`src/`, `app/`, `lib/`, `pages/`, `components/`, `tests/`), excluding the harness directories (`.claude/`, `.kiro/`, `.codex/`), `aidlc/`, `node_modules/`, `.git/`, `dist/`, `build/`, `.next/`, `target/`, `vendor/`.
+The scanner walks the project directory one level deep plus known source directories (`src/`, `app/`, `lib/`, `pages/`, `components/`, `tests/`), excluding the harness directories (`.claude/`, `.kiro/`, `.codex/`, `.opencode/`), `aidlc/`, `node_modules/`, `.git/`, `dist/`, `build/`, `.next/`, `target/`, `vendor/`.
 
 Nested-project fallback: when NO top-level signal fires (the layout that would otherwise classify greenfield), the scanner then descends one level into each arbitrarily-named top-level subdirectory (skipping the excluded directories above, hidden dirs, and symlinks) and re-applies the same signal set rooted at that subdirectory. If any subdirectory looks brownfield, the workspace is classified brownfield and that subdirectory's languages/frameworks/build system are merged into the result. This catches a project whose source lives one container down (e.g. `wordbook/`, `backend/`) instead of at the root. The fallback is depth-1 only and never runs when the root already has a source signal.
 
@@ -55,7 +55,7 @@ Scan signals:
 - Documentation (README, docs/, wiki/)
 
 **Exclude from analysis** (framework scaffolding, not application code):
-- The harness directory (`.claude/`, `.kiro/`, or `.codex/`) — AI-DLC framework files (skills, agents, hooks, tools, knowledge)
+- The harness directory (`.claude/`, `.kiro/`, `.codex/`, or `.opencode/`) — AI-DLC framework files (skills, agents, hooks, tools, knowledge)
 - `aidlc/` — AI-DLC workspace root (the space tree at `aidlc/spaces/<space>/...`)
 - `node_modules/`, `.git/`
 
@@ -78,7 +78,7 @@ Signals are evaluated at the root first; if none fires, the nested-project fallb
 - No package manifest, OR manifest with only scaffolding/dev tooling
 - No application source directories
 
-Does NOT make a project brownfield: README, .gitignore, LICENSE, editor configs, empty directories, CI/CD boilerplate without application code, the harness directory (`.claude/`, `.kiro/`, or `.codex/`, AI-DLC framework), `aidlc/` directory (AI-DLC workspace artifacts).
+Does NOT make a project brownfield: README, .gitignore, LICENSE, editor configs, empty directories, CI/CD boilerplate without application code, the harness directory (`.claude/`, `.kiro/`, `.codex/`, or `.opencode/`, AI-DLC framework), `aidlc/` directory (AI-DLC workspace artifacts).
 
 ### Step 4: Verify Classification
 
@@ -135,19 +135,8 @@ Append entries under four standard headings:
 Format each entry with an ISO 8601 timestamp:
 `- 2026-05-20T10:14:32Z — <summary>; <context>`
 
-Before the approval gate, read memory.md and surface candidates as a
-structured question. For each entry the user keeps, write to the appropriate
-harness destination per `stage-protocol.md` §13 — never to this stage file:
-
-- Prescriptive rule → `.codex/aidlc-rules/aidlc-phase-<phase>.md` (phase-scoped)
-  or `.codex/aidlc-rules/aidlc-<org|team|project>.md` (cross-cutting)
-- Verification check → new manifest at `.codex/sensors/aidlc-<id>.md`
-  (capability descriptor only — no `applies_to`); add the new id to
-  the relevant stage's `sensors: [...]` frontmatter list to wire it
-
-If nothing surfaces or the user skips all, proceed to the gate. The memory.md
-file stays in the artefact directory as part of the stage's permanent record.
-
-Stage files are immutable framework artefacts — the ritual writes into the
-harness, not into this file. Next time this stage runs, the new rules and
-sensors load automatically.
+This is an auto-proceeding bootstrap stage (`gate: false`), so it has no
+approval gate. Keep `memory.md` as the stage's permanent execution record, but
+do not surface or persist §13 learnings and do not ask the mandatory
+"Anything to add for next time?" question here. The gate-bound learnings ritual
+begins with the first post-initialization stage.

@@ -1,4 +1,4 @@
-# Question Rendering — Kiro CLI harness annex
+# Question Rendering — Kiro IDE harness annex
 
 This file defines how THIS harness renders the structured questions that
 `aidlc-common/protocols/stage-protocol.md` § "Structured questions" requires.
@@ -8,7 +8,7 @@ is the one place that binds that contract to a concrete mechanism.
 
 ## Mechanism
 
-Kiro CLI has no structured-question tool, so every structured question renders
+Kiro IDE has no structured-question tool, so every structured question renders
 as **numbered prose options in chat**, and the user answers with a number (or
 free text). Render the spec like this:
 
@@ -53,6 +53,11 @@ Rules:
   free-text reply that clearly matches an option counts as that option;
   anything else is an "Other" answer — treat it per the protocol (discuss,
   then re-ask for a final pick).
+- **File-backed questions**: retain A-E and X labels in the markdown source,
+  but remap those choices to numbered prose when presenting them in chat.
+  Preserve source order and map the selected number back to the stored label.
+  Never present file letters as response keys or ask the user to answer with
+  file letters.
 - **Batching**: no harness limit on options per question, but keep batches
   readable — at most ~4 questions per message, and for 5+ options prefer one
   message per question. The questions FILE remains the authoritative record.
