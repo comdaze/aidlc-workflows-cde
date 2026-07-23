@@ -55,8 +55,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { __resetGraphCache, loadRules } from "../../dist/claude/.claude/tools/aidlc-graph.ts";
 import { REPO_ROOT } from "../harness/fixtures.ts";
+import { HARNESS_MATRIX } from "../harness/harness-matrix.ts";
 
-const HARNESSES = ["claude", "kiro", "codex"] as const;
+const HARNESSES = HARNESS_MATRIX.map((harness) => harness.name);
 
 // The shipped method tree for a harness: dist/<h>/aidlc/spaces/default/memory/.
 const mem = (h: string, ...parts: string[]): string =>
@@ -120,24 +121,33 @@ describe("t157 seeded workspace shell + re-rooted .gitignore (SEED)", () => {
 
   // === (a) dist-shell — the per-harness NATIVE INCLUDE ships ================
   test("4: every harness ships its native include pointing at the method tree", () => {
-    // Claude: the @-stub at .claude/rules/aidlc.md with explicit @-lines.
-    const stub = readFileSync(
-      join(REPO_ROOT, "dist", "claude", ".claude", "rules", "aidlc.md"),
-      "utf-8",
-    );
-    expect(stub).toContain("@../../aidlc/spaces/default/memory/org.md");
-    // Kiro: the agent JSON resources glob.
-    const kiroAgent = JSON.parse(
-      readFileSync(join(REPO_ROOT, "dist", "kiro", ".kiro", "agents", "aidlc.json"), "utf-8"),
-    ) as { resources: string[] };
-    expect(kiroAgent.resources).toContain("file://aidlc/spaces/default/memory/**/*.md");
-    // Codex: the AIDLC_RULES_DIR seam in the shipped config.toml + root AGENTS.md.
-    const codexConfig = readFileSync(
-      join(REPO_ROOT, "dist", "codex", ".codex", "config.toml"),
-      "utf-8",
-    );
-    expect(codexConfig).toContain('AIDLC_RULES_DIR = "aidlc/spaces/default/memory"');
-    expect(existsSync(join(REPO_ROOT, "dist", "codex", "AGENTS.md"))).toBe(true);
+    for (const harness of HARNESS_MATRIX) {
+      if (harness.capabilities.memoryInclude === "claude-import") {
+        const stub = readFileSync(join(harness.engineRoot, "rules", "aidlc.md"), "utf-8");
+        expect(stub).toContain("@../../aidlc/spaces/default/memory/org.md");
+      } else if (harness.capabilities.memoryInclude === "kiro-resources") {
+        const agent = JSON.parse(
+          readFileSync(join(harness.engineRoot, "agents", "aidlc.json"), "utf-8"),
+        ) as { resources: string[] };
+        expect(agent.resources, harness.name).toContain(
+          "file://aidlc/spaces/default/memory/**/*.md",
+        );
+      } else if (harness.capabilities.memoryInclude === "codex-env") {
+        const config = readFileSync(join(harness.engineRoot, "config.toml"), "utf-8");
+        expect(config).toContain('AIDLC_RULES_DIR = "aidlc/spaces/default/memory"');
+        expect(existsSync(harness.onboardingDist)).toBe(true);
+      } else {
+        // opencode: the instructions glob in the project-root opencode.json is
+        // the native include surface; AGENTS.md is the auto-read rules file.
+        const config = JSON.parse(
+          readFileSync(join(harness.distRoot, "opencode.json"), "utf-8"),
+        ) as { instructions: string[] };
+        expect(config.instructions, harness.name).toContain(
+          "aidlc/spaces/default/memory/**/*.md",
+        );
+        expect(existsSync(harness.onboardingDist)).toBe(true);
+      }
+    }
   });
 
   // === (a) dist-shell — SEED ships ONLY the shell, not P1/P4 territory ======
@@ -191,9 +201,15 @@ describe("t157 seeded workspace shell + re-rooted .gitignore (SEED)", () => {
   });
 
   // === (c) the re-rooted .gitignore — every harness ships one ===============
-  test("7: every harness ships a .gitignore (net-new for Kiro/Codex)", () => {
-    for (const h of HARNESSES) {
-      expect(existsSync(gitignore(h)), `${h}: ships a .gitignore`).toBe(true);
+  test("7: every harness ships exactly its declared project-root regular files", () => {
+    for (const harness of HARNESS_MATRIX) {
+      const actualRootFiles = readdirSync(harness.distRoot, { withFileTypes: true })
+        .filter((entry) => entry.isFile())
+        .map((entry) => entry.name)
+        .sort();
+      expect(actualRootFiles, `${harness.name}: project-root regular files`).toEqual(
+        [...harness.capabilities.rootFiles].sort(),
+      );
     }
   });
 

@@ -85,7 +85,7 @@ function seedPocState(proj: string): void {
   const utility = join(proj, ".claude", "tools", "aidlc-utility.ts");
   const res = spawnSync(
     process.execPath,
-    [utility, "init", "--scope", "poc", "--project-dir", proj],
+    [utility, "intent-birth", "--scope", "poc", "--project-dir", proj],
     { cwd: proj, encoding: "utf8" },
   );
   expect(res.status).toBe(0);
@@ -148,10 +148,14 @@ describe("t126 emitter-pairing co-fire (metamorphic invariant, sdk)", () => {
       try {
         seedPocState(proj);
 
-        const r = await driveAidlc("/aidlc poc", {
+        const r = await driveAidlc(
+          "/aidlc poc Build a local CLI that converts CSV input to formatted JSON output. " +
+            "Use the simplest sensible stack, choose the recommended answers, and approve each gate.",
+          {
           projectDir: proj,
           timeoutMs: DRIVE_TIMEOUT_MS,
-        });
+          },
+        );
 
         // The run must have terminated cleanly (structured SDK result, not an
         // exit-code guess). A timeout/crash would make the pairing check vacuous.

@@ -4,7 +4,7 @@
 // SENSOR fire to this script via the manifest's `command:` field. Self-
 // contained: no imports from sibling tools. Wraps `bunx tsc --project
 // <tsconfig> --noEmit --pretty false --incremental --tsBuildInfoFile
-// <path under aidlc-docs/.aidlc-sensors/>` and prints the locked stdout
+// <path under the active record's .aidlc-sensors/>` and prints the locked stdout
 // JSON shape:
 //
 //   {"pass": <bool>, "errors": [{file, line, column, message}, ...]}
@@ -31,7 +31,7 @@
 //   via stdout-line count, not exit code.
 //
 // * Why --incremental --tsBuildInfoFile: persist compile state across
-//   fires under aidlc-docs/.aidlc-sensors/.tsbuildinfo (gitignored by
+//   fires under the active record's .aidlc-sensors/.tsbuildinfo (gitignored by
 //   the framework). Subsequent fires re-check only changed files
 //   instead of the entire project. Doesn't fix cross-file attribution
 //   but cuts re-reporting noise — same un-introduced error doesn't spam
@@ -249,8 +249,8 @@ function filterToFilePath(
 
 // --- main -------------------------------------------------------------------
 
-function main(): void {
-	const args = parseArgs(process.argv.slice(2));
+export function main(argv: string[]): void {
+	const args = parseArgs(argv);
 
 	if (!existsSync(args.filePath)) {
 		process.stderr.write(`file-path not found: ${args.filePath}\n`);
@@ -264,11 +264,9 @@ function main(): void {
 	}
 	const tsconfigDir = dirname(tsconfigPath);
 
-	// Walk up from tsconfig to find a project-level dir for
-	// aidlc-docs/.aidlc-sensors/.tsbuildinfo. By convention aidlc-docs
-	// sits beside the consumer project; use tsconfigDir as the project
-	// anchor. The .aidlc-sensors/ dir is gitignored by the framework so
-	// the tsbuildinfo never pollutes commits.
+		// Use the tsconfig directory as the project anchor for resolving the
+		// active record's .aidlc-sensors/.tsbuildinfo. The .aidlc-sensors/
+		// directory is gitignored, so the tsbuildinfo never pollutes commits.
 	const sensorsBaseDir = sensorsDir(tsconfigDir);
 	try {
 		mkdirSync(sensorsBaseDir, { recursive: true });
@@ -317,4 +315,4 @@ function main(): void {
 	process.exit(0);
 }
 
-if (import.meta.main) main();
+if (import.meta.main) main(process.argv.slice(2));

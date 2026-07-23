@@ -56,6 +56,7 @@ const BUN = process.execPath; // the bun running this test
 const REPO_ROOT = join(import.meta.dir, "..", "..");
 const STATE_TOOL = join(REPO_ROOT, "dist", "claude", ".claude", "tools", "aidlc-state.ts");
 const UTIL_TOOL = join(REPO_ROOT, "dist", "claude", ".claude", "tools", "aidlc-utility.ts");
+const LOG_TOOL = join(REPO_ROOT, "dist", "claude", ".claude", "tools", "aidlc-log.ts");
 
 let proj: string;
 
@@ -112,6 +113,10 @@ function eventCount(p: string, type: string): number {
 function stateSync(args: string[], p: string): { status: number; stdout: string; stderr: string } {
   const r = Bun.spawnSync({
     cmd: [BUN, STATE_TOOL, ...args, "--project-dir", p],
+    env: {
+      ...process.env,
+      AIDLC_ALLOW_DIRECT_STATE_TRANSITIONS: "1",
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -120,6 +125,16 @@ function stateSync(args: string[], p: string): { status: number; stdout: string;
     stdout: r.stdout.toString(),
     stderr: r.stderr.toString(),
   };
+}
+
+/** Record a terminal READY review so a reviewer-bearing stage passes the §12a
+ *  gate precondition (these tests target the state lock, not the reviewer gate). */
+function logReview(slug: string, reviewer: string, p: string): void {
+  Bun.spawnSync({
+    cmd: [BUN, LOG_TOOL, "review", "--stage", slug, "--reviewer", reviewer, "--iteration", "1", "--verdict", "READY", "--project-dir", p],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 }
 
 /**
@@ -132,6 +147,10 @@ async function fireParallel(p: string, argSets: string[][]): Promise<number[]> {
   const procs = argSets.map((args) =>
     Bun.spawn({
       cmd: [BUN, STATE_TOOL, ...args, "--project-dir", p],
+      env: {
+        ...process.env,
+        AIDLC_ALLOW_DIRECT_STATE_TRANSITIONS: "1",
+      },
       stdout: "ignore",
       stderr: "ignore",
     }),
@@ -147,7 +166,7 @@ describe("t145 C2b state-lock lost-update safety (mechanism cli — parallel spa
     // running INCEPTION workflow at requirements-analysis with code-generation
     // next — the shape the gate handlers expect).
     const init = Bun.spawnSync({
-      cmd: [BUN, UTIL_TOOL, "init", "--scope", "bugfix", "--project-dir", proj],
+      cmd: [BUN, UTIL_TOOL, "intent-birth", "--scope", "bugfix", "--project-dir", proj],
       stdout: "ignore",
       stderr: "ignore",
     });
@@ -213,6 +232,10 @@ describe("t145 C2b state-lock lost-update safety (mechanism cli — parallel spa
   test("concurrent approve ∥ skip — both transitions and both audit rows survive", async () => {
     // Open the gate on the current stage so approve has a valid [?] to act on.
     expect(stateSync(["gate-start", "requirements-analysis"], proj).status).toBe(0);
+    // requirements-analysis declares a reviewer; record a terminal review so the
+    // §12a gate precondition passes (this test targets the state lock, not the
+    // reviewer gate).
+    logReview("requirements-analysis", "aidlc-product-lead-agent", proj);
 
     const approvedBefore = eventCount(proj, "GATE_APPROVED");
     const skippedBefore = eventCount(proj, "STAGE_SKIPPED");
@@ -267,6 +290,9 @@ describe("t145 C2b state-lock lost-update safety (mechanism cli — parallel spa
   // ---------------------------------------------------------------------------
   test("approve nests advance/complete-workflow without deadlock (reentrant lock)", () => {
     expect(stateSync(["gate-start", "requirements-analysis"], proj).status).toBe(0);
+    // requirements-analysis declares a reviewer; record a terminal review so the
+    // §12a gate precondition passes (this test targets the reentrant lock).
+    logReview("requirements-analysis", "aidlc-product-lead-agent", proj);
     const r = stateSync(["approve", "requirements-analysis"], proj);
     expect(r.status).toBe(0);
     const finalState = readState(proj);
@@ -341,7 +367,12 @@ describe("t145 C2b state-lock lost-update safety (mechanism cli — parallel spa
       // Race a burst of rejects at the open [?] gate — exactly one is accepted.
       const codes = await fireParallel(
         proj,
-        Array.from({ length: 4 }, () => ["reject", "requirements-analysis"]),
+        Array.from({ length: 4 }, (_unused, i) => [
+          "reject",
+          "requirements-analysis",
+          "--feedback",
+          `cycle-${c}-reject-${i}`,
+        ]),
       );
       expect(codes.filter((x) => x === 0).length).toBe(1);
       // Re-enter the gate ([R] → [?]) so the next cycle has a valid target.

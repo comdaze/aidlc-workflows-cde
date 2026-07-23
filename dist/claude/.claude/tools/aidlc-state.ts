@@ -1,12 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { appendAuditEntry, appendAuditEntryUnlocked } from "./aidlc-audit.ts";
 import {
   activeIntent,
   appendSlug,
   appendUnderHeading,
+  auditBlockField,
   type CheckboxState,
   codekbDir,
   countCheckboxes,
@@ -21,6 +22,7 @@ import {
   holdsAuditLock,
   humanActedSinceGate,
   humanPresenceGuardDisabled,
+  intentRepos,
   isAutonomousMode,
   isoTimestamp,
   loadScopeMapping,
@@ -31,8 +33,6 @@ import {
   parseRefsList,
   parseStateStageSuffixes,
   readAllAuditShards,
-  readBoltDagUnitKinds,
-  readBoltDagUnits,
   readStateFile,
   recordDir,
   relativeMemoryPath,
@@ -40,6 +40,7 @@ import {
   removeField,
   removeSlug,
   replaceSection,
+  resolveBoltDag,
   resolveProjectDir,
   resolveStage,
   setCheckbox,
@@ -48,6 +49,7 @@ import {
   setOrInsertField,
   setPhaseProgress,
   stagesInScope,
+  swarmConvergedUnits,
   updateIntentStatus,
   validScopes,
   withAuditLock,
@@ -86,6 +88,8 @@ const HARNESS_DOC_DIRS = new Set([
   ".claude",
   ".kiro",
   ".codex",
+  ".opencode",
+  ".aidlc",
   ".git",
 ]);
 
@@ -117,12 +121,11 @@ function emitAudit(
   projectDir: string,
   eventType: string,
   fields: Record<string, string>
-): void {
+): string {
   if (holdsAuditLock(projectDir)) {
-    appendAuditEntryUnlocked(eventType, fields, projectDir);
-  } else {
-    appendAuditEntry(eventType, fields, projectDir);
+    return appendAuditEntryUnlocked(eventType, fields, projectDir).timestamp;
   }
+  return appendAuditEntry(eventType, fields, projectDir).timestamp;
 }
 
 function auditField(block: string, fieldName: string): string | null {
@@ -161,22 +164,166 @@ function hasStageAuditEvent(
   });
 }
 
+interface OrderedAuditEvent {
+  event: string;
+  block: string;
+  timestamp: string;
+  position: number;
+}
+
+// Audit rows are sharded by clone, so readAllAuditShards() concatenation order
+// is not chronological. Build one ordered main-workflow stream for attempt-
+// scoped recovery checks.
+function orderedMainWorkflowAudit(projectDir: string): OrderedAuditEvent[] {
+  const audit = readAllAuditShards(projectDir);
+  if (audit.length === 0) return [];
+  const events = audit
+    .replace(/\r\n/g, "\n")
+    .split(/\n---\n/)
+    .map((block, position): OrderedAuditEvent | null => {
+      const event = auditField(block, "Event");
+      if (!event) return null;
+      if (auditField(block, "Workflow")?.startsWith("single-stage:")) return null;
+      return {
+        event,
+        block,
+        timestamp: auditField(block, "Timestamp") ?? "",
+        position,
+      };
+    })
+    .filter((event): event is OrderedAuditEvent => event !== null)
+    .sort((a, b) => {
+      if (a.timestamp !== b.timestamp) return a.timestamp < b.timestamp ? -1 : 1;
+      return a.position - b.position;
+    });
+  const workflowStart = events.findLastIndex(
+    (event) => event.event === "WORKFLOW_STARTED",
+  );
+  return workflowStart === -1 ? events : events.slice(workflowStart);
+}
+
+// Return the audit rows emitted after this stage's skip in its CURRENT attempt.
+// A later STAGE_STARTED for the same slug starts a fresh attempt and invalidates
+// all prior skip dedup evidence. This lets a backward jump skip the stage again
+// while still recovering an interrupted [S] transition without duplicate rows.
+function currentRoutedSkipAuditTail(
+  projectDir: string,
+  stageSlug: string,
+): OrderedAuditEvent[] | null {
+  const events = orderedMainWorkflowAudit(projectDir);
+  let latestBoundary = -1;
+  let latestBoundaryWasSkip = false;
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+    if (auditField(event.block, "Stage") !== stageSlug) continue;
+    if (event.event === "STAGE_STARTED") {
+      latestBoundary = i;
+      latestBoundaryWasSkip = false;
+    } else if (event.event === "STAGE_SKIPPED") {
+      latestBoundary = i;
+      latestBoundaryWasSkip = true;
+    }
+  }
+  return latestBoundaryWasSkip ? events.slice(latestBoundary + 1) : null;
+}
+
+function auditTailHasFields(
+  events: OrderedAuditEvent[],
+  eventType: string,
+  fields: Record<string, string>,
+): boolean {
+  return events.some(
+    (event) =>
+      event.event === eventType &&
+      Object.entries(fields).every(
+        ([field, value]) => auditField(event.block, field) === value,
+      ),
+  );
+}
+
 // True when a written File path (from an ARTIFACT_CREATED/ARTIFACT_UPDATED audit
 // row) is one of the stage's declared produces[] artifacts. Matches on the path
 // SUFFIX `/<slug>/<name>.md` rather than resolving one absolute dir, so it
 // covers BOTH the standard <record>/<phase>/<slug>/ layout AND the per-unit
 // construction/<unit>/<slug>/ layout without needing to know the {unit}
-// segment. The audit File field is stored forward-slash-normalised
-// (aidlc-audit-logger.ts), so the forward-slash suffix match is harness-neutral;
-// we still normalise defensively in case a caller passes a raw OS path.
+// segment. Codekb stages get their own arm: their produces live DIRECTLY under
+// a per-repo dir beneath the space codekb root (codekb/<repo>/<name>.md) with
+// no <slug> segment anywhere, so the suffix idiom matches the codekb marker +
+// one repo segment instead - the matcher analog of the placement split
+// producesDirsForStage handles for the artifact guard. When the active intent
+// records repos, that segment must belong to the recorded set so a write to one
+// repo's durable codekb cannot revise an unrelated intent. The audit File field
+// is stored forward-slash-normalised (aidlc-audit-logger.ts), so the
+// forward-slash matching is harness-neutral; we still normalise defensively in
+// case a caller passes a raw OS path.
 function producesArtifactFile(
   stage: { slug: string; produces?: string[] },
-  file: string
+  file: string,
+  recordedRepos: ReadonlySet<string>
 ): boolean {
   const produces = stage.produces ?? [];
   if (produces.length === 0) return false;
   const norm = file.replace(/\\/g, "/");
+  if (KNOWN_CODEKB_STAGES.has(stage.slug)) {
+    return produces.some((name) => {
+      const idx = norm.lastIndexOf(`/${name}.md`);
+      if (idx === -1 || idx + `/${name}.md`.length !== norm.length) return false;
+      // Exactly one <repo> segment between /codekb/ and /<name>.md.
+      const head = norm.slice(0, idx);
+      const repoSlash = head.lastIndexOf("/");
+      if (repoSlash === -1 || !head.slice(0, repoSlash).endsWith("/codekb")) return false;
+      const repo = head.slice(repoSlash + 1);
+      if (repo.length === 0) return false;
+      // An empty registry is the legacy projectDir-is-the-repo case. Keep the
+      // historical any-repo match: codekbRepoName's basename is a write-path
+      // default, not ownership evidence for durable files that may predate repo
+      // recording or have been written with an explicit repo target.
+      return recordedRepos.size === 0 || recordedRepos.has(repo);
+    });
+  }
   return produces.some((name) => norm.endsWith(`/${stage.slug}/${name}.md`));
+}
+
+// Resolve the unit targeted by a declared produces[] write. `undefined` means
+// the file does not belong to this stage, `null` means a matching stage-level
+// artifact, and a string names the per-unit Construction target.
+function producesArtifactUnit(
+  stage: {
+    slug: string;
+    for_each?: string;
+    produces?: string[];
+    optional_produces?: string[];
+  },
+  file: string,
+  recordedRepos: ReadonlySet<string>,
+): string | null | undefined {
+  const reviewedArtifacts = [
+    ...(stage.produces ?? []),
+    ...(stage.optional_produces ?? []),
+  ];
+  if (
+    !producesArtifactFile(
+      { slug: stage.slug, produces: reviewedArtifacts },
+      file,
+      recordedRepos,
+    )
+  ) {
+    return undefined;
+  }
+  if (stage.for_each !== "unit-of-work") return null;
+
+  const norm = file.replace(/\\/g, "/");
+  for (const name of reviewedArtifacts) {
+    const suffix = `/${stage.slug}/${name}.md`;
+    if (!norm.endsWith(suffix)) continue;
+    const parent = norm.slice(0, -suffix.length);
+    const marker = "/construction/";
+    const markerIdx = parent.lastIndexOf(marker);
+    if (markerIdx === -1) return null;
+    const unit = parent.slice(markerIdx + marker.length);
+    return unit.length > 0 && !unit.includes("/") ? unit : null;
+  }
+  return null;
 }
 
 // The gate-revision backstop predicate (the reconciliation half of the
@@ -227,16 +374,21 @@ function producesArtifactFile(
 //
 // Fail-open everywhere (empty ledger, no anchor, no post-anchor human turn ->
 // false): the backstop only ever ADDS a reject it can prove happened; when the
-// evidence is absent it does nothing and the normal approve proceeds. codekb
-// stages are excluded entirely: their produces live directly under <repo>/ with
-// no <slug> subdir, and that multi-repo drift is a separate mechanism.
+// evidence is absent it does nothing and the normal approve proceeds. Codekb
+// stages are covered via producesArtifactFile's codekb arm (their produces live
+// under codekb/<repo>/ with no <slug> subdir; the audit-logger hook logs those
+// writes). A non-empty intent repo set scopes that evidence to its own repos; an
+// empty legacy set retains the any-repo fallback described at the matcher. They
+// were previously excluded outright, which - combined with the hook not logging
+// codekb paths at all - left a revised-then-approved reverse-engineering gate
+// with Revision Count 0 and no GATE_REJECTED row.
 function unrecordedRevisionSinceGateOpen(
   pd: string,
   stage: { slug: string; produces?: string[] }
 ): boolean {
-  if (KNOWN_CODEKB_STAGES.has(stage.slug)) return false;
   const audit = readAllAuditShards(pd);
   if (audit.length === 0) return false; // no ledger -> nothing to reconcile
+  const recordedRepos = new Set(intentRepos(pd));
   const RELEVANT = new Set([
     "STAGE_AWAITING_APPROVAL",
     "STAGE_STARTED",
@@ -310,7 +462,7 @@ function unrecordedRevisionSinceGateOpen(
       } else if (
         (e.event === "ARTIFACT_CREATED" || e.event === "ARTIFACT_UPDATED") &&
         e.file !== null &&
-        producesArtifactFile(stage, e.file)
+        producesArtifactFile(stage, e.file, recordedRepos)
       ) {
         wroteBeforeHuman = true;
       }
@@ -324,7 +476,7 @@ function unrecordedRevisionSinceGateOpen(
     if (
       (e.event === "ARTIFACT_CREATED" || e.event === "ARTIFACT_UPDATED") &&
       e.file !== null &&
-      producesArtifactFile(stage, e.file)
+      producesArtifactFile(stage, e.file, recordedRepos)
     ) {
       return true;
     }
@@ -384,8 +536,8 @@ let projectDir: string | undefined;
 let lockIntent: string | undefined;
 let lockSpace: string | undefined;
 
-function main(): void {
-  const args = process.argv.slice(2);
+export function main(argv: string[]): void {
+  const args = [...argv];
 
   // Extract --project-dir flag
   const pdIdx = args.indexOf("--project-dir");
@@ -395,6 +547,37 @@ function main(): void {
   }
 
   const subcommand = args[0];
+
+  // Lifecycle transitions and generic state writes are engine-owned. The
+  // orchestrator binds its child marker to its own PID; this process accepts it
+  // only when it names the actual parent. A copied static token cannot bypass
+  // report's stage pinning, evidence checks, and idempotency.
+  const engineOwnedTransitions = new Set([
+    "set",
+    "checkbox",
+    "advance",
+    "finalize",
+    "complete-workflow",
+    "gate-start",
+    "approve",
+    "reject",
+    "revise",
+    "skip",
+    "park",
+  ]);
+  if (
+    subcommand &&
+    engineOwnedTransitions.has(subcommand) &&
+    process.env.AIDLC_STATE_TRANSITION_OWNER !== `orchestrate:${process.ppid}` &&
+    process.env.AIDLC_ALLOW_DIRECT_STATE_TRANSITIONS !== "1"
+  ) {
+    error(
+      `Direct aidlc-state.ts ${subcommand} is blocked: workflow lifecycle transitions are engine-owned. ` +
+        "Use aidlc-orchestrate.ts report --stage <slug> --result " +
+        "<awaiting-approval|approved|rejected|revised|completed|skipped>; use " +
+        "aidlc-orchestrate.ts park to park, and next/jump for routing changes.",
+    );
+  }
 
   try {
     switch (subcommand) {
@@ -481,7 +664,7 @@ function main(): void {
 }
 
 if (import.meta.main) {
-  main();
+  main(process.argv.slice(2));
 }
 
 // --- Subcommand handlers ---
@@ -773,6 +956,38 @@ function artifactGuardDisabled(): boolean {
   return process.env.AIDLC_SKIP_ARTIFACT_GUARD === "1";
 }
 
+// Settled-autonomous-swarm exemption, mirroring isSettledAutonomousSwarm in
+// aidlc-orchestrate.ts (the report path's disk-backed-guard exemption). A
+// swarm's per-unit artifacts live in Bolt worktrees, not the main checkout, so
+// the produces-existence walk below cannot see them; the audit ledger can. The
+// exemption is granted only when EVERY unit of a valid DAG has a convergence
+// row from the CURRENT stage attempt (rows before the latest main-workflow
+// STAGE_STARTED for this slug are a prior run's). Anything ambiguous - not the
+// swarm build stage, autonomy not granted, DAG absent/malformed, any
+// unconverged unit - fails closed and leaves the guard exactly as strict as
+// before. Duplicated rather than imported: state.ts is the dependency floor
+// (orchestrate imports nothing from it and it must not import orchestrate).
+function isSettledSwarmForArtifactGuard(
+  pd: string,
+  stage: { slug: string; phase: string; for_each?: string; mode?: string },
+  stateContent: string,
+): boolean {
+  if (stage.phase !== "construction") return false;
+  if (stage.for_each !== "unit-of-work" || stage.mode !== "subagent") return false;
+  if (!isAutonomousMode(stateContent)) return false;
+  const scope = getField(stateContent, "Scope");
+  if (!scope) return false;
+  const first = firstInScopeStageOfPhase("construction", scope);
+  if (first !== null && first.slug === stage.slug) return false; // skeleton gate
+  const resolution = resolveBoltDag(pd);
+  if (resolution.state !== "ok" || resolution.units.length === 0) return false;
+  // Shared attempt-scoped read (aidlc-lib.ts): a row counts only when its
+  // Stage names this slug AND its Run floor equals the current attempt's
+  // floor, so stale-attempt and cross-stage rows never satisfy the guard.
+  const converged = swarmConvergedUnits(pd, stage.slug);
+  return resolution.units.every((unit) => converged.has(unit));
+}
+
 // Deterministic off-switch for the approve-time gate-revision backstop (mirrors
 // artifactGuardDisabled above). The suite sets this globally so no existing
 // approve/reject test changes behaviour; the dedicated backstop test clears it
@@ -849,11 +1064,15 @@ function producesArtifactsExist(
   const produces = stage.produces ?? [];
   if (produces.length === 0) return true; // nothing declared -> nothing to verify
   if (stage.for_each === "unit-of-work" && stage.produces_kinds !== undefined) {
-    const units = readBoltDagUnits(pd);
-    const kinds = readBoltDagUnitKinds(pd);
-    if (units !== null && kinds !== null) {
-      const allVacuous = units.every(
-        (u) => filterProducesByKind(stage.produces_kinds, produces, kinds.get(u) ?? null).length === 0,
+    const resolution = resolveBoltDag(pd);
+    if (resolution.state === "ok" && resolution.unitKinds !== null) {
+      const allVacuous = resolution.units.every(
+        (u) =>
+          filterProducesByKind(
+            stage.produces_kinds,
+            produces,
+            resolution.unitKinds?.get(u) ?? null,
+          ).length === 0,
       );
       if (allVacuous) return true;
     }
@@ -880,7 +1099,7 @@ function workspaceHasSourceFile(pd: string): boolean {
   for (const entry of entries) {
     if (HARNESS_DOC_DIRS.has(entry)) continue;
     const p = join(pd, entry);
-    let st;
+    let st: ReturnType<typeof statSync>;
     try {
       st = statSync(p);
     } catch {
@@ -1008,9 +1227,20 @@ function workspaceHasWork(pd: string): boolean {
 // untouched. `stage` is the StageEntry being completed. No-op when bypass active.
 function verifyStageArtifacts(
   pd: string,
-  stage: { slug: string; name: string; phase: string; for_each?: string; produces?: string[]; produces_kinds?: Record<string, string[]>; workspace_requires?: boolean }
+  stage: { slug: string; name: string; phase: string; for_each?: string; mode?: string; produces?: string[]; produces_kinds?: Record<string, string[]>; workspace_requires?: boolean }
 ): void {
   if (artifactGuardDisabled()) return;
+
+  // A settled autonomous swarm proved its work through the referee's per-unit
+  // convergence ledger; its artifacts live in Bolt worktrees this walk cannot
+  // see. Same exemption the engine's report-side evidence gate applies.
+  let settledSwarm = false;
+  try {
+    settledSwarm = isSettledSwarmForArtifactGuard(pd, stage, readStateFile(pd));
+  } catch {
+    // No readable state file: not a swarm settle; stay strict.
+  }
+  if (settledSwarm) return;
 
   if (!producesArtifactsExist(pd, stage)) {
     error(
@@ -1030,6 +1260,192 @@ function verifyStageArtifacts(
         `do not satisfy ${stage.name} - write the code to the workspace.`
     );
   }
+}
+
+// --- Reviewer precondition (§12a / RFC Track 1) -----------------------------
+//
+// A stage that declares a `reviewer` cannot be approved until the reviewer step
+// actually ran — proven by a terminal REVIEW_COMPLETED row (written by the tool
+// actor `aidlc-log.ts review --verdict`). Hard on the review HAVING HAPPENED,
+// soft on the verdict (a NOT-READY-after-cap still lets the human approve).
+//
+// This lives beside the artifact guard in all four completing handlers, not in
+// orchestrate's report: direct recovery calls must not bypass it (issue #366).
+//
+// The audit read is FLOORED (mirrors swarmConvergedUnits / hasStageAuditEvent):
+// only REVIEW_COMPLETED rows recorded AFTER the stage's latest STAGE_STARTED,
+// any later GATE_REJECTED, and the latest relevant produces[] write count.
+// Per-unit artifact writes invalidate only that unit's receipt. Without these
+// floors a stale review from a prior stage-run, before a reject/revise, or
+// before an artifact edit would clear the gate for work nobody re-reviewed.
+//
+// The row must match BOTH Stage AND Reviewer (a row naming the wrong reviewer —
+// a typo, or the conductor self-certifying — must not satisfy it). On per-unit
+// stages (for_each: unit-of-work) one review per stage is not enough: the
+// reviewer fires once PER UNIT, so EVERY unit must carry its own terminal review.
+//
+function verifyReviewerPrecondition(
+  pd: string,
+  content: string,
+  stage: {
+    slug: string;
+    name: string;
+    phase: string;
+    for_each?: string;
+    reviewer?: string;
+    produces?: string[];
+    optional_produces?: string[];
+    produces_kinds?: Record<string, string[]>;
+  }
+): void {
+  if (!stage.reviewer) return; // stage declares no reviewer — nothing to enforce
+
+  const reviewer = stage.reviewer;
+  const audit = readAllAuditShards(pd);
+  if (audit.length === 0) {
+    reviewerPreconditionError(stage.slug, reviewer);
+  }
+
+  // Build ONE position-tiebroken event stream (the same interleave idiom
+  // unrecordedRevisionSinceGateOpen uses) — a timestamp-only floor is unsafe
+  // because isoTimestamp() is second-precision, so a review and the reject that
+  // should invalidate it can share a timestamp and a `<` compare would keep the
+  // stale review. Ordering by (timestamp, buffer position) breaks that tie.
+  const RELEVANT = new Set([
+    "WORKFLOW_STARTED",
+    "STAGE_STARTED",
+    "STAGE_JUMPED",
+    "GATE_REJECTED",
+    "ARTIFACT_CREATED",
+    "ARTIFACT_UPDATED",
+    "REVIEW_COMPLETED",
+  ]);
+  const blocks = audit.replace(/\r\n/g, "\n").split(/\n---\n/);
+  const events: { pos: number; ts: string; event: string; block: string }[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const ev = auditBlockField(blocks[i], "Event");
+    if (!ev || !RELEVANT.has(ev)) continue;
+    events.push({ pos: i, ts: auditBlockField(blocks[i], "Timestamp") ?? "", event: ev, block: blocks[i] });
+  }
+  events.sort((a, b) => (a.ts !== b.ts ? (a.ts < b.ts ? -1 : 1) : a.pos - b.pos));
+
+  const perUnit = stage.for_each === "unit-of-work";
+  const unitMajor =
+    perUnit && getField(content, "Construction Iteration")?.trim() === "unit-major";
+
+  // Unit-major may author a later stage's per-unit artifacts before that
+  // stage's STAGE_STARTED row exists. Its attempt floor therefore uses the
+  // current workflow, jumps, and gate rejections but ignores STAGE_STARTED.
+  // Stage-major and non-per-unit flows additionally floor at STAGE_STARTED.
+  //
+  // WORKFLOW_STARTED and STAGE_JUMPED floor deliberately stage-AGNOSTIC: any
+  // jump invalidates every stage's reviews, including stages the jump never
+  // re-opens. That over-invalidation is harmless (a stage that stays [x] never
+  // re-completes, so its stale floor is never consulted) and it is what closes
+  // the redo-jump hole: a backward jump re-opens stages WITHOUT emitting their
+  // GATE_REJECTED or (until re-entry) STAGE_STARTED, so a stage-scoped floor
+  // would accept the prior attempt's reviews. Fail-closed over precise.
+  let floorIdx = -1;
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    if (e.event === "WORKFLOW_STARTED" || e.event === "STAGE_JUMPED") {
+      floorIdx = i;
+      continue;
+    }
+    if (auditBlockField(e.block, "Stage") !== stage.slug) continue;
+    if (e.event === "STAGE_STARTED" && !unitMajor) {
+      if (auditBlockField(e.block, "Workflow")?.startsWith("single-stage:")) continue;
+      floorIdx = i;
+    } else if (e.event === "GATE_REJECTED") {
+      floorIdx = i;
+    }
+  }
+
+  // Collect fresh matching terminal reviews after the attempt floor. A later
+  // declared-artifact write clears the matching receipt. For per-unit stages,
+  // the path's construction/<unit>/ segment scopes invalidation to that unit;
+  // an ambiguous matching path fails closed by clearing every unit receipt.
+  const recordedRepos = new Set(intentRepos(pd));
+  const reviewedUnits = new Set<string>();
+  let sawStageReview = false;
+  for (let i = floorIdx + 1; i < events.length; i++) {
+    const e = events[i];
+    if (e.event === "ARTIFACT_CREATED" || e.event === "ARTIFACT_UPDATED") {
+      const file = auditBlockField(e.block, "File");
+      if (!file) continue;
+      const targetUnit = producesArtifactUnit(stage, file, recordedRepos);
+      if (targetUnit === undefined) continue;
+      if (!perUnit) {
+        sawStageReview = false;
+      } else if (targetUnit === null) {
+        reviewedUnits.clear();
+      } else {
+        reviewedUnits.delete(targetUnit);
+      }
+      continue;
+    }
+    if (e.event !== "REVIEW_COMPLETED") continue;
+    if (auditBlockField(e.block, "Workflow")?.startsWith("single-stage:")) continue;
+    if (auditBlockField(e.block, "Stage") !== stage.slug) continue;
+    if (auditBlockField(e.block, "Reviewer") !== reviewer) continue;
+    const verdict = auditBlockField(e.block, "Verdict");
+    if (verdict !== "READY" && verdict !== "NOT-READY") continue;
+    sawStageReview = true;
+    const unit = auditBlockField(e.block, "Unit");
+    if (unit) reviewedUnits.add(unit);
+  }
+
+  if (!perUnit) {
+    if (!sawStageReview) reviewerPreconditionError(stage.slug, reviewer);
+    return;
+  }
+
+  const resolution = resolveBoltDag(pd);
+  if (resolution.state === "malformed") {
+    error(
+      `Refusing to complete "${stage.slug}": its per-unit review set cannot be ` +
+        `resolved because unit-of-work-dependency.md is ${resolution.reason} ` +
+        `(${resolution.detail}). Fix the fenced units block before completing.`,
+    );
+  }
+  if (resolution.state === "none" || resolution.units.length === 0) {
+    if (!sawStageReview) reviewerPreconditionError(stage.slug, reviewer);
+    return;
+  }
+
+  // A kind-pruned unit with no applicable produces[] never receives a stage
+  // directive, so it cannot owe a review. If every unit is vacuous, no
+  // stage-level fallback review is required.
+  const produces = stage.produces ?? [];
+  const reviewUnits = resolution.units.filter(
+    (unit) =>
+      filterProducesByKind(
+        stage.produces_kinds,
+        produces,
+        resolution.unitKinds?.get(unit) ?? null,
+      ).length > 0,
+  );
+  if (reviewUnits.length === 0) return;
+
+  const missing = reviewUnits.filter((u) => !reviewedUnits.has(u));
+  if (missing.length > 0) {
+    error(
+      `Refusing to complete "${stage.slug}": it declares a reviewer (${reviewer}) but ` +
+        `${missing.length} of ${reviewUnits.length} applicable units have no fresh recorded ` +
+        `review (${missing.join(", ")}). The reviewer fires once per unit; record ` +
+        `each with \`aidlc-log.ts review --stage ${stage.slug} --unit <unit> --reviewer ` +
+        `${reviewer} --verdict <READY|NOT-READY>\` before approving.`
+    );
+  }
+}
+
+function reviewerPreconditionError(slug: string, reviewer: string): never {
+  error(
+    `Refusing to complete "${slug}": it declares a reviewer (${reviewer}) but no ` +
+      `fresh REVIEW_COMPLETED is recorded for it. Invoke the reviewer ` +
+      `(stage-protocol §12a) and record the verdict with \`aidlc-log.ts review --stage ` +
+      `${slug} --reviewer ${reviewer} --verdict <READY|NOT-READY>\` before completing.`
+  );
 }
 
 function handleAdvance(args: string[]): void {
@@ -1167,6 +1583,7 @@ function handleAdvance(args: string[]): void {
   // guarded. Runs before any mutation; error() exits leaving state untouched.
   if (!alreadyMarkedCompleted) {
     verifyStageArtifacts(pd, completedStage);
+    verifyReviewerPrecondition(pd, content, completedStage);
   }
 
   // Detect phase boundary (for PHASE_COMPLETED/VERIFIED/STARTED emissions)
@@ -1280,6 +1697,7 @@ function handleFinalize(args: string[]): void {
     "completed";
   if (!alreadyMarkedCompleted) {
     verifyStageArtifacts(pd, completedStage);
+    verifyReviewerPrecondition(pd, content, completedStage);
   }
 
   // 1. Mark completed
@@ -1396,6 +1814,7 @@ function handleCompleteWorkflow(args: string[]): void {
   // before any mutation so a refusal leaves state untouched.
   if (!alreadyMarkedCompleted) {
     verifyStageArtifacts(pd, completedStage);
+    verifyReviewerPrecondition(pd, content, completedStage);
   }
 
   // 1. Mark completed
@@ -1524,6 +1943,7 @@ function handleGateStart(args: string[]): void {
   const stage = findStageBySlug(slug);
   if (!stage) error(`Unknown stage: ${slug}`);
   validateSlugInState(content, slug, "in-progress");
+  verifyStageArtifacts(pd, stage);
 
   content = setCheckbox(content, slug, "awaiting-approval");
   const timestamp = isoTimestamp();
@@ -1571,6 +1991,16 @@ function handleApprove(args: string[]): void {
   const stage = findStageBySlug(slug);
   if (!stage) error(`Unknown stage: ${slug}`);
   validateSlugInState(content, slug, "awaiting-approval");
+  const approvalInput = userInput?.trim();
+  if (
+    !isAutonomousMode(content) &&
+    !humanPresenceGuardDisabled() &&
+    !approvalInput
+  ) {
+    error(
+      `Refusing to approve "${slug}": --user-input must contain the human's exact approval choice.`,
+    );
+  }
 
   // Artifact guard (issue #366): a stage cannot be approved without evidence of
   // work on disk. Runs BEFORE any mutation so a refusal (error() -> exit) leaves
@@ -1613,11 +2043,12 @@ function handleApprove(args: string[]): void {
   // a forced retroactive reject would consume the human-presence freshness
   // boundary (the HUMAN_TURN this gate's approval depends on) and refuse the
   // approval the human already gave, so we record the missing history and honour
-  // the approval, rather than blocking it. The intermediate [R]/[?] checkbox
-  // states never hit disk: the one writeStateFile below lands the final [x]
-  // (mirrors handleReject's gate-start backfill, which likewise never writes the
-  // intermediate [?]). Skipped under the off-switch and in autonomous Construction
-  // (no human at the gate, so no human-driven revision to reconcile).
+  // the approval unless another completion precondition refuses it. The
+  // intermediate [R] checkbox never hits disk; a reviewer refusal persists the
+  // incremented revision count while leaving the gate at its existing [?].
+  // Skipped under the off-switch and in autonomous Construction (no human at the
+  // gate, so no human-driven revision to reconcile).
+  let recoveredRevision = false;
   if (
     !revisionBackstopDisabled() &&
     !isAutonomousMode(content) &&
@@ -1647,10 +2078,18 @@ function handleApprove(args: string[]): void {
         Recovered: "true",
         Details: "Re-entering gate after backfilled revision",
       });
+      recoveredRevision = true;
     } catch (e) {
       error(`Audit emission failed: ${errorMessage(e)}`);
     }
   }
+
+  // Run after the revision backstop: a recovered GATE_REJECTED invalidates the
+  // receipt that preceded the unrecorded artifact revision. The backfilled audit
+  // rows and revision count remain as the consistent reopened-gate state if
+  // this check refuses.
+  if (recoveredRevision) writeStateFile(pd, content);
+  verifyReviewerPrecondition(pd, content, stage);
 
   const timestamp = isoTimestamp();
 
@@ -1666,7 +2105,7 @@ function handleApprove(args: string[]): void {
   // downstream advance/complete-workflow fails.
   try {
     const gateFields: Record<string, string> = { Stage: slug };
-    if (userInput) gateFields["User Input"] = userInput;
+    if (approvalInput) gateFields["User Input"] = approvalInput;
     emitAudit(pd, "GATE_APPROVED", gateFields);
 
     emitAudit(pd, "STAGE_COMPLETED", {
@@ -1746,7 +2185,12 @@ function parseApproveFlags(args: string[]): { userInput?: string } {
 function handleReject(args: string[]): void {
   if (args.length < 1) error("Usage: aidlc-state.ts reject <slug> [--feedback <text>]");
   const slug = args[0];
-  const feedback = getFlagValue(args.slice(1), "--feedback");
+  const feedback = getFlagValue(args.slice(1), "--feedback")?.trim();
+  if (!feedback) {
+    error(
+      `Refusing to reject "${slug}": --feedback must contain the human's requested changes.`,
+    );
+  }
 
   const pd = resolveProjectDir(projectDir);
   // C2b lost-update safety: validate→increment Revision Count→emit-audit→write
@@ -1785,13 +2229,15 @@ function handleReject(args: string[]): void {
         Recovered: "true",
       });
     }
-    const rejFields: Record<string, string> = { Stage: slug };
-    if (feedback) rejFields.Feedback = feedback;
+    const rejFields: Record<string, string> = {
+      Stage: slug,
+      Feedback: feedback,
+    };
     emitAudit(pd, "GATE_REJECTED", rejFields);
     emitAudit(pd, "STAGE_REVISING", {
       Stage: slug,
       "Revision count": String(revCount),
-      ...(feedback ? { Feedback: feedback } : {}),
+      Feedback: feedback,
     });
   } catch (e) {
     error(`Audit emission failed: ${errorMessage(e)}`);
@@ -1815,6 +2261,7 @@ function handleRevise(args: string[]): void {
   const stage = findStageBySlug(slug);
   if (!stage) error(`Unknown stage: ${slug}`);
   validateSlugInState(content, slug, "revising");
+  verifyStageArtifacts(pd, stage);
 
   content = setCheckbox(content, slug, "awaiting-approval");
   const timestamp = isoTimestamp();
@@ -1834,11 +2281,23 @@ function handleRevise(args: string[]): void {
   });
 }
 
-// skip <slug> [--reason <text>] — transition [ ]/[-]/[R] → [S], emit STAGE_SKIPPED
+// skip <slug> [--reason <text>] [--route]
+//
+// The historical un-routed form remains a narrow state primitive for internal
+// repair and tests: it flips [ ]/[-]/[R] to [S] and emits STAGE_SKIPPED.
+// `--route` is the engine-owned stage outcome. In one locked transaction it
+// preserves [S], emits STAGE_SKIPPED exactly once, then starts the next
+// in-scope stage (including phase-boundary events) or completes the workflow.
+// An [S] slug with an unmoved Current Stage is accepted only on this internal
+// routed path so an interrupted historical transition can finish without
+// duplicating STAGE_SKIPPED.
 function handleSkip(args: string[]): void {
-  if (args.length < 1) error("Usage: aidlc-state.ts skip <slug> [--reason <text>]");
+  if (args.length < 1) {
+    error("Usage: aidlc-state.ts skip <slug> [--reason <text>] [--route]");
+  }
   const slug = args[0];
-  const reason = getFlagValue(args.slice(1), "--reason");
+  const reason = getFlagValue(args.slice(1), "--reason")?.trim();
+  const route = args.includes("--route");
 
   const pd = resolveProjectDir(projectDir);
   // C2b lost-update safety: validate→transition→emit-audit→write under one lock.
@@ -1847,22 +2306,198 @@ function handleSkip(args: string[]): void {
 
   const stage = findStageBySlug(slug);
   if (!stage) error(`Unknown stage: ${slug}`);
-  validateSlugInState(content, slug, ["pending", "in-progress", "revising"]);
+  if (!route) {
+    validateSlugInState(content, slug, ["pending", "in-progress", "revising"]);
 
+    content = setCheckbox(content, slug, "skipped");
+    const timestamp = isoTimestamp();
+    content = setField(content, "Last Updated", timestamp);
+
+    try {
+      const fields: Record<string, string> = { Stage: slug };
+      if (reason) fields.Reason = reason;
+      emitAudit(pd, "STAGE_SKIPPED", fields);
+    } catch (e) {
+      error(`Audit emission failed: ${errorMessage(e)}`);
+    }
+
+    writeStateFile(pd, content);
+    console.log(JSON.stringify({ slug, new_state: "skipped", timestamp }));
+    return;
+  }
+
+  if (!reason) {
+    error("aidlc-state.ts skip --route requires a nonblank --reason <text>.");
+  }
+  validateSlugInState(content, slug, [
+    "in-progress",
+    "revising",
+    "skipped",
+  ]);
+  const currentStage = getField(content, "Current Stage");
+  if (currentStage !== slug) {
+    error(
+      `Cannot route skipped stage "${slug}": Current Stage is "${currentStage ?? ""}".`,
+    );
+  }
+  const scope = getField(content, "Scope");
+  if (!scope) {
+    error(
+      "State file has no Scope field. Refusing to route skip - fix the state file first.",
+    );
+  }
+  if (!validScopes().has(scope)) {
+    error(
+      `State file has invalid Scope "${scope}". Valid scopes: ${[...validScopes()].join(", ")}.`,
+    );
+  }
+
+  const wasSkipped = getSlugState(content, slug) === "skipped";
+  const skipAuditTail = wasSkipped
+    ? currentRoutedSkipAuditTail(pd, slug)
+    : null;
+  const skipAlreadyAudited = skipAuditTail !== null;
   content = setCheckbox(content, slug, "skipped");
   const timestamp = isoTimestamp();
+  const nextStage = nextInScopeStage(slug, scope, content);
+  const crossesPhaseBoundary =
+    nextStage !== null && stage.phase !== nextStage.phase;
+  const boundaryTarget = nextStage?.phase ?? "(end)";
+  const boundary = `${stage.phase} → ${nextStage?.phase ?? "end"}`;
+  const phaseCompletedAlreadyAudited = skipAuditTail !== null && auditTailHasFields(
+    skipAuditTail,
+    "PHASE_COMPLETED",
+    {
+      "From phase": stage.phase,
+      "To phase": boundaryTarget,
+    },
+  );
+  const phaseVerifiedAlreadyAudited = skipAuditTail !== null && auditTailHasFields(
+    skipAuditTail,
+    "PHASE_VERIFIED",
+    { "Phase boundary": boundary },
+  );
+  const phaseStartedAlreadyAudited = nextStage
+    ? skipAuditTail !== null && auditTailHasFields(skipAuditTail, "PHASE_STARTED", {
+        Phase: nextStage.phase,
+        Scope: scope,
+      })
+    : false;
+  const stageStartedAlreadyAudited = nextStage
+    ? skipAuditTail !== null && auditTailHasFields(skipAuditTail, "STAGE_STARTED", {
+        Stage: nextStage.slug,
+      })
+    : false;
+  const workflowCompletedAlreadyAudited = nextStage === null
+    ? skipAuditTail !== null && auditTailHasFields(skipAuditTail, "WORKFLOW_COMPLETED", {
+        Scope: scope,
+        Details: `Scope: ${scope}, final stage ${slug} skipped`,
+      })
+    : false;
+
+  if (nextStage) {
+    content = setCheckbox(content, nextStage.slug, "in-progress");
+    const nextAfterNext = nextInScopeStage(nextStage.slug, scope, content);
+    content = setField(content, "Current Stage", nextStage.slug);
+    content = setField(content, "Lifecycle Phase", nextStage.phase.toUpperCase());
+    content = setField(
+      content,
+      "Next Stage",
+      nextAfterNext ? nextAfterNext.slug : "none",
+    );
+    content = setField(content, "In Progress", nextStage.slug);
+    content = setField(content, "Active Agent", nextStage.lead_agent);
+    content = setField(content, "Status", "Running");
+    content = setField(content, "Next Action", `Execute ${nextStage.name}`);
+    if (crossesPhaseBoundary) {
+      content = setPhaseProgress(content, stage.phase, "Verified");
+      content = setPhaseProgress(content, nextStage.phase, "Active");
+    }
+  } else {
+    content = setField(content, "Status", "Completed");
+    content = setField(content, "In Progress", "none");
+    content = setField(content, "Next Stage", "none");
+    content = setField(content, "Next Action", "Workflow complete");
+    content = setPhaseProgress(content, stage.phase, "Verified");
+  }
+  content = setField(
+    content,
+    "Completed",
+    String(countCheckboxes(content, "completed")),
+  );
   content = setField(content, "Last Updated", timestamp);
 
   try {
-    const fields: Record<string, string> = { Stage: slug };
-    if (reason) fields.Reason = reason;
-    emitAudit(pd, "STAGE_SKIPPED", fields);
+    if (!skipAlreadyAudited) {
+      emitAudit(pd, "STAGE_SKIPPED", { Stage: slug, Reason: reason });
+    }
+    if (nextStage) {
+      if (crossesPhaseBoundary) {
+        if (!phaseCompletedAlreadyAudited) {
+          emitAudit(pd, "PHASE_COMPLETED", {
+            "From phase": stage.phase,
+            "To phase": nextStage.phase,
+            "Stages completed": String(countCheckboxes(content, "completed")),
+          });
+        }
+        if (!phaseVerifiedAlreadyAudited) {
+          emitAudit(pd, "PHASE_VERIFIED", {
+            "Phase boundary": boundary,
+          });
+        }
+        if (!phaseStartedAlreadyAudited) {
+          emitAudit(pd, "PHASE_STARTED", {
+            Phase: nextStage.phase,
+            Scope: scope,
+          });
+        }
+      }
+      if (!stageStartedAlreadyAudited) {
+        emitAudit(pd, "STAGE_STARTED", {
+          Stage: nextStage.slug,
+          Agent: nextStage.lead_agent,
+        });
+      }
+    } else {
+      if (!phaseCompletedAlreadyAudited) {
+        emitAudit(pd, "PHASE_COMPLETED", {
+          "From phase": stage.phase,
+          "To phase": "(end)",
+          "Stages completed": String(countCheckboxes(content, "completed")),
+        });
+      }
+      if (!phaseVerifiedAlreadyAudited) {
+        emitAudit(pd, "PHASE_VERIFIED", {
+          "Phase boundary": boundary,
+        });
+      }
+      if (!workflowCompletedAlreadyAudited) {
+        emitAudit(pd, "WORKFLOW_COMPLETED", {
+          Scope: scope,
+          Details: `Scope: ${scope}, final stage ${slug} skipped`,
+          Reason: reason,
+        });
+      }
+    }
   } catch (e) {
     error(`Audit emission failed: ${errorMessage(e)}`);
   }
 
   writeStateFile(pd, content);
-  console.log(JSON.stringify({ slug, new_state: "skipped", timestamp }));
+  if (!nextStage) {
+    const completedIntentDir = activeIntent(pd);
+    if (completedIntentDir) {
+      updateIntentStatus(pd, completedIntentDir, "complete");
+    }
+  }
+  console.log(JSON.stringify({
+    slug,
+    new_state: "skipped",
+    started: nextStage?.slug ?? null,
+    workflow_completed: nextStage === null,
+    recovered: wasSkipped || skipAlreadyAudited,
+    timestamp,
+  }));
   });
 }
 
@@ -1998,12 +2633,13 @@ function handleAcknowledgeCompaction(args: string[]): void {
   );
 }
 
-// practices-event --type <discovered|affirmed|override> [--field "K: V"]...
+// practices-event --type <discovered|override|empty> [--field "K: V"]...
 // Emits a PRACTICES_* audit event from tool code (not stage prose).
 // Required by the audit-first invariant: every audit event must originate
 // in .ts code so t48's emitter-pairing check passes. Called by the
-// practices-discovery stage at Step 4 (discovered), Step 7 (affirmed), and
-// Step 6 on write failure (override).
+// practices-discovery stage for discovery and advisory fallback events.
+// PRACTICES_AFFIRMED is reserved for practices-promote, which atomically pairs
+// it with the state timestamp after both memory targets are written.
 function handlePracticesEvent(args: string[]): void {
   const pd = resolveProjectDir(projectDir);
   let eventTypeArg = "";
@@ -2025,7 +2661,7 @@ function handlePracticesEvent(args: string[]): void {
   }
   if (!eventTypeArg) {
     error(
-      'Usage: aidlc-state.ts practices-event --type <discovered|affirmed|override|empty> [--field "Key: Value"]...'
+      'Usage: aidlc-state.ts practices-event --type <discovered|override|empty> [--field "Key: Value"]...'
     );
   }
   // Explicit literal-string emitAudit calls per --type so t48's
@@ -2049,9 +2685,10 @@ function handlePracticesEvent(args: string[]): void {
       emittedEvent = "PRACTICES_DISCOVERED";
       break;
     case "affirmed":
-      emitAudit(pd, "PRACTICES_AFFIRMED", fields);
-      emittedEvent = "PRACTICES_AFFIRMED";
-      break;
+      error(
+        "PRACTICES_AFFIRMED is reserved for practices-promote so the audit receipt cannot be minted without successful memory promotion."
+      );
+      return;
     case "override":
       emitAudit(pd, "PRACTICES_OVERRIDE", fields);
       emittedEvent = "PRACTICES_OVERRIDE";
@@ -2062,7 +2699,7 @@ function handlePracticesEvent(args: string[]): void {
       break;
     default:
       error(
-        `Invalid --type: ${eventTypeArg}. Must be discovered, affirmed, override, or empty.`
+        `Invalid --type: ${eventTypeArg}. Must be discovered, override, or empty.`
       );
       return;
   }
@@ -2075,7 +2712,7 @@ function handlePracticesEvent(args: string[]): void {
 //                   [--affirming-user <name>] [--target-dir <path>]
 //
 // Cross-row promotion of affirmed practices into the team-authored method
-// files. Reads two draft files from aidlc-docs/inception/practices-discovery/
+// files. Reads two draft files from the active intent's practices-discovery
 // and applies them deterministically to the relocated method files the
 // resolver reads (aidlc/spaces/<space>/memory/, neutral names):
 //
@@ -2087,13 +2724,14 @@ function handlePracticesEvent(args: string[]): void {
 //                              with `(affirmed YYYY-MM-DD)`
 //
 // Atomicity:
-//   1. Read both drafts (fail closed before any write).
-//   2. Read both targets (fail closed if either missing).
-//   3. Build new contents in memory.
-//   4. Write project.md first (smaller, more constrained).
-//   5. Write team.md second.
-//   6. On success → emit PRACTICES_AFFIRMED.
-//   7. On any failure → emit PRACTICES_OVERRIDE with the failure reason
+//   1. Validate every declared support contribution (fail before any write).
+//   2. Read both drafts (fail closed before any write).
+//   3. Read both targets (fail closed if either missing).
+//   4. Build new contents in memory.
+//   5. Write project.md first (smaller, more constrained).
+//   6. Write team.md second.
+//   7. On success → emit PRACTICES_AFFIRMED.
+//   8. On any failure → emit PRACTICES_OVERRIDE with the failure reason
 //      and rethrow so the caller halts the gate.
 //
 // Why this exists: when stage prose tells the LLM to write to the method
@@ -2148,9 +2786,41 @@ function handlePracticesPromote(args: string[]): void {
     throw new Error(reason); // unreachable; error() exits, but TS needs this
   };
 
-  // Step 1: Read both drafts.
+  // Step 1: Revalidate the hub-and-spoke evidence immediately before the
+  // cross-row memory write. The gate-open report checks the same contract
+  // before asking the human, but files can be deleted or malformed while the
+  // gate is open. Promotion is the irreversible seam, so it fails closed too.
   const teamPracticesPath = flags["team-practices"];
   const discoveredRulesPath = flags["discovered-rules"];
+  const practicesStage = findStageBySlug("practices-discovery");
+  if (!practicesStage) {
+    fail("practices-discovery is absent from the compiled stage graph");
+  }
+  const draftDir = dirname(teamPracticesPath);
+  if (dirname(discoveredRulesPath) !== draftDir) {
+    fail("team-practices and discovered-rules drafts must share one stage directory");
+  }
+  const missingContributions: string[] = [];
+  for (const agent of practicesStage!.support_agents ?? []) {
+    const contribution = join(draftDir, "contributions", `${agent}.md`);
+    let firstLine = "";
+    try {
+      firstLine = readFileSync(contribution, "utf-8").split("\n", 1)[0].trim();
+    } catch {
+      missingContributions.push(`${agent} (no contribution file)`);
+      continue;
+    }
+    if (firstLine !== `**Collaborator:** ${agent}`) {
+      missingContributions.push(`${agent} (missing identity-marker first line)`);
+    }
+  }
+  if (missingContributions.length > 0) {
+    fail(
+      "ensemble evidence is incomplete: " + missingContributions.join("; "),
+    );
+  }
+
+  // Step 2: Read both drafts.
   if (!existsSync(teamPracticesPath))
     fail(`team-practices draft not found: ${teamPracticesPath}`);
   if (!existsSync(discoveredRulesPath))
@@ -2166,7 +2836,7 @@ function handlePracticesPromote(args: string[]): void {
     return;
   }
 
-  // Step 2: Read both target files. Fail closed if either is missing.
+  // Step 3: Read both target files. Fail closed if either is missing.
   if (!existsSync(teamMdPath)) fail(`team.md not found at ${teamMdPath}`);
   if (!existsSync(guardrailsPath))
     fail(`project.md not found at ${guardrailsPath}`);
@@ -2181,7 +2851,7 @@ function handlePracticesPromote(args: string[]): void {
     return;
   }
 
-  // Step 3a: Build new team.md by section-replacing each of the five
+  // Step 4a: Build new team.md by section-replacing each of the five
   // sections. team.md uses Title Case headings; the draft mirrors that
   // shape.
   const TEAM_SECTIONS = [
@@ -2210,7 +2880,7 @@ function handlePracticesPromote(args: string[]): void {
     }
   }
 
-  // Step 3b: Build new project-guardrails.md by appending each rule under the
+  // Step 4b: Build new project-guardrails.md by appending each rule under the
   // matching heading with a date stamp. Rules are one-per-line in the draft;
   // empty/blank lines and comment lines are skipped.
   const parseRules = (sectionContent: string): string[] => {
@@ -2231,14 +2901,19 @@ function handlePracticesPromote(args: string[]): void {
   const forbiddenRules = parseRules(forbiddenDraft);
 
   let newGuardrailsMd = guardrailsMd;
+  const existingGuardrailLines = new Set(
+    newGuardrailsMd.split("\n").map((line) => line.trim()),
+  );
   for (const rule of mandatedRules) {
-    const stamped = `${rule} (affirmed ${today})\n`;
+    const stampedLine = `${rule} (affirmed ${today})`;
+    if (existingGuardrailLines.has(stampedLine)) continue;
     try {
       newGuardrailsMd = appendUnderHeading(
         newGuardrailsMd,
         "## Mandated",
-        stamped
+        `${stampedLine}\n`
       );
+      existingGuardrailLines.add(stampedLine);
       rulesAppended.mandated++;
     } catch (e) {
       fail(`appendUnderHeading failed on Mandated: ${errorMessage(e)}`);
@@ -2246,13 +2921,15 @@ function handlePracticesPromote(args: string[]): void {
     }
   }
   for (const rule of forbiddenRules) {
-    const stamped = `${rule} (affirmed ${today})\n`;
+    const stampedLine = `${rule} (affirmed ${today})`;
+    if (existingGuardrailLines.has(stampedLine)) continue;
     try {
       newGuardrailsMd = appendUnderHeading(
         newGuardrailsMd,
         "## Forbidden",
-        stamped
+        `${stampedLine}\n`
       );
+      existingGuardrailLines.add(stampedLine);
       rulesAppended.forbidden++;
     } catch (e) {
       fail(`appendUnderHeading failed on Forbidden: ${errorMessage(e)}`);
@@ -2260,13 +2937,11 @@ function handlePracticesPromote(args: string[]): void {
     }
   }
 
-  // Step 4 & 5: Write project.md first, then team.md.
+  // Step 5 & 6: Write project.md first, then team.md.
   // If the project write fails, team.md is untouched. If the team write
-  // fails after project succeeded, we surface that as PRACTICES_OVERRIDE —
-  // the user re-enters the gate; the duplicate-rule case is mitigated because
-  // re-running parses the same rule list and appendUnderHeading is idempotent
-  // only on the draft contents, not on ALL prior runs. Operators should treat
-  // a mid-promotion failure as a recovery scenario.
+  // fails after project succeeded, we surface that as PRACTICES_OVERRIDE and
+  // the user re-enters the gate. Exact dated project rules are deduplicated
+  // above, so a retry cannot accumulate copies after this partial-write path.
   try {
     writeFileSync(guardrailsPath, newGuardrailsMd, "utf-8");
   } catch (e) {
@@ -2282,18 +2957,36 @@ function handlePracticesPromote(args: string[]): void {
     return;
   }
 
-  // Step 6: Emit PRACTICES_AFFIRMED.
+  // Step 7: Emit PRACTICES_AFFIRMED and record the matching state timestamp in
+  // one audit-locked transaction. The promotion tool owns both facts; leaving a
+  // follow-up generic `set` to stage prose would let the timestamp be omitted or
+  // forged independently of a successful promotion.
+  let affirmedAt = "";
   try {
-    emitAudit(pd, "PRACTICES_AFFIRMED", {
-      "Affirming User": flags["affirming-user"] ?? "unknown",
-      "Sections Written": sectionsWritten.join(", "),
-      "Mandated Rules Appended": String(rulesAppended.mandated),
-      "Forbidden Rules Appended": String(rulesAppended.forbidden),
-      Timestamp: isoTimestamp(),
+    withAuditLock(pd, () => {
+      let state = readStateFile(pd);
+      affirmedAt = emitAudit(pd, "PRACTICES_AFFIRMED", {
+        "Affirming User": flags["affirming-user"] ?? "unknown",
+        "Sections Written": sectionsWritten.join(", "),
+        "Mandated Rules Appended": String(rulesAppended.mandated),
+        "Forbidden Rules Appended": String(rulesAppended.forbidden),
+      });
+      // setOrInsertField, not setField: on a state file missing the row (a
+      // hand-edited or pre-field file) setField silently no-ops, and the
+      // approve gate that requires this timestamp would then refuse forever
+      // while its remediation ("run practices-promote") keeps no-opping.
+      state = setOrInsertField(
+        state,
+        "## Project Information",
+        "Practices Affirmed Timestamp",
+        affirmedAt,
+      );
+      state = setField(state, "Last Updated", affirmedAt);
+      writeStateFile(pd, state);
     });
   } catch (e) {
     fail(
-      `audit emission failed AFTER both files were written: ${errorMessage(e)}`
+      `audit/state commit failed AFTER both files were written: ${errorMessage(e)}`
     );
     return;
   }
@@ -2304,6 +2997,7 @@ function handlePracticesPromote(args: string[]): void {
       sections_written: sectionsWritten,
       mandated_appended: rulesAppended.mandated,
       forbidden_appended: rulesAppended.forbidden,
+      affirmed_at: affirmedAt,
       team_md: teamMdPath,
       project_guardrails: guardrailsPath,
     })

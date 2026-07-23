@@ -1,4 +1,4 @@
-// covers: subcommand:aidlc-state:approve
+// covers: subcommand:aidlc-state:approve, subcommand:aidlc-log:review, audit:REVIEW_REQUESTED, audit:REVIEW_COMPLETED, function:verifyReviewerPrecondition
 //
 // CLI-contract port of tests/unit/t115-orchestrate-report.sh (TAP plan 22),
 // mechanism = cli. The .sh drives `aidlc-orchestrate.ts report` — the
@@ -88,6 +88,7 @@ import {
   DEFAULT_RECORD_DIR,
   DEFAULT_SPACE,
   FIXTURES_DIR,
+  seededRecordDir,
   seededStateFile,
   seedStateFile,
 } from "../harness/fixtures.ts";
@@ -97,6 +98,7 @@ const REPO_ROOT = join(import.meta.dir, "..", "..");
 const TOOLS_DIR = join(REPO_ROOT, "dist", "claude", ".claude", "tools");
 const ORCH_TOOL = join(TOOLS_DIR, "aidlc-orchestrate.ts");
 const STATE_TOOL = join(TOOLS_DIR, "aidlc-state.ts");
+const AUDIT_TOOL = join(TOOLS_DIR, "aidlc-audit.ts");
 
 const tempDirs: string[] = [];
 
@@ -131,6 +133,10 @@ function orchestrate(args: string[], p: string): CliResult {
 function state(args: string[], p: string): CliResult {
   const res = spawnSync(BUN, [STATE_TOOL, ...args, "--project-dir", p], {
     encoding: "utf-8",
+    env: {
+      ...process.env,
+      AIDLC_ALLOW_DIRECT_STATE_TRANSITIONS: "1",
+    },
   });
   const stdout = res.stdout ?? "";
   return { status: res.status ?? -1, out: `${stdout}${res.stderr ?? ""}`, stdout };
@@ -220,8 +226,13 @@ describe("t115 aidlc-orchestrate report — preconditions (migrated from t115-or
 
   test("2: report rejects an unknown --result outcome", () => {
     const p = projWithState("state-mid-ideation.md");
-    const r = orchestrate(["report", "--result", "rejected"], p);
-    expect(r.out).toContain("commits forward transitions only");
+    const r = orchestrate(["report", "--result", "bogus"], p);
+    expect(r.out).toContain("Unknown --result");
+    expect(r.out).toContain("bogus");
+    expect(r.out).toContain("awaiting-approval");
+    expect(r.out).toContain("rejected");
+    expect(r.out).toContain("revised");
+    expect(r.out).toContain("skipped");
   });
 
   test("3: report with no state file emits an error directive", () => {
@@ -233,6 +244,283 @@ describe("t115 aidlc-orchestrate report — preconditions (migrated from t115-or
     const r = orchestrate(["report", "--result", "approved"], p);
     expect(r.out).toContain('"kind":"error"');
   });
+});
+
+// ============================================================
+// ROUTED SKIP — report owns the justified [S] transition and the route after
+// it. Skip is deliberately resolved before artifact/per-unit/ensemble guards:
+// it is not a completion claim and never emits STAGE_COMPLETED.
+// ============================================================
+
+describe("t115 routed skip (report -> aidlc-state skip --route)", () => {
+  test("skip requires an explicit live stage pin and a nonblank reason", () => {
+    for (const args of [
+      ["report", "--result", "skipped", "--reason", "not applicable"],
+      ["report", "--stage", "", "--result", "skipped", "--reason", "not applicable"],
+      ["report", "--stage", "feasibility", "--result", "skipped"],
+      ["report", "--stage", "feasibility", "--result", "skipped", "--reason", "   "],
+      ["report", "--stage", "market-research", "--result", "skipped", "--reason", "stale body"],
+    ]) {
+      const p = projWithState("state-mid-ideation.md");
+      const before = readFileSync(statePath(p), "utf-8");
+      const r = orchestrate(args, p);
+      expect(r.out, args.join(" ")).toContain('"kind":"error"');
+      expect(readFileSync(statePath(p), "utf-8"), args.join(" ")).toBe(before);
+      expect(countEvent(p, "STAGE_SKIPPED"), args.join(" ")).toBe(0);
+    }
+  }, 30000);
+
+  test("ALWAYS stages cannot bypass completion by reporting skipped", () => {
+    const p = projWithState("state-mid-ideation.md");
+    replaceStateText(
+      p,
+      "- [-] feasibility — EXECUTE",
+      "- [x] feasibility — EXECUTE",
+    );
+    replaceStateText(
+      p,
+      "- [ ] scope-definition — EXECUTE",
+      "- [-] scope-definition — EXECUTE",
+    );
+    replaceStateText(
+      p,
+      "- **Current Stage**: feasibility",
+      "- **Current Stage**: scope-definition",
+    );
+    replaceStateText(
+      p,
+      "- **In Progress**: feasibility",
+      "- **In Progress**: scope-definition",
+    );
+    const before = readFileSync(statePath(p), "utf-8");
+
+    const r = orchestrate([
+      "report",
+      "--stage",
+      "scope-definition",
+      "--result",
+      "skipped",
+      "--reason",
+      "attempted bypass",
+    ], p);
+
+    expect(r.out).toContain('"kind":"error"');
+    expect(r.out).toContain("only a CONDITIONAL stage can report skipped");
+    expect(readFileSync(statePath(p), "utf-8")).toBe(before);
+    expect(countEvent(p, "STAGE_SKIPPED")).toBe(0);
+  }, 30000);
+
+  test("active stage skip preserves [S], starts next once, and never completes the stage", () => {
+    const p = projWithState("state-mid-ideation.md");
+    const report = orchestrate([
+      "report",
+      "--stage",
+      "feasibility",
+      "--result",
+      "skipped",
+      "--reason",
+      "No feasibility decision is needed",
+    ], p);
+
+    expect(report.status).toBe(0);
+    expect(report.out).toContain('"kind":"done"');
+    expect(report.out).toContain("Committed skip");
+    const content = readFileSync(statePath(p), "utf-8");
+    expect(content).toContain("- [S] feasibility — EXECUTE");
+    expect(content).toContain("- [-] scope-definition — EXECUTE");
+    expect(state(["get", "Current Stage"], p).stdout.trim()).toBe("scope-definition");
+    expect(state(["get", "Completed"], p).stdout.trim()).toBe("5");
+    expect(auditEvents(p)).toContain("STAGE_SKIPPED STAGE_STARTED");
+    expect(countEvent(p, "STAGE_SKIPPED")).toBe(1);
+    expect(countEvent(p, "STAGE_STARTED")).toBe(1);
+    expect(countEvent(p, "STAGE_COMPLETED")).toBe(0);
+    expect(auditBlocksFor(p, "STAGE_SKIPPED")[0]).toContain(
+      "**Reason**: No feasibility decision is needed",
+    );
+  }, 30000);
+
+  test("revising stage can be skipped through the same routed outcome", () => {
+    const p = projWithState("state-mid-ideation.md");
+    expect(orchestrate([
+      "report", "--stage", "feasibility", "--result", "awaiting-approval",
+    ], p).status).toBe(0);
+    expect(orchestrate([
+      "report",
+      "--stage",
+      "feasibility",
+      "--result",
+      "rejected",
+      "--user-input",
+      "Drop this analysis",
+    ], p).status).toBe(0);
+
+    const skipped = orchestrate([
+      "report",
+      "--stage",
+      "feasibility",
+      "--result",
+      "skipped",
+      "--reason",
+      "User removed this stage during revision",
+    ], p);
+    expect(skipped.out).toContain('"kind":"done"');
+    expect(readFileSync(statePath(p), "utf-8")).toContain(
+      "- [S] feasibility — EXECUTE",
+    );
+    expect(state(["get", "Current Stage"], p).stdout.trim()).toBe(
+      "scope-definition",
+    );
+    expect(countEvent(p, "STAGE_SKIPPED")).toBe(1);
+    expect(countEvent(p, "STAGE_COMPLETED")).toBe(0);
+  }, 30000);
+
+  test("final-stage skip completes the workflow without STAGE_COMPLETED", () => {
+    const p = projWithState("state-final-stage.md");
+    const report = orchestrate([
+      "report",
+      "--stage",
+      "feedback-optimization",
+      "--result",
+      "skipped",
+      "--reason",
+      "No feedback window exists for this one-off run",
+    ], p);
+
+    expect(report.out).toContain('"kind":"done"');
+    expect(readFileSync(statePath(p), "utf-8")).toContain(
+      "- [S] feedback-optimization — EXECUTE",
+    );
+    expect(state(["get", "Status"], p).stdout.trim()).toBe("Completed");
+    expect(countEvent(p, "STAGE_SKIPPED")).toBe(1);
+    expect(countEvent(p, "STAGE_COMPLETED")).toBe(0);
+    expect(countEvent(p, "PHASE_COMPLETED")).toBe(1);
+    expect(countEvent(p, "PHASE_VERIFIED")).toBe(1);
+    expect(countEvent(p, "WORKFLOW_COMPLETED")).toBe(1);
+    expect(auditEvents(p)).toContain(
+      "STAGE_SKIPPED PHASE_COMPLETED PHASE_VERIFIED WORKFLOW_COMPLETED",
+    );
+  }, 30000);
+
+  test("an interrupted [S] with an unmoved cursor routes without duplicating STAGE_SKIPPED", () => {
+    const p = projWithState("state-mid-ideation.md");
+    expect(state([
+      "skip", "feasibility", "--reason", "recorded before interrupted routing",
+    ], p).status).toBe(0);
+    expect(state(["get", "Current Stage"], p).stdout.trim()).toBe("feasibility");
+    expect(countEvent(p, "STAGE_SKIPPED")).toBe(1);
+
+    const recovered = orchestrate([
+      "report",
+      "--stage",
+      "feasibility",
+      "--result",
+      "skipped",
+      "--reason",
+      "recorded before interrupted routing",
+    ], p);
+    expect(recovered.status).toBe(0);
+    expect(recovered.out).toContain("Committed skip");
+    expect(readFileSync(statePath(p), "utf-8")).toContain(
+      "- [S] feasibility — EXECUTE",
+    );
+    expect(state(["get", "Current Stage"], p).stdout.trim()).toBe(
+      "scope-definition",
+    );
+    expect(countEvent(p, "STAGE_SKIPPED")).toBe(1);
+    expect(countEvent(p, "STAGE_STARTED")).toBe(1);
+    expect(countEvent(p, "STAGE_COMPLETED")).toBe(0);
+  }, 30000);
+
+  test("a backward jump starts a new skip attempt with fresh audit rows", () => {
+    const p = projWithState("state-mid-ideation.md");
+    const args = [
+      "report",
+      "--stage",
+      "feasibility",
+      "--result",
+      "skipped",
+      "--reason",
+      "Not applicable in this attempt",
+    ];
+    expect(orchestrate(args, p).status).toBe(0);
+
+    replaceStateText(
+      p,
+      "- [S] feasibility — EXECUTE",
+      "- [-] feasibility — EXECUTE",
+    );
+    replaceStateText(
+      p,
+      "- [-] scope-definition — EXECUTE",
+      "- [ ] scope-definition — EXECUTE",
+    );
+    replaceStateText(
+      p,
+      "- **Current Stage**: scope-definition",
+      "- **Current Stage**: feasibility",
+    );
+    replaceStateText(
+      p,
+      "- **In Progress**: scope-definition",
+      "- **In Progress**: feasibility",
+    );
+    const started = spawnSync(
+      BUN,
+      [
+        AUDIT_TOOL,
+        "append",
+        "STAGE_STARTED",
+        "--field",
+        "Stage=feasibility",
+        "--field",
+        "Agent=aidlc-architect-agent",
+        "--project-dir",
+        p,
+      ],
+      { encoding: "utf-8" },
+    );
+    expect(started.status, `${started.stdout}${started.stderr}`).toBe(0);
+
+    expect(orchestrate(args, p).status).toBe(0);
+    expect(countEvent(p, "STAGE_SKIPPED")).toBe(2);
+    expect(countEvent(p, "STAGE_STARTED")).toBe(3);
+    expect(
+      auditBlocksFor(p, "STAGE_STARTED").filter((block) =>
+        block.includes("**Stage**: scope-definition")
+      ),
+    ).toHaveLength(2);
+  }, 30000);
+});
+
+describe("t115 initialization stages reject gate lifecycle outcomes", () => {
+  for (const outcome of [
+    "awaiting-approval",
+    "rejected",
+    "revised",
+  ] as const) {
+    test(`state-init cannot report ${outcome}`, () => {
+      const p = projWithState("state-init-active.md");
+      if (outcome === "revised") {
+        replaceStateText(
+          p,
+          "- [-] state-init — EXECUTE",
+          "- [R] state-init — EXECUTE",
+        );
+      }
+      const before = readFileSync(statePath(p), "utf-8");
+      const r = orchestrate([
+        "report",
+        "--stage",
+        "state-init",
+        "--result",
+        outcome,
+      ], p);
+
+      expect(r.out).toContain('"kind":"error"');
+      expect(r.out).toContain("ungated initialization stage");
+      expect(readFileSync(statePath(p), "utf-8")).toBe(before);
+    }, 30000);
+  }
 });
 
 // ============================================================
@@ -332,6 +620,73 @@ describe("t115 gated approve round-trip (report -> aidlc-state approve)", () => 
     expect(countEvent(p, "GATE_APPROVED")).toBe(1);
     expect(countEvent(p, "STAGE_STARTED")).toBe(1);
     expect(state(["get", "Current Stage"], p).stdout.trim()).toBe("scope-definition");
+  }, 30000);
+
+  test("5e: report owns the full awaiting -> rejected -> revised -> approved lifecycle", () => {
+    const p = projWithState("state-mid-ideation.md");
+
+    const awaiting = orchestrate(
+      ["report", "--stage", "feasibility", "--result", "awaiting-approval"],
+      p,
+    );
+    expect(awaiting.status).toBe(0);
+    expect(awaiting.out).toContain("Recorded awaiting-approval");
+    expect(readFileSync(statePath(p), "utf-8")).toContain(
+      "- [?] feasibility — EXECUTE",
+    );
+
+    const rejected = orchestrate(
+      [
+        "report",
+        "--stage",
+        "feasibility",
+        "--result",
+        "rejected",
+        "--user-input",
+        "Clarify the cost assumptions",
+      ],
+      p,
+    );
+    expect(rejected.status).toBe(0);
+    expect(rejected.out).toContain("Recorded rejected");
+    expect(readFileSync(statePath(p), "utf-8")).toContain(
+      "- [R] feasibility — EXECUTE",
+    );
+
+    const revised = orchestrate(
+      ["report", "--stage", "feasibility", "--result", "revised"],
+      p,
+    );
+    expect(revised.status).toBe(0);
+    expect(revised.out).toContain("Recorded revised");
+    expect(readFileSync(statePath(p), "utf-8")).toContain(
+      "- [?] feasibility — EXECUTE",
+    );
+
+    const approved = orchestrate(
+      [
+        "report",
+        "--stage",
+        "feasibility",
+        "--result",
+        "approved",
+        "--user-input",
+        "Approve",
+      ],
+      p,
+    );
+    expect(approved.status).toBe(0);
+    expect(approved.out).toContain('"kind":"done"');
+    expect(state(["get", "Current Stage"], p).stdout.trim()).toBe(
+      "scope-definition",
+    );
+    expect(auditEvents(p)).toContain(
+      "STAGE_AWAITING_APPROVAL GATE_REJECTED STAGE_REVISING " +
+        "STAGE_AWAITING_APPROVAL GATE_APPROVED STAGE_COMPLETED STAGE_STARTED",
+    );
+    expect(countEvent(p, "STAGE_AWAITING_APPROVAL")).toBe(2);
+    expect(countEvent(p, "GATE_REJECTED")).toBe(1);
+    expect(countEvent(p, "GATE_APPROVED")).toBe(1);
   }, 30000);
 });
 
@@ -590,5 +945,342 @@ describe("t115 report-path gate backfill carries Recovered", () => {
     const gateRows = auditBlocksFor(p, "STAGE_AWAITING_APPROVAL");
     expect(gateRows.length).toBe(1);
     expect(gateRows[0]).not.toContain("**Recovered**");
+  }, 30000);
+});
+
+// ============================================================
+// Reviewer precondition (RFC Track 1 / §12a). A stage that declares a
+// `reviewer` cannot be approved until a terminal REVIEW_COMPLETED row for it
+// exists in the audit tail. requirements-analysis declares
+// reviewer: aidlc-product-lead-agent, so it is the test subject. The gate is
+// HARD on the review having happened, SOFT on the verdict (NOT-READY still
+// satisfies it). feasibility (no reviewer) is the negative control — its
+// approve is unaffected (proven by the existing gated-approve round-trip above).
+// ============================================================
+
+const LOG_TOOL = join(TOOLS_DIR, "aidlc-log.ts");
+
+function log(args: string[], p: string): CliResult {
+  const res = spawnSync(BUN, [LOG_TOOL, ...args, "--project-dir", p], {
+    encoding: "utf-8",
+  });
+  const stdout = res.stdout ?? "";
+  return { status: res.status ?? -1, out: `${stdout}${res.stderr ?? ""}`, stdout };
+}
+
+function appendAudit(event: string, fields: Record<string, string>, p: string): CliResult {
+  const fieldArgs = Object.entries(fields).flatMap(([key, value]) => [
+    "--field",
+    `${key}=${value}`,
+  ]);
+  const res = spawnSync(
+    BUN,
+    [AUDIT_TOOL, "append", event, ...fieldArgs, "--project-dir", p],
+    { encoding: "utf-8" },
+  );
+  const stdout = res.stdout ?? "";
+  return { status: res.status ?? -1, out: `${stdout}${res.stderr ?? ""}`, stdout };
+}
+
+describe("t115 reviewer precondition (report refuses approve without a recorded review)", () => {
+  test("R1: approving a reviewer-bearing stage is REFUSED without a REVIEW_COMPLETED", () => {
+    const p = projWithState("state-mid-inception.md");
+    // Open the gate so approve's state precondition passes; the reviewer
+    // precondition is the thing under test.
+    expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+
+    const r = orchestrate(
+      ["report", "--stage", "requirements-analysis", "--result", "approved", "--user-input", "Approve"],
+      p,
+    );
+    expect(r.out).toContain('"kind":"error"');
+    expect(r.out).toContain("declares a reviewer");
+    // The transition was NOT committed — no GATE_APPROVED emitted.
+    expect(countEvent(p, "GATE_APPROVED")).toBe(0);
+  }, 30000);
+
+  test("R2: a recorded READY review unblocks the approve", () => {
+    const p = projWithState("state-mid-inception.md");
+    expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+
+    const rev = log(
+      ["review", "--stage", "requirements-analysis", "--reviewer", "aidlc-product-lead-agent", "--iteration", "1", "--verdict", "READY"],
+      p,
+    );
+    expect(rev.stdout).toContain('"emitted":"REVIEW_COMPLETED"');
+
+    const r = orchestrate(
+      ["report", "--stage", "requirements-analysis", "--result", "approved", "--user-input", "Approve"],
+      p,
+    );
+    expect(r.out).toContain('"kind":"done"');
+    expect(countEvent(p, "GATE_APPROVED")).toBe(1);
+  }, 30000);
+
+  test("R3: a NOT-READY verdict still satisfies the precondition (soft on verdict)", () => {
+    const p = projWithState("state-mid-inception.md");
+    expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+
+    log(
+      ["review", "--stage", "requirements-analysis", "--reviewer", "aidlc-product-lead-agent", "--iteration", "2", "--verdict", "NOT-READY"],
+      p,
+    );
+
+    const r = orchestrate(
+      ["report", "--stage", "requirements-analysis", "--result", "approved", "--user-input", "Approve despite findings"],
+      p,
+    );
+    expect(r.out).toContain('"kind":"done"');
+    expect(countEvent(p, "GATE_APPROVED")).toBe(1);
+  }, 30000);
+
+  test("R4: a review recorded for a DIFFERENT stage does not unblock this one", () => {
+    const p = projWithState("state-mid-inception.md");
+    expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+
+    // Review recorded for the wrong slug — must not satisfy requirements-analysis.
+    log(
+      ["review", "--stage", "user-stories", "--reviewer", "aidlc-product-lead-agent", "--iteration", "1", "--verdict", "READY"],
+      p,
+    );
+
+    const r = orchestrate(
+      ["report", "--stage", "requirements-analysis", "--result", "approved", "--user-input", "Approve"],
+      p,
+    );
+    expect(r.out).toContain('"kind":"error"');
+    expect(countEvent(p, "GATE_APPROVED")).toBe(0);
+  }, 30000);
+
+  test("R5: REVIEW_REQUESTED alone (no verdict) does NOT satisfy the precondition", () => {
+    const p = projWithState("state-mid-inception.md");
+    expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+
+    // Dispatch row only — no terminal verdict yet.
+    const req = log(
+      ["review", "--stage", "requirements-analysis", "--reviewer", "aidlc-product-lead-agent", "--iteration", "1"],
+      p,
+    );
+    expect(req.stdout).toContain('"emitted":"REVIEW_REQUESTED"');
+
+    const r = orchestrate(
+      ["report", "--stage", "requirements-analysis", "--result", "approved", "--user-input", "Approve"],
+      p,
+    );
+    expect(r.out).toContain('"kind":"error"');
+    expect(countEvent(p, "REVIEW_REQUESTED")).toBe(1);
+    expect(countEvent(p, "REVIEW_COMPLETED")).toBe(0);
+    expect(countEvent(p, "GATE_APPROVED")).toBe(0);
+  }, 30000);
+
+  // R6 (blocker 1): the guard lives in handleApprove, so a DIRECT
+  // `aidlc-state.ts approve` — the recovery path that bypasses report — is
+  // refused too. This is the bypass the reviewer reproduced (report errored but
+  // state approve committed with GATE_APPROVED=1, REVIEW_COMPLETED=0).
+  test("R6: a DIRECT aidlc-state.ts approve is also refused without a review (not just report)", () => {
+    const p = projWithState("state-mid-inception.md");
+    expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+
+    const r = state(["approve", "requirements-analysis", "--user-input", "Approve"], p);
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain("declares a reviewer");
+    expect(countEvent(p, "GATE_APPROVED")).toBe(0);
+  }, 30000);
+
+  // R7 (blocker 2): a review recorded, then the stage is rejected/revised, then
+  // re-approved with NO new review — the stale review must NOT satisfy the
+  // re-approve. The GATE_REJECTED floors the read past the old review.
+  test("R7: a review before a GATE_REJECTED does not satisfy the re-approve", () => {
+    const p = projWithState("state-mid-inception.md");
+    expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+    log(
+      ["review", "--stage", "requirements-analysis", "--reviewer", "aidlc-product-lead-agent", "--iteration", "1", "--verdict", "READY"],
+      p,
+    );
+    // The human requests changes: reject records GATE_REJECTED and sets the
+    // stage revising ([R]). `revise` re-enters the gate ([R] → [?]).
+    expect(state(["reject", "requirements-analysis", "--feedback", "revise it"], p).status).toBe(0);
+    expect(state(["revise", "requirements-analysis"], p).status).toBe(0);
+
+    // Re-approve with no fresh review → refused (the pre-reject review is stale).
+    const r = state(["approve", "requirements-analysis", "--user-input", "Approve"], p);
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain("declares a reviewer");
+    expect(countEvent(p, "GATE_APPROVED")).toBe(0);
+
+    // A fresh review after the reject unblocks it.
+    log(
+      ["review", "--stage", "requirements-analysis", "--reviewer", "aidlc-product-lead-agent", "--iteration", "2", "--verdict", "READY"],
+      p,
+    );
+    const r2 = state(["approve", "requirements-analysis", "--user-input", "Approve"], p);
+    expect(r2.status).toBe(0);
+    expect(countEvent(p, "GATE_APPROVED")).toBe(1);
+  }, 30000);
+
+  // R8 (finding S1): a review row naming the WRONG reviewer (a typo, or the
+  // conductor self-certifying) must not satisfy the precondition — the guard
+  // matches Reviewer as well as Stage.
+  test("R8: a review recorded with the wrong reviewer name does not satisfy", () => {
+    const p = projWithState("state-mid-inception.md");
+    expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+    log(
+      ["review", "--stage", "requirements-analysis", "--reviewer", "not-the-real-reviewer", "--iteration", "1", "--verdict", "READY"],
+      p,
+    );
+    const r = state(["approve", "requirements-analysis", "--user-input", "Approve"], p);
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain("declares a reviewer");
+    expect(countEvent(p, "GATE_APPROVED")).toBe(0);
+  }, 30000);
+
+  test("R9: advance, finalize, and complete-workflow enforce the same reviewer receipt", () => {
+    for (const command of ["advance", "finalize", "complete-workflow"]) {
+      const refusedProject = projWithState("state-mid-inception.md");
+      const before = readFileSync(statePath(refusedProject), "utf-8");
+      const refused = state([command, "requirements-analysis"], refusedProject);
+      expect(refused.status, command).not.toBe(0);
+      expect(refused.out, command).toContain("declares a reviewer");
+      expect(readFileSync(statePath(refusedProject), "utf-8"), command).toBe(before);
+
+      const acceptedProject = projWithState("state-mid-inception.md");
+      expect(log([
+        "review",
+        "--stage",
+        "requirements-analysis",
+        "--reviewer",
+        "aidlc-product-lead-agent",
+        "--iteration",
+        "1",
+        "--verdict",
+        "READY",
+      ], acceptedProject).status, command).toBe(0);
+      expect(
+        state([command, "requirements-analysis"], acceptedProject).status,
+        command,
+      ).toBe(0);
+    }
+  }, 30000);
+
+  test("R10: a persisted autonomous Construction setting does not bypass an Inception reviewer", () => {
+    const p = projWithState("state-mid-inception.md");
+    writeFileSync(
+      statePath(p),
+      `${readFileSync(statePath(p), "utf-8")}\n- **Construction Autonomy Mode**: autonomous\n`,
+      "utf-8",
+    );
+    expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+
+    const r = state(["approve", "requirements-analysis"], p);
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain("declares a reviewer");
+    expect(countEvent(p, "GATE_APPROVED")).toBe(0);
+  }, 30000);
+
+  test("R11: an isolated --single review receipt cannot satisfy the main workflow", () => {
+    const p = projWithState("state-mid-inception.md");
+    expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+    expect(log([
+      "review",
+      "--single",
+      "--stage",
+      "requirements-analysis",
+      "--reviewer",
+      "aidlc-product-lead-agent",
+      "--iteration",
+      "1",
+      "--verdict",
+      "READY",
+    ], p).status).toBe(0);
+
+    expect(
+      auditBlocksFor(p, "REVIEW_COMPLETED")[0],
+    ).toContain("**Workflow**: single-stage:requirements-analysis");
+    const r = state(["approve", "requirements-analysis", "--user-input", "Approve"], p);
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain("declares a reviewer");
+    expect(countEvent(p, "GATE_APPROVED")).toBe(0);
+  }, 30000);
+
+  test("R12: a declared artifact create or update after review requires a fresh review", () => {
+    for (const event of ["ARTIFACT_CREATED", "ARTIFACT_UPDATED"]) {
+      const p = projWithState("state-mid-inception.md");
+      expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+      expect(log([
+        "review",
+        "--stage",
+        "requirements-analysis",
+        "--reviewer",
+        "aidlc-product-lead-agent",
+        "--verdict",
+        "READY",
+      ], p).status).toBe(0);
+      expect(appendAudit(event, {
+        Tool: event === "ARTIFACT_CREATED" ? "Write" : "Edit",
+        File: join(
+          seededRecordDir(p),
+          "inception",
+          "requirements-analysis",
+          "requirements.md",
+        ),
+        Context: "inception > requirements-analysis > requirements.md",
+      }, p).status).toBe(0);
+
+      const refused = state(["approve", "requirements-analysis"], p);
+      expect(refused.status).not.toBe(0);
+      expect(refused.out).toContain("fresh REVIEW_COMPLETED");
+      expect(countEvent(p, "GATE_APPROVED")).toBe(0);
+
+      expect(log([
+        "review",
+        "--stage",
+        "requirements-analysis",
+        "--reviewer",
+        "aidlc-product-lead-agent",
+        "--verdict",
+        "READY",
+      ], p).status).toBe(0);
+      expect(state(["approve", "requirements-analysis"], p).status).toBe(0);
+    }
+  }, 30000);
+
+  test("R13: an unrelated artifact update does not invalidate the review", () => {
+    const p = projWithState("state-mid-inception.md");
+    expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+    expect(log([
+      "review",
+      "--stage",
+      "requirements-analysis",
+      "--reviewer",
+      "aidlc-product-lead-agent",
+      "--verdict",
+      "READY",
+    ], p).status).toBe(0);
+    expect(appendAudit("ARTIFACT_UPDATED", {
+      Tool: "Edit",
+      File: join(seededRecordDir(p), "inception", "user-stories", "stories.md"),
+      Context: "inception > user-stories > stories.md",
+    }, p).status).toBe(0);
+
+    expect(state(["approve", "requirements-analysis"], p).status).toBe(0);
+    expect(countEvent(p, "GATE_APPROVED")).toBe(1);
+  }, 30000);
+
+  test("R14: malformed REVIEW_COMPLETED verdicts do not satisfy the precondition", () => {
+    for (const verdict of [undefined, "MAYBE"]) {
+      const p = projWithState("state-mid-inception.md");
+      expect(state(["gate-start", "requirements-analysis"], p).status).toBe(0);
+      const fields: Record<string, string> = {
+        Stage: "requirements-analysis",
+        Reviewer: "aidlc-product-lead-agent",
+      };
+      if (verdict !== undefined) fields.Verdict = verdict;
+      expect(appendAudit("REVIEW_COMPLETED", fields, p).status).toBe(0);
+
+      const refused = state(["approve", "requirements-analysis"], p);
+      expect(refused.status).not.toBe(0);
+      expect(refused.out).toContain("fresh REVIEW_COMPLETED");
+      expect(countEvent(p, "GATE_APPROVED")).toBe(0);
+    }
   }, 30000);
 });

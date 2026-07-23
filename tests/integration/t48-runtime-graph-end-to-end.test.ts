@@ -6,8 +6,8 @@
 // invoked `aidlc-runtime.ts compile` after each transition (simulating what
 // the PostToolUse Bash hook does in a session — a bun-direct invocation does
 // not trigger Claude Code's hooks). This twin keeps that process-boundary
-// shape: it spawns the shipped tools (aidlc-utility init, aidlc-state
-// gate-start / approve, aidlc-runtime compile) via the BUN runtime against
+// shape: it spawns the shipped tools (aidlc-utility init, aidlc-orchestrate
+// report, aidlc-runtime compile) via the BUN runtime against
 // the .ts paths and asserts on the bytes the tools write to
 // runtime-graph.json + audit.md on disk. An in-process import would lose the
 // audit-lock regime + state-machine seam the .sh exercised across multiple
@@ -71,8 +71,9 @@ import {
 
 const BUN = process.execPath; // the bun running this test
 const UTIL = join(AIDLC_SRC, "tools", "aidlc-utility.ts");
-const STATE = join(AIDLC_SRC, "tools", "aidlc-state.ts");
+const ORCHESTRATE = join(AIDLC_SRC, "tools", "aidlc-orchestrate.ts");
 const RUNTIME = join(AIDLC_SRC, "tools", "aidlc-runtime.ts");
+const LOG = join(AIDLC_SRC, "tools", "aidlc-log.ts");
 
 interface RuntimeStageRow {
   stage_slug: string;
@@ -173,7 +174,7 @@ beforeAll(() => {
   // Init the bugfix scope — fastest scope, smallest stage list (.sh:40-42).
   const init = run(
     UTIL,
-    ["init", "--scope", "bugfix", "--project-dir", proj],
+    ["intent-birth", "--scope", "bugfix", "--project-dir", proj],
     { AIDLC_WORKFLOW_INTENT: "runtime-graph e2e" },
   );
   initOk = init.status === 0;
@@ -195,17 +196,57 @@ beforeAll(() => {
   compile1Ok = existsSync(graphPathOf(proj));
   if (compile1Ok) graphAfterInit = readGraph();
 
-  // --- Gate-start -> approve stage 1 (emits GATE_APPROVED + STAGE_COMPLETED
-  // + the in-line STAGE_STARTED for stage 2), then compile #2 (.sh:75-79). ---
-  run(STATE, ["gate-start", firstStage, "--project-dir", proj]);
-  run(STATE, [
-    "approve",
+  // --- Report gate-open -> approval through the engine-owned transition seam
+  // (emits GATE_APPROVED + STAGE_COMPLETED + STAGE_STARTED for stage 2), then
+  // compile #2 (.sh:75-79). ---
+  const transitionEnv = { AIDLC_SKIP_ARTIFACT_GUARD: "1" };
+  const gate = run(
+    ORCHESTRATE,
+    [
+      "report",
+      "--stage",
+      firstStage,
+      "--result",
+      "awaiting-approval",
+      "--project-dir",
+      proj,
+    ],
+    transitionEnv,
+  );
+  if (gate.status !== 0 || !gate.out.includes('"kind":"print"')) {
+    throw new Error(`gate report failed: ${gate.out}`);
+  }
+  run(LOG, [
+    "review",
+    "--stage",
     firstStage,
-    "--user-input",
-    "looks good",
+    "--reviewer",
+    "aidlc-product-lead-agent",
+    "--iteration",
+    "1",
+    "--verdict",
+    "READY",
     "--project-dir",
     proj,
   ]);
+  const approval = run(
+    ORCHESTRATE,
+    [
+      "report",
+      "--stage",
+      firstStage,
+      "--result",
+      "approved",
+      "--user-input",
+      "looks good",
+      "--project-dir",
+      proj,
+    ],
+    transitionEnv,
+  );
+  if (approval.status !== 0 || !approval.out.includes('"kind":"done"')) {
+    throw new Error(`approval report failed: ${approval.out}`);
+  }
   run(RUNTIME, ["compile", "--project-dir", proj], { CLAUDE_PROJECT_DIR: proj });
   graphAfterApprove = readGraph();
   rawBeforeRecompile = readFileSync(graphPathOf(proj), "utf-8");

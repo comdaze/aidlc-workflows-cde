@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import {
   acquireAuditLock,
   auditFilePath,
+  cloneIdPath,
   errorMessage,
   isoTimestamp,
   parseFieldArgs,
@@ -15,7 +16,7 @@ import {
   worktreePath,
 } from "./aidlc-lib.ts";
 
-// --- Canonical event types (71) ---
+// --- Canonical event types (the parity tests derive the count from this set) ---
 // See docs/reference/12-state-machine.md for the state transitions that emit each event.
 
 const VALID_EVENT_TYPES = new Set([
@@ -54,6 +55,13 @@ const VALID_EVENT_TYPES = new Set([
   "GATE_APPROVED",
   "GATE_REJECTED",
   "QUESTION_ANSWERED",
+  // Reviewer step (§12a) — REVIEW_REQUESTED on dispatch, REVIEW_COMPLETED when
+  // a verdict is read. Emitted by the tool actor `aidlc-log.ts review`. A
+  // reviewer-bearing stage cannot complete without a terminal REVIEW_COMPLETED
+  // in its audit tail (enforced by aidlc-state.ts in approve, advance, finalize,
+  // and complete-workflow).
+  "REVIEW_REQUESTED",
+  "REVIEW_COMPLETED",
   // Artifact events (hook-emitted)
   "ARTIFACT_CREATED",
   "ARTIFACT_UPDATED",
@@ -156,6 +164,8 @@ const EVENT_HEADINGS: Record<string, string> = {
   GATE_APPROVED: "Gate Approved",
   GATE_REJECTED: "Gate Rejected",
   QUESTION_ANSWERED: "Question Answered",
+  REVIEW_REQUESTED: "Review Requested",
+  REVIEW_COMPLETED: "Review Completed",
   ARTIFACT_CREATED: "Artifact Created",
   ARTIFACT_UPDATED: "Artifact Updated",
   ARTIFACT_REUSED: "Artifact Reused",
@@ -229,6 +239,36 @@ function jsonError(message: string): never {
 
 // --- Subcommand: append ---
 
+export interface AuditEntryInput {
+  eventType: string;
+  fields: Record<string, string>;
+}
+
+function validateAuditEntry(entry: AuditEntryInput): void {
+  if (!VALID_EVENT_TYPES.has(entry.eventType)) {
+    throw new Error(
+      `Invalid event type: ${entry.eventType}. Must be one of: ${[...VALID_EVENT_TYPES].join(", ")}`
+    );
+  }
+}
+
+function renderAuditBlock(
+  entry: AuditEntryInput,
+  timestamp: string,
+): string {
+  const heading = EVENT_HEADINGS[entry.eventType] || entry.eventType;
+  let block = `\n## ${heading}\n`;
+  block += `**Timestamp**: ${timestamp}\n`;
+  block += `**Event**: ${entry.eventType}\n`;
+  for (const [key, value] of Object.entries(entry.fields)) {
+    // Escape CR/LF in values so a malicious or malformed input (e.g., a file
+    // path containing '\n**Event**: FAKE\n') cannot forge an audit entry.
+    const safeValue = String(value).replace(/\r?\n/g, "\\n");
+    block += `**${key}**: ${safeValue}\n`;
+  }
+  return `${block}\n---\n`;
+}
+
 // Core append logic — throws on error instead of exiting. Safe for library callers.
 // CLI caller (main) wraps this in try/catch and translates to jsonError.
 export function appendAuditEntry(
@@ -238,11 +278,7 @@ export function appendAuditEntry(
   intent?: string,
   space?: string
 ): { appended: true; event: string; timestamp: string } {
-  if (!VALID_EVENT_TYPES.has(eventType)) {
-    throw new Error(
-      `Invalid event type: ${eventType}. Must be one of: ${[...VALID_EVENT_TYPES].join(", ")}`
-    );
-  }
+  validateAuditEntry({ eventType, fields });
 
   // Lock + audit shard both pin to the same (intent, space) record so a fork/
   // merge pair targets ONE intent end-to-end; omitted -> default-resolution.
@@ -271,33 +307,52 @@ export function appendAuditEntryUnlocked(
   intent?: string,
   space?: string
 ): { appended: true; event: string; timestamp: string } {
-  if (!VALID_EVENT_TYPES.has(eventType)) {
-    throw new Error(
-      `Invalid event type: ${eventType}. Must be one of: ${[...VALID_EVENT_TYPES].join(", ")}`
-    );
-  }
-
-  const heading = EVENT_HEADINGS[eventType] || eventType;
+  const entry = { eventType, fields };
+  validateAuditEntry(entry);
   const ts = isoTimestamp();
-
   const path = ensureAuditFile(projectDir, intent, space);
-
-  let block = `\n## ${heading}\n`;
-  block += `**Timestamp**: ${ts}\n`;
-  block += `**Event**: ${eventType}\n`;
-  for (const [key, value] of Object.entries(fields)) {
-    // Escape CR/LF in values so a malicious or malformed input (e.g., a file
-    // path containing '\n**Event**: FAKE\n') cannot forge an audit entry.
-    // Field values are markdown, not prose — literal newlines are never
-    // semantically meaningful here, and the audit trail is security-critical.
-    const safeValue = String(value).replace(/\r?\n/g, "\\n");
-    block += `**${key}**: ${safeValue}\n`;
-  }
-  block += `\n---\n`;
-
-  appendFileSync(path, block, "utf-8");
+  appendFileSync(path, renderAuditBlock(entry, ts), "utf-8");
 
   return { appended: true, event: eventType, timestamp: ts };
+}
+
+// Validate a related event set before touching disk, then append every block
+// under one lock with one write. This is the audit-only transaction primitive
+// for lifecycle pairs such as a synthetic single-stage STARTED/COMPLETED pair:
+// a malformed later entry cannot leave an earlier entry committed, and no
+// concurrent emitter can interleave between the blocks.
+export function appendAuditEntries(
+  entries: AuditEntryInput[],
+  projectDir: string,
+  intent?: string,
+  space?: string,
+): { appended: true; events: string[]; timestamps: string[] } {
+  if (entries.length === 0) {
+    throw new Error("appendAuditEntries requires at least one entry");
+  }
+  for (const entry of entries) validateAuditEntry(entry);
+
+  if (!acquireAuditLock(projectDir, 50, 100, intent, space)) {
+    throw new Error("Failed to acquire audit lock after retries");
+  }
+  try {
+    const timestamps = entries.map(() => isoTimestamp());
+    const payload = entries
+      .map((entry, index) => renderAuditBlock(entry, timestamps[index]))
+      .join("");
+    appendFileSync(
+      ensureAuditFile(projectDir, intent, space),
+      payload,
+      "utf-8",
+    );
+    return {
+      appended: true,
+      events: entries.map((entry) => entry.eventType),
+      timestamps,
+    };
+  } finally {
+    releaseAuditLock(projectDir, intent, space);
+  }
 }
 
 // Legacy CLI-style wrapper. Kept for backward compatibility with aidlc-state/aidlc-jump/
@@ -311,6 +366,42 @@ export function handleAppend(
 ): void {
   const result = appendAuditEntry(eventType, fields, projectDir);
   jsonSuccess(result);
+}
+
+function handleAppendBatch(rawEntries: string, projectDir: string): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawEntries);
+  } catch {
+    throw new Error("append-batch entries must be valid JSON");
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error("append-batch entries must be a non-empty JSON array");
+  }
+  const entries: AuditEntryInput[] = parsed.map((raw, index) => {
+    if (
+      typeof raw !== "object" ||
+      raw === null ||
+      Array.isArray(raw) ||
+      typeof (raw as { eventType?: unknown }).eventType !== "string" ||
+      typeof (raw as { fields?: unknown }).fields !== "object" ||
+      (raw as { fields?: unknown }).fields === null ||
+      Array.isArray((raw as { fields?: unknown }).fields)
+    ) {
+      throw new Error(
+        `append-batch entry ${index} must contain string eventType and object fields`
+      );
+    }
+    const fields = (raw as { fields: Record<string, unknown> }).fields;
+    if (Object.values(fields).some((value) => typeof value !== "string")) {
+      throw new Error(`append-batch entry ${index} field values must be strings`);
+    }
+    return {
+      eventType: (raw as { eventType: string }).eventType,
+      fields: fields as Record<string, string>,
+    };
+  });
+  jsonSuccess(appendAuditEntries(entries, projectDir));
 }
 
 // --- Subcommand: append-raw ---
@@ -462,6 +553,14 @@ function handleAuditFork(args: string[], projectDir: string): void {
   // [fork-emitted:<ts>] correlation tag and exit non-zero so doctor
   // can identify the orphan AUDIT_FORKED row.
   try {
+    // Worktree-local tools must append to the fork shard that audit-merge
+    // consumes. Share the parent clone token inside this isolated worktree;
+    // each worktree still has its own copy of the shard, so concurrent writes
+    // remain isolated until the serial merge. Copy this before the one-shot
+    // audit file so a token-copy failure leaves audit-fork retryable.
+    const wtCloneIdPath = cloneIdPath(wtPath);
+    mkdirSync(dirname(wtCloneIdPath), { recursive: true });
+    copyFileSync(cloneIdPath(projectDir), wtCloneIdPath);
     mkdirSync(dirname(wtAuditPath), { recursive: true });
     copyFileSync(mainAuditPath, wtAuditPath);
   } catch (e) {
@@ -697,8 +796,8 @@ function handleAuditMerge(args: string[], projectDir: string): void {
 
 // --- CLI entry point ---
 
-function main(): void {
-  const rawArgs = process.argv.slice(2);
+export function main(argv: string[]): void {
+  const rawArgs = argv;
 
   // Extract --project-dir before general parsing
   let projectDirArg: string | undefined;
@@ -716,7 +815,7 @@ function main(): void {
   const subcommand = filteredArgs[0];
 
   if (!subcommand) {
-    jsonError("Usage: aidlc-audit <append|append-raw|audit-fork|audit-merge> [args...]");
+    jsonError("Usage: aidlc-audit <append|append-batch|append-raw|audit-fork|audit-merge> [args...]");
   }
 
   switch (subcommand) {
@@ -727,6 +826,15 @@ function main(): void {
       }
       const fields = parseFieldArgs(rawArgs);
       handleAppend(eventType, fields, projectDir);
+      break;
+    }
+
+    case "append-batch": {
+      const entries = filteredArgs[1];
+      if (!entries) {
+        jsonError("Usage: aidlc-audit append-batch <entries-json>");
+      }
+      handleAppendBatch(entries, projectDir);
       break;
     }
 
@@ -751,10 +859,10 @@ function main(): void {
       break;
 
     default:
-      jsonError(`Unknown subcommand: ${subcommand}. Expected: append, append-raw, audit-fork, audit-merge`);
+      jsonError(`Unknown subcommand: ${subcommand}. Expected: append, append-batch, append-raw, audit-fork, audit-merge`);
   }
 }
 
 if (import.meta.main) {
-  main();
+  main(process.argv.slice(2));
 }

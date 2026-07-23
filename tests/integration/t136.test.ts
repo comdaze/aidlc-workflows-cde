@@ -96,6 +96,14 @@ const UTIL_TS = join(
   "tools",
   "aidlc-utility.ts",
 );
+const LOG_TS = join(
+  REPO_ROOT,
+  "dist",
+  "claude",
+  ".claude",
+  "tools",
+  "aidlc-log.ts",
+);
 
 const SLUG = "requirements-analysis";
 
@@ -150,6 +158,10 @@ interface CliResult {
 function state(p: string, ...args: string[]): CliResult {
   const res = spawnSync(BUN, [STATE_TS, ...args, "--project-dir", p], {
     encoding: "utf-8",
+    env: {
+      ...process.env,
+      AIDLC_ALLOW_DIRECT_STATE_TRANSITIONS: "1",
+    },
   });
   const stdout = res.stdout ?? "";
   return {
@@ -231,7 +243,7 @@ beforeAll(() => {
     BUN,
     [
       UTIL_TS,
-      "init",
+      "intent-birth",
       "--scope",
       "bugfix",
       "--project-dir",
@@ -297,6 +309,9 @@ describe("t136 revision-loop — aidlc-state gate/reject/revise/approve cumulati
   // --- Final: revise -> approve lands [x] (t122.sh:57-59) ---
   test("6: final approve lands the stage at [x]", () => {
     expect(state(proj, "revise", SLUG).status).toBe(0); // S1
+    // requirements-analysis declares a reviewer; record a fresh terminal review
+    // (after the revise) so the §12a gate precondition passes.
+    spawnSync(BUN, [LOG_TS, "review", "--stage", SLUG, "--reviewer", "aidlc-product-lead-agent", "--iteration", "1", "--verdict", "READY", "--project-dir", proj], { encoding: "utf-8" });
     expect(state(proj, "approve", SLUG, "--user-input", "accept as-is").status).toBe(0); // S1
     expect(checkboxGlyph(proj, SLUG)).toBe("x");
   });

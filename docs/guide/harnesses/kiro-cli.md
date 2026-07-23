@@ -43,27 +43,27 @@ so the AI-DLC conductor agent is active by default — `/aidlc` just works.
 have configured**; if you prefer your own default, remove that setting and use
 `kiro-cli chat --agent aidlc` instead.
 
-The same `cli.json` also ships per-model reasoning-effort defaults via
-`chat.modelDefaults`: `xhigh` for the pinned orchestrator model
-(`claude-opus-4.8`) so the conductor reasons at full depth out of the box, and
-`high` for `claude-sonnet-4.5`, the model the balanced/templated agent tiers
-pin (Kiro has no per-agent effort surface, so effort rides on the model; two
-tiers sharing a model share its effort — the higher tier's value wins).
-Judgment-tier agents pin no model at all: they follow your `/model` default
-at that model's own default effort. This file is read by the Kiro CLI only —
-the Kiro IDE ignores `cli.json` and applies its extension's per-model
-defaults instead. Override per session with `/effort <level>` in chat or
-`kiro-cli chat --effort <level>` (low|medium|high|xhigh|max) — a session flag
-and your user-level `~/.kiro/settings/cli.json` both take precedence over the
-workspace default.
+No shipped agent pins a model: a pinned ID resolves only when that
+model is enabled on the user's Kiro install, so the conductor and all 14
+personas inherit your session model (`/model`). The same `cli.json` also
+ships one CONDITIONAL per-model reasoning-effort default via
+`chat.modelDefaults`: `xhigh` for `claude-opus-4.8`, applied only when your
+session actually runs that model (the recommended setup) — inert otherwise.
+Kiro has no per-agent effort surface, so effort can only ride on the model
+this way. This file is read by the Kiro CLI only — the Kiro IDE ignores
+`cli.json` and applies its extension's per-model defaults instead. Override
+per session with `/effort <level>` in chat or `kiro-cli chat --effort
+<level>` (low|medium|high|xhigh|max) — a session flag and your user-level
+`~/.kiro/settings/cli.json` both take precedence over the workspace default.
 
 ## Usage
 
-Identical to the Claude Code harness: `/aidlc <description>` starts a
-workflow, `/aidlc --status` reports position, `--doctor`,
-`--stage`, `--phase`, `--depth`, `--test-strategy` all work, and
-the per-stage (`/aidlc-application-design`) and per-scope (`/aidlc-feature`)
-runner skills are installed.
+Start `kiro-cli chat` in the project, then invoke the conductor with
+`/aidlc <description>`. `/aidlc --status` reports position; `/aidlc --doctor`,
+`--stage`, `--phase`, `--depth`, and `--test-strategy` all work. Workspace
+navigation uses `/aidlc intent [name]`, `/aidlc space [name]`, and
+`/aidlc space-create <name>`. The per-stage (`/aidlc-application-design`) and
+per-scope (`/aidlc-feature`) runner skills are installed too.
 
 ## What's different on Kiro
 
@@ -71,7 +71,7 @@ runner skills are installed.
 |------|-------------|----------|
 | Gates & questions | `AskUserQuestion` widget | Numbered prose options (reply with a number); the questions FILE with `[Answer]:` tags stays the source of truth |
 | Statusline | Current stage + model + context % | Not available — use `/aidlc --status` and the progress line at each gate |
-| Subagent stages (2.1, 3.5) | `Task` tool | Kiro `subagent` tool → `aidlc-developer-agent` / `aidlc-architect-agent` configs |
+| Dispatched stages (2.1 pipeline, 2.2 subagent, 2.4 mob, 3.5 subagent) | `Task` tool | Kiro `subagent` tool → the agent configs (all 14 personas ship configs) |
 | Construction swarm | Parallel `Task` floor, optional ultracode Workflow | Subagent fan-out only; `AIDLC_USE_SWARM=1` is announced as a no-op |
 | Session audit events | `SESSION_STARTED/RESUMED/ENDED`, `SESSION_COMPACTED` | `SESSION_STARTED` only (Kiro has no session-end / pre-compaction hooks) |
 | Forwarding-loop enforcement (Stop hook) | Interactive + headless | Interactive sessions only — `--no-interactive` runs do not honor the stop-hook block |

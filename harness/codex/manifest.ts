@@ -2,7 +2,7 @@
 //
 // Projects core/ into dist/codex/.codex/ (rules → aidlc-rules, D-10) and defers
 // every codex-specific surface to emit.ts (config.toml, hooks.json, trust-seed,
-// AGENTS.md, 11 agent TOMLs, the .agents/skills/ tree). Mirrors the proven
+// AGENTS.md, 14 agent TOMLs, the .agents/skills/ tree). Mirrors the proven
 // package-codex.ts spike, generalized onto the unified packager.
 //
 // Codex specifics vs Claude/Kiro:
@@ -52,11 +52,6 @@ const manifest: HarnessManifest = {
   ],
 
   rulesRename: "aidlc-rules",
-
-  // The codex adapter lives inside the core-copied hooks/ dir — exempt it from
-  // the orphan scan. (Agent TOMLs are emitted, not authored — they are part of
-  // emit's expected set, scanned by emit's own check.)
-  authoredExempt: [/^hooks\/aidlc-codex-[^/]+\.ts$/],
 
   // Skills go to .agents/skills/ via emit, not <harnessDir>/skills/ via runner-gen.
   skipRunnerGen: true,

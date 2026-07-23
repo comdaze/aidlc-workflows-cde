@@ -5,7 +5,7 @@ This chapter covers common issues and their solutions, organized by symptom.
 > **Harness note.** Symptoms and fixes below are written for **Claude Code** (hook
 > filenames, `settings.json` blocks, compaction behaviour). The deterministic core
 > — state, audit, the engine — behaves identically on every harness, but the
-> shell-level surfaces differ: Kiro and Codex wire hooks and config their own way
+> shell-level surfaces differ: the other harnesses wire hooks and config their own way
 > (see [Running on other harnesses](harnesses/README.md)). Where a fix names a
 > `.claude/` path or a Claude mechanic, the equivalent lives in your harness's
 > config dir.
@@ -25,6 +25,7 @@ This chapter covers common issues and their solutions, organized by symptom.
 | Statusline shows "ready" | Check `aidlc-state.md` has a `**Lifecycle Phase**` field |
 | Statusline not appearing | Verify `bun` is on PATH and `settings.json` `statusLine.command` references `aidlc-statusline.ts` |
 | Subagent timed out | Run `/aidlc` to retry or run the stage inline |
+| Workflow stuck or misbehaving, need help | Run `/aidlc --doctor --export` and share the produced `.tar.gz` (redacted; no work product) |
 
 ---
 
@@ -34,7 +35,7 @@ This chapter covers common issues and their solutions, organized by symptom.
 
 ### `bun` not installed or not on PATH
 
-All 12 TypeScript hooks (`aidlc-mint-presence.ts`, `aidlc-reviewer-scope.ts`, `aidlc-audit-logger.ts`, `aidlc-sensor-fire.ts`, `aidlc-runtime-compile.ts`, `aidlc-log-subagent.ts`, `aidlc-stop.ts`, `aidlc-validate-state.ts`, `aidlc-sync-statusline.ts`, `aidlc-session-start.ts`, `aidlc-session-end.ts`, `aidlc-statusline.ts`) require `bun`. If `bun` is missing or not on PATH for non-interactive shells, these hooks will not fire.
+All 13 TypeScript hooks (`aidlc-mint-presence.ts`, `aidlc-state-transition-guard.ts`, `aidlc-reviewer-scope.ts`, `aidlc-audit-logger.ts`, `aidlc-sensor-fire.ts`, `aidlc-runtime-compile.ts`, `aidlc-log-subagent.ts`, `aidlc-stop.ts`, `aidlc-validate-state.ts`, `aidlc-sync-statusline.ts`, `aidlc-session-start.ts`, `aidlc-session-end.ts`, `aidlc-statusline.ts`) require `bun`. If `bun` is missing or not on PATH for non-interactive shells, these hooks will not fire.
 
 ```bash
 # macOS / Linux
@@ -81,9 +82,9 @@ The `validate-state.ts` hook checks for two required sections on every compactio
 
 ---
 
-## Subagent Timeouts
+## Dispatched Stage Timeouts
 
-**Symptom**: Subagent stages (Workspace Detection, Reverse Engineering, Code Generation) return errors or truncated output.
+**Symptom**: A dispatched stage (Reverse Engineering, Practices Discovery, User Stories, or Code Generation) returns errors or truncated output.
 
 ### What happens
 
@@ -220,9 +221,46 @@ The `--doctor` utility command validates your setup. Run it whenever something s
 /aidlc --doctor
 ```
 
-It checks: prerequisite (`bun`), hook availability (every hook `settings.json` wires — all 12 framework hooks — must exist in `.claude/hooks/`, and a wired-but-missing hook fails loudly), project structure (`settings.json`), workspace shell readiness (`.claude/` + `aidlc/spaces/default/memory/`), state/audit consistency, hook heartbeats, graph integrity (no cycles, every graph entry has a file), scope validation across all 9 scopes, stage schema + graph references, and keyword overlap across scopes. It also surfaces two advisory rows that always pass (they never change the exit code): **Rule drift** (team/project rules that overlap a populated org-policy heading, flagged for contradiction review) and **Paired sensor coverage** (rules carrying a `pairing:` whose named Sensor resolves to a stage). One further row, **Hook drops**, is conditional: a hook that silently degraded (e.g. a plugin compose that could not apply a contribution, or a failed recompile) records a severity-tagged line to `<hooks-health>/<hook>.drops`; a `[degraded]` drop **fails** doctor (so a CI gate catches a half-applied plugin), while an `[advisory]` drop (an expected/benign condition) is a passing row. The plugin compose hook rewrites its drops file each run, so fixing the cause and re-composing self-clears it. Exits 0 on full pass, 1 on any failure; the report writes to stdout either way. `--doctor` is **read-only**: on a fresh shell with no intent yet it creates nothing — safe to run before the first intent is born, as the first thing you try when something seems off. Once an intent exists it records a `HEALTH_CHECKED` (and `GUARDRAIL_LOADED`) audit row.
+It checks: prerequisite (`bun`), hook availability (every hook `settings.json` wires — all 13 framework hooks — must exist in `.claude/hooks/`, and a wired-but-missing hook fails loudly), project structure (`settings.json`), workspace shell readiness (`.claude/` + `aidlc/spaces/default/memory/`), state/audit consistency, hook heartbeats, graph integrity (no cycles, every graph entry has a file), scope validation across all 9 scopes, stage schema + graph references, and keyword overlap across scopes. It also surfaces two advisory rows that always pass (they never change the exit code): **Rule drift** (team/project rules that overlap a populated org-policy heading, flagged for contradiction review) and **Paired sensor coverage** (rules carrying a `pairing:` whose named Sensor resolves to a stage). One further row, **Hook drops**, is conditional: a hook that silently degraded (e.g. a plugin compose that could not apply a contribution, or a failed recompile) records a severity-tagged line to `<hooks-health>/<hook>.drops`; a `[degraded]` drop **fails** doctor (so a CI gate catches a half-applied plugin), while an `[advisory]` drop (an expected/benign condition) is a passing row. The plugin compose hook rewrites its drops file each run, so fixing the cause and re-composing self-clears it. Exits 0 on full pass, 1 on any failure; the report writes to stdout either way. `--doctor` is **read-only**: on a fresh shell with no intent yet it creates nothing — safe to run before the first intent is born, as the first thing you try when something seems off. Once an intent exists it records a `HEALTH_CHECKED` (and `GUARDRAIL_LOADED`) audit row.
 
-See [CLI Commands](12-cli-commands.md#aidlc---doctor--health-check) for full details on what each check validates and how to fix failures.
+When a workflow has issues, `--doctor` also prints a **Workflow diagnosis** section listing structured findings (unresolved gates, a stale or missing runtime graph, cold hooks, and similar "it will not advance" causes) — the same analysis `--doctor --export` writes to its report.
+
+See [CLI Commands](12-cli-commands.md#aidlc-doctor-health-check) for full details on what each check validates and how to fix failures.
+
+---
+
+## Sharing a Diagnostic Report
+
+When a workflow is stuck or misbehaving — a gate that will not open, a stage that
+will not advance, an approved report repeatedly refused — and you want a
+maintainer to look, run:
+
+```
+/aidlc --doctor --export
+```
+
+This runs a fresh `--doctor` pass, then writes a small, **redacted** diagnostic
+report to `aidlc/diagnostics/` (override with `--output <dir>`). It packages
+a timestamped `.tar.gz` when a system `tar` is available; otherwise it keeps the
+report directory and tells you to compress it yourself. Share that archive (or
+directory) — it carries the diagnosis and redacted evidence, **not your work
+product**. No workspace source, raw state/audit/runtime-graph files, or
+artifact/contribution/question/memory bodies are included; paths are normalized,
+intent ids are hashed, and secret-like values are scrubbed.
+
+The report reconstructs the workflow timeline from the audit trail and runs
+deterministic condition→remedy rules. The two most common causes it catches:
+
+- **Unresolved approval gates** — a stage whose gate never resolved is the single
+  most common "it will not advance" cause.
+- **Stale or missing runtime graph / cold hooks** — a runtime graph older than its
+  authored inputs (or absent), or a hook that has not fired in a long time,
+  points at a recompile that did not run.
+
+`report.md` inside the report lists every finding with a remedy; a remedy that
+names a recovery bypass (such as an `AIDLC_DISABLE_*` env var) is flagged
+as not safe to automate. See [CLI Commands](12-cli-commands.md#aidlc-doctor-export-write-a-diagnostic-report)
+for the full report contents and safety model.
 
 ---
 

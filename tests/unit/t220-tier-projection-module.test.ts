@@ -1,7 +1,7 @@
 // covers: file:tools/aidlc-tiers.ts (tier projection + cap module)
 //
 // t220 - the tier projection module (core/tools/aidlc-tiers.ts): table-driven
-// projectTier coverage for every tier x every harness, cap collapse behavior,
+// projectTier coverage for every tier x every projection flavor, cap collapse behavior,
 // the unknown-tier error path, the tier_cap precedence chain (env var beats
 // space memory; project.md beats team.md beats org.md), and the Kiro collapse
 // rule (tiers sharing a model -> the higher tier's effort wins the cli.json
@@ -18,6 +18,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { REPO_ROOT } from "../harness/fixtures.ts";
+import { HARNESS_MATRIX } from "../harness/harness-matrix.ts";
 import {
   capTier,
   isTier,
@@ -33,7 +34,7 @@ import {
 } from "../../core/tools/aidlc-tiers.ts";
 
 // ---------------------------------------------------------------------------
-// The policy pin: every tier x every harness, expected values hard-coded.
+// The policy pin: every tier x every projection flavor, expected values hard-coded.
 // null = the harness-native key is OMITTED (the inherit-by-omission contract).
 // ---------------------------------------------------------------------------
 const EXPECTED: Record<
@@ -42,22 +43,29 @@ const EXPECTED: Record<
     claude: { model: string; effort: "medium" | null };
     codex: { model: string | null; effort: "medium" | null };
     kiro: { model: string | null };
+    opencode: { model: string | null; variant: "medium" | null };
   }
 > = {
   judgment: {
     claude: { model: "inherit", effort: null },
     codex: { model: null, effort: null },
     kiro: { model: null },
+    opencode: { model: null, variant: null },
   },
   balanced: {
     claude: { model: "sonnet", effort: null },
     codex: { model: "openai.gpt-5.4", effort: null },
-    kiro: { model: "claude-sonnet-4.5" },
+    // Kiro never pins a model (#601): shipped IDs resolve only when that
+    // model is enabled on the user's install, so every Kiro tier inherits
+    // the session model.
+    kiro: { model: null },
+    opencode: { model: "amazon-bedrock/global.anthropic.claude-sonnet-4-6", variant: null },
   },
   templated: {
     claude: { model: "sonnet", effort: "medium" },
     codex: { model: "openai.gpt-5.4", effort: "medium" },
-    kiro: { model: "claude-sonnet-4.5" },
+    kiro: { model: null },
+    opencode: { model: "amazon-bedrock/global.anthropic.claude-sonnet-4-6", variant: "medium" },
   },
 };
 
@@ -95,11 +103,11 @@ describe("t220 tier projection module", () => {
     }
   });
 
-  // --- projectTier: every tier x every harness -------------------------------
+  // --- projectTier: every tier x every projection flavor ---------------------
   for (const tier of TIERS) {
-    for (const harness of ["claude", "codex", "kiro"] as const) {
-      test(`projectTier(${tier}, ${harness}) matches the pinned policy`, () => {
-        expect(projectTier(tier, harness)).toEqual(EXPECTED[tier][harness]);
+    for (const flavor of ["claude", "codex", "kiro", "opencode"] as const) {
+      test(`projectTier(${tier}, ${flavor}) matches the pinned policy`, () => {
+        expect(projectTier(tier, flavor)).toEqual(EXPECTED[tier][flavor]);
       });
     }
   }
@@ -229,23 +237,21 @@ describe("t220 tier projection module", () => {
     }
   });
 
-  // --- the Kiro collapse rule -------------------------------------------------
-  test("kiroModelDefaults: one entry per distinct pinned model, higher tier's effort wins", () => {
-    // balanced and templated share claude-sonnet-4.5; balanced (higher) wins
-    // with "high". judgment pins no model, so it contributes no entry.
-    expect(kiroModelDefaults()).toEqual({ "claude-sonnet-4.5": "high" });
+  // --- the Kiro collapse rule (dormant: no tier pins a Kiro model, #601) ------
+  test("kiroModelDefaults: empty while no tier pins a Kiro model (agents inherit the session model)", () => {
+    // #601: shipped Kiro model IDs resolve only when that model is enabled on
+    // the user's install, so no tier pins one and no tier-derived
+    // chat.modelDefaults entry ships. Only authored cli.json entries remain.
+    expect(kiroModelDefaults()).toEqual({});
   });
 
-  test("kiroModelDefaults: a templated cap collapses everything onto templated's effort", () => {
-    // Under a templated cap every tier projects as templated, so the single
-    // shared model entry carries templated's effort.
-    expect(kiroModelDefaults("templated")).toEqual({ "claude-sonnet-4.5": "medium" });
+  test("kiroModelDefaults: empty under any cap too (the collapse has nothing to collapse)", () => {
+    expect(kiroModelDefaults("templated")).toEqual({});
+    expect(kiroModelDefaults("balanced")).toEqual({});
   });
 
-  test("KIRO_TIER_EFFORT deliberately omits judgment (no pinned model to ride on)", () => {
-    expect(KIRO_TIER_EFFORT.judgment).toBeUndefined();
-    expect(KIRO_TIER_EFFORT.balanced).toBe("high");
-    expect(KIRO_TIER_EFFORT.templated).toBe("medium");
+  test("KIRO_TIER_EFFORT is deliberately empty (no pinned model for an effort to ride on)", () => {
+    expect(Object.keys(KIRO_TIER_EFFORT)).toEqual([]);
   });
 
   // --- structural invariant: the kiro slot can never carry an effort ----------
@@ -280,60 +286,68 @@ describe("t220 shipped projection bytes (codex TOML, kiro JSON + md)", () => {
     expect(delivery).toContain('model_reasoning_effort = "medium"');
   });
 
-  // The five delegation-target agents shipped as Kiro JSONs, per tier.
-  const KIRO_JSON: Array<{ file: string; model: string | null }> = [
-    { file: "aidlc-architect-agent.json", model: null }, // judgment
-    { file: "aidlc-composer-agent.json", model: null }, // judgment
-    { file: "aidlc-developer-agent.json", model: null }, // judgment
-    { file: "aidlc-product-lead-agent.json", model: "claude-sonnet-4.5" }, // balanced
-    { file: "aidlc-architecture-reviewer-agent.json", model: "claude-sonnet-4.5" }, // balanced
-  ];
-
-  for (const harness of ["kiro", "kiro-ide"] as const) {
-    test(`${harness} agent JSONs: judgment omits "model", balanced pins sonnet-4.5, NO effort-like keys anywhere`, () => {
-      for (const { file, model } of KIRO_JSON) {
+  const kiroHarnesses = HARNESS_MATRIX.filter(
+    (harness) => harness.capabilities.kiroAgentJson,
+  );
+  test("matrix exposes at least one kiroAgentJson harness (floor guard)", () => {
+    expect(kiroHarnesses.length).toBeGreaterThan(0);
+  });
+  for (const harness of kiroHarnesses) {
+    test(`${harness.name} agent JSONs: NO "model" pin on any agent (inherit the session model, #601), NO effort-like keys anywhere`, () => {
+      // The full shipped roster, not a sample: a single pinned ID rejects
+      // every spawn on installs where that model isn't enabled.
+      const agentsDir = join(harness.engineRoot, "agents");
+      const jsons = readdirSync(agentsDir).filter((f) => f.endsWith(".json"));
+      expect(jsons.length).toBeGreaterThanOrEqual(15); // conductor + 14 personas
+      for (const file of jsons) {
         const parsed = JSON.parse(
-          readFileSync(dist(harness, ".kiro", "agents", file), "utf-8"),
+          readFileSync(join(agentsDir, file), "utf-8"),
         ) as Record<string, unknown>;
-        if (model === null) {
-          expect("model" in parsed, `${harness}/${file}: judgment must omit "model"`).toBe(false);
-        } else {
-          expect(parsed.model, `${harness}/${file}: model`).toBe(model);
-        }
+        expect("model" in parsed, `${harness.name}/${file}: must omit "model" (#601)`).toBe(
+          false,
+        );
         // kiro-cli fail-closes on unknown agent-JSON fields: any effort-like
         // key would break agent validation at install.
         for (const key of Object.keys(parsed)) {
           expect(
             /effort|reasoning|thinking/i.test(key),
-            `${harness}/${file}: forbidden inference key "${key}"`,
+            `${harness.name}/${file}: forbidden inference key "${key}"`,
           ).toBe(false);
         }
       }
     });
   }
 
-  test("kiro agent .md frontmatter: judgment omits model, templated pins sonnet-4.5, never any effort key", () => {
+  test("Kiro-family agent .md frontmatter never carries model: or effort: (inherit, #601)", () => {
     const fmOf = (raw: string): string => {
       const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
       if (!m) throw new Error("no frontmatter");
       return m[1];
     };
-    const arch = fmOf(readFileSync(dist("kiro", ".kiro", "agents", "aidlc-architect-agent.md"), "utf-8"));
-    expect(/^model:/m.test(arch), "judgment kiro .md must omit model:").toBe(false);
-    const delivery = fmOf(readFileSync(dist("kiro", ".kiro", "agents", "aidlc-delivery-agent.md"), "utf-8"));
-    expect(delivery).toMatch(/^model: claude-sonnet-4\.5$/m);
-    for (const fm of [arch, delivery]) {
-      expect(/^effort:/m.test(fm), "kiro .md must never carry effort:").toBe(false);
+    for (const harness of kiroHarnesses) {
+      const dir = join(harness.engineRoot, "agents");
+      for (const f of readdirSync(dir).filter((n) => n.endsWith("-agent.md"))) {
+        const fm = fmOf(readFileSync(join(dir, f), "utf-8"));
+        expect(/^model:/m.test(fm), `${harness.name}/${f}: model: pin leaked (#601)`).toBe(false);
+        expect(/^effort:/m.test(fm), `${harness.name}/${f}: .md must never carry effort:`).toBe(
+          false,
+        );
+      }
     }
   });
 
-  test("kiro-ide cli.json carries the same tier-projected modelDefaults as kiro's (t148 pins kiro)", () => {
-    const s = JSON.parse(
-      readFileSync(dist("kiro-ide", ".kiro", "settings", "cli.json"), "utf-8"),
-    ) as Record<string, Record<string, { output_config?: { effort?: string } }>>;
-    const defaults = s["chat.modelDefaults"];
-    expect(defaults?.["claude-opus-4.8"]?.output_config?.effort).toBe("xhigh");
-    expect(defaults?.["claude-sonnet-4.5"]?.output_config?.effort).toBe("high");
+  test("kiro cli.json modelDefaults: authored conditional entries only, no tier-derived pins", () => {
+    for (const harness of ["kiro", "kiro-ide"]) {
+      const s = JSON.parse(
+        readFileSync(dist(harness, ".kiro", "settings", "cli.json"), "utf-8"),
+      ) as Record<string, Record<string, { output_config?: { effort?: string } }>>;
+      const defaults = s["chat.modelDefaults"];
+      // The authored orchestrator entry survives: conditional (applies only
+      // when the session runs that model), inert for spawns.
+      expect(defaults?.["claude-opus-4.8"]?.output_config?.effort).toBe("xhigh");
+      // No tier-derived entry ships while no tier pins a Kiro model.
+      expect(Object.keys(defaults ?? {}).sort()).toEqual(["claude-opus-4.8"]);
+    }
   });
 
   // Full-roster completeness: raw `tier:` must never leak into ANY shipped
@@ -341,23 +355,30 @@ describe("t220 shipped projection bytes (codex TOML, kiro JSON + md)", () => {
   // tier-line-removal bug in the judgment path (where no replacement keys are
   // written) would surface on the kiro/codex .md copies first - e.g. a future
   // agent authored with tier: mid-frontmatter instead of last.
-  const MD_TREES: Array<[string, string[]]> = [
-    ["claude", ["claude", ".claude", "agents"]],
-    ["codex", ["codex", ".codex", "agents"]],
-    ["kiro", ["kiro", ".kiro", "agents"]],
-    ["kiro-ide", ["kiro-ide", ".kiro", "agents"]],
-  ];
-  for (const [name, segs] of MD_TREES) {
-    test(`${name}: no shipped agent .md carries a raw tier: line (all 14)`, () => {
-      const dir = dist(...segs);
+  for (const harness of HARNESS_MATRIX) {
+    test(`${harness.name}: no shipped agent .md carries a raw tier: line (all 14)`, () => {
+      const dir = join(harness.engineRoot, "agents");
       const mds = readdirSync(dir).filter((f) => f.endsWith("-agent.md"));
       expect(mds.length).toBe(14);
       for (const f of mds) {
         const raw = readFileSync(join(dir, f), "utf-8");
-        expect(/^tier:/m.test(raw), `${name}/${f}: raw tier: leaked into dist`).toBe(false);
+        expect(
+          /^tier:/m.test(raw),
+          `${harness.name}/${f}: raw tier: leaked into dist`,
+        ).toBe(false);
       }
     });
   }
+
+  test("opencode-shell: the emitted .opencode/agents subagent twins carry the projection too", () => {
+    const dir = dist("opencode", ".opencode", "agents");
+    const mds = readdirSync(dir).filter((f) => f.endsWith("-agent.md"));
+    expect(mds.length).toBe(14);
+    for (const f of mds) {
+      const raw = readFileSync(join(dir, f), "utf-8");
+      expect(/^tier:/m.test(raw), `opencode-shell/${f}: raw tier: leaked into dist`).toBe(false);
+    }
+  });
 
   test("codex: no shipped agent TOML carries a tier key (all 14)", () => {
     const dir = dist("codex", ".codex", "agents");

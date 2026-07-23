@@ -77,7 +77,6 @@ import {
   FIXTURES_DIR,
   seedStateFile,
   seededAuditDir,
-  seededRecordDir,
 } from "../harness/fixtures.ts";
 
 const BUN = process.execPath; // the bun running this test
@@ -259,6 +258,10 @@ describe("t07 audit-logger PostToolUse hook (mechanism cli — spawned hook + st
     copyFileSync(
       join(AIDLC_SRC, "tools", "aidlc-lib.ts"),
       join(proj, ".claude", "tools", "aidlc-lib.ts"),
+    );
+    copyFileSync(
+      join(AIDLC_SRC, "tools", "aidlc-runtime-paths.ts"),
+      join(proj, ".claude", "tools", "aidlc-runtime-paths.ts"),
     );
     copyFileSync(
       join(AIDLC_SRC, "tools", "aidlc-audit.ts"),

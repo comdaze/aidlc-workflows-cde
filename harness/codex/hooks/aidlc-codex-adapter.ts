@@ -40,7 +40,8 @@
 //   bun .codex/hooks/aidlc-codex-adapter.ts <target>
 // where <target> ∈ session-start | audit-and-sensors | state-sync |
 //                  runtime-compile | validate-state | post-compact |
-//                  log-subagent | stop | mint | reviewer-scope
+//                  log-subagent | stop | mint | state-transition-guard |
+//                  reviewer-scope
 
 import { createHash } from "node:crypto";
 import {
@@ -53,13 +54,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { appendAuditEntry } from "../tools/aidlc-audit.ts";
 import { stateFilePath } from "../tools/aidlc-lib.ts";
 
 const HOOKS_DIR = dirname(fileURLToPath(import.meta.url));
-const target = process.argv[2] ?? "";
 
 interface CodexHookInput {
   hook_event_name?: string;
@@ -76,18 +76,32 @@ interface CodexHookInput {
   stop_hook_active?: boolean;
 }
 
+export async function run(
+  target: string,
+  input: string,
+  _extraArgs: string[] = [],
+): Promise<number> {
 let rawInput = "";
 let codex: CodexHookInput = {};
 if (!process.stdin.isTTY) {
   try {
-    rawInput = await Bun.stdin.text();
+    rawInput = input;
     if (rawInput.length > 0) codex = JSON.parse(rawInput) as CodexHookInput;
   } catch {
-    process.exit(0); // malformed stdin — advisory hooks fail open
+    return 0; // malformed stdin — advisory hooks fail open
   }
 }
 
-const projectDir = codex.cwd ?? process.cwd();
+const projectDirRaw =
+  process.env.AIDLC_PROJECT_DIR ?? codex.cwd ?? process.cwd();
+const projectDir = isAbsolute(projectDirRaw)
+  ? projectDirRaw
+  : resolve(process.cwd(), projectDirRaw);
+const projectEnv = {
+  ...process.env,
+  AIDLC_PROJECT_DIR: projectDir,
+  CLAUDE_PROJECT_DIR: projectDir,
+};
 
 // --- Duplicate-delivery replay cache ---------------------------------------
 //
@@ -123,7 +137,7 @@ function pruneStale(): void {
   }
 }
 
-function replayAndExit(): never {
+function replayResponse(): { stdout: string; code: number; stderr?: string } {
   // Duplicate delivery: wait up to ~2s for the first runner's response, then
   // answer identically. If it never lands, fail open silently. stderr rides
   // the cache too so a reviewer-scope BLOCK (stderr + exit 2) replays
@@ -135,14 +149,12 @@ function replayAndExit(): never {
         code: number;
         stderr?: string;
       };
-      if (cached.stdout) process.stdout.write(cached.stdout);
-      if (cached.stderr) process.stderr.write(cached.stderr);
-      process.exit(cached.code);
+      return cached;
     } catch {
       Bun.sleepSync(100);
     }
   }
-  process.exit(0);
+  return { stdout: "", code: 0 };
 }
 
 function persistResponse(stdout: string, code: number, stderr?: string): void {
@@ -158,7 +170,10 @@ try {
   pruneStale();
   mkdirSync(slotDir); // atomic claim — throws EEXIST for the duplicate
 } catch {
-  replayAndExit();
+  const replay = replayResponse();
+  if (replay.stdout) process.stdout.write(replay.stdout);
+  if (replay.stderr) process.stderr.write(replay.stderr);
+  return replay.code;
 }
 
 // --- Core-hook subprocess plumbing ------------------------------------------
@@ -166,11 +181,16 @@ try {
 function runCore(hookFile: string, input: string): { stdout: string; code: number } {
   // Reuse the exact bun binary running this adapter; the child must not depend on
   // PATH containing bun (the hook environment often lacks the bun install dir).
-  const r = Bun.spawnSync([process.execPath, join(HOOKS_DIR, hookFile)], {
+  const executable = process.env.AIDLC_COMPILED_EXECUTABLE;
+  const command = executable
+    ? [executable, "hook", hookFile.replace(/^aidlc-|\.ts$/g, "")]
+    : [process.execPath, join(HOOKS_DIR, hookFile)];
+  const r = Bun.spawnSync(command, {
     stdin: Buffer.from(input, "utf-8"),
     stdout: "pipe",
     stderr: "ignore",
     cwd: projectDir,
+    env: projectEnv,
   });
   return { stdout: r.stdout?.toString() ?? "", code: r.exitCode ?? 0 };
 }
@@ -181,11 +201,16 @@ function runCoreWithStderr(
   hookFile: string,
   input: string,
 ): { stdout: string; stderr: string; code: number } {
-  const r = Bun.spawnSync([process.execPath, join(HOOKS_DIR, hookFile)], {
+  const executable = process.env.AIDLC_COMPILED_EXECUTABLE;
+  const command = executable
+    ? [executable, "hook", hookFile.replace(/^aidlc-|\.ts$/g, "")]
+    : [process.execPath, join(HOOKS_DIR, hookFile)];
+  const r = Bun.spawnSync(command, {
     stdin: Buffer.from(input, "utf-8"),
     stdout: "pipe",
     stderr: "pipe",
     cwd: projectDir,
+    env: projectEnv,
   });
   return {
     stdout: r.stdout?.toString() ?? "",
@@ -280,7 +305,7 @@ switch (target) {
     const wrapped = wrapContext(r.stdout, "SessionStart");
     persistResponse(wrapped, 0);
     if (wrapped) process.stdout.write(wrapped);
-    process.exit(0);
+    return 0;
   }
 
   case "audit-and-sensors": {
@@ -299,7 +324,7 @@ switch (target) {
       }
     }
     persistResponse("", 0);
-    process.exit(0);
+    return 0;
   }
 
   case "state-sync": {
@@ -318,7 +343,7 @@ switch (target) {
       }
     }
     persistResponse("", 0);
-    process.exit(0);
+    return 0;
   }
 
   case "runtime-compile": {
@@ -326,7 +351,7 @@ switch (target) {
     // the core hook's exact contract. Verbatim pipe.
     runCore("aidlc-runtime-compile.ts", rawInput);
     persistResponse("", 0);
-    process.exit(0);
+    return 0;
   }
 
   case "validate-state": {
@@ -334,7 +359,7 @@ switch (target) {
     // SESSION_COMPACTED + recovery breadcrumb are all self-contained.
     runCore("aidlc-validate-state.ts", rawInput);
     persistResponse("", 0);
-    process.exit(0);
+    return 0;
   }
 
   case "post-compact": {
@@ -349,7 +374,7 @@ switch (target) {
     const wrapped = wrapContext(r.stdout, "PostCompact");
     persistResponse(wrapped, 0);
     if (wrapped) process.stdout.write(wrapped);
-    process.exit(0);
+    return 0;
   }
 
   case "log-subagent": {
@@ -357,7 +382,7 @@ switch (target) {
     // ≥ 0.139.0 — doctor pins the minimum) + agent_id. Verbatim pipe.
     runCore("aidlc-log-subagent.ts", rawInput);
     persistResponse("", 0);
-    process.exit(0);
+    return 0;
   }
 
   case "stop": {
@@ -366,7 +391,7 @@ switch (target) {
     const r = runCore("aidlc-stop.ts", rawInput);
     persistResponse(r.stdout, r.code);
     if (r.stdout) process.stdout.write(r.stdout);
-    process.exit(r.code);
+    return r.code;
   }
 
   case "reviewer-scope": {
@@ -390,9 +415,9 @@ switch (target) {
       persistResponse(r.stdout, r.code === 2 ? 2 : 0, r.stderr);
       if (r.code === 2) {
         process.stderr.write(r.stderr);
-        process.exit(2);
+        return 2;
       }
-      process.exit(0);
+      return 0;
     }
     if (tool === "apply_patch") {
       const command = (codex.tool_input?.command as string) ?? "";
@@ -419,12 +444,28 @@ switch (target) {
         if (r.code === 2) {
           persistResponse("", 2, r.stderr);
           process.stderr.write(r.stderr);
-          process.exit(2);
+          return 2;
         }
       }
     }
     persistResponse("", 0);
+    return 0;
+  }
+
+  case "state-transition-guard": {
+    // Global PreToolUse lifecycle guard. Only Bash can name aidlc-state.ts;
+    // everything else permits immediately. Preserve exit 2 + stderr exactly.
+    if ((codex.tool_name ?? "") === "Bash") {
+      const r = runCoreWithStderr("aidlc-state-transition-guard.ts", rawInput);
+      persistResponse(r.stdout, r.code === 2 ? 2 : 0, r.stderr);
+      if (r.code === 2) {
+        process.stderr.write(r.stderr);
+        process.exit(2);
+      }
+    }
+    persistResponse("", 0);
     process.exit(0);
+    break;
   }
 
   case "mint": {
@@ -441,10 +482,15 @@ switch (target) {
       // best-effort presence record — advisory
     }
     persistResponse("", 0);
-    process.exit(0);
+    return 0;
   }
 
   default:
     persistResponse("", 0);
-    process.exit(0);
+    return 0;
+}
+}
+
+if (import.meta.main) {
+  process.exit(await run(process.argv[2] ?? "", await Bun.stdin.text(), process.argv.slice(3)));
 }
