@@ -6,6 +6,7 @@
   "dependencies": ["core"],
   "aidlc": {
     "contributes": {
+      "stages": "stages/",
       "overlays": "contributions/",
       "knowledge": "knowledge/",
       "tools": "tools/"

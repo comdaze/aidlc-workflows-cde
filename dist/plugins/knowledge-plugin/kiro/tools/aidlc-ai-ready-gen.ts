@@ -33,7 +33,9 @@ function fail(msg: string): never {
 }
 
 function py(args: string[], opts: { cwd?: string } = {}) {
-  return spawnSync(PYTHON, args, { encoding: "utf-8", cwd: opts.cwd ?? VENDOR_SCRIPTS });
+  // -B: never write __pycache__ into the vendored tree — it would leak into
+  // the packager's dist projection and trip `package.ts --check`.
+  return spawnSync(PYTHON, ["-B", ...args], { encoding: "utf-8", cwd: opts.cwd ?? VENDOR_SCRIPTS });
 }
 
 function cmdCheck(): void {
