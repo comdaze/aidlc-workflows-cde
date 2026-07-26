@@ -59,6 +59,6 @@ TestEquivalenceLayer::test_e2e_on_real_swarmai_domains              (宿主真�
 
 ```bash
 # 默认 python3;pytest 装在别的解释器时用 AIDLC_PYTHON 指定
-AIDLC_PYTHON=python3.12 bun ../../tools/aidlc-ai-ready-gen.ts test
+AIDLC_PYTHON=python3.12 bun ../../aidlc-ai-ready-gen.ts test   # (从本目录) 或在插件根: bun tools/aidlc-ai-ready-gen.ts test
 # 预期:240 passed, 3 skipped, 8 deselected(宿主耦合项自动排除)
 ```
