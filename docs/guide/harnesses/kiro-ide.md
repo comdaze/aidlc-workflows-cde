@@ -81,7 +81,7 @@ string `{ toolName, toolArgs, toolResult, toolSuccess }`. The IDE leaves
 | `aidlc-session-start` | `promptSubmit` | Injects workflow resume context |
 | `aidlc-mint` | `promptSubmit` | Records a human-turn event on every prompt (human-presence gate) |
 | `aidlc-session-end` | `agentStop` | Emits `SESSION_ENDED` (observability) |
-| `aidlc-stop` | `agentStop` | Forwarding-loop continuation |
+| `aidlc-stop` | `agentStop` | Forwarding-loop continuation + gate-render floor |
 | `aidlc-block` | `preToolUse` | Hard-blocks tool calls while an approval gate is open and no human has acted since (human-presence floor) |
 | `aidlc-audit-logger` | `postToolUse` (write) | Logs artifact create/update (path from `toolResult`) |
 | `aidlc-sensor-fire` | `postToolUse` (write) | Fires applicable sensors (path from `toolResult`) |
@@ -89,6 +89,14 @@ string `{ toolName, toolArgs, toolResult, toolSuccess }`. The IDE leaves
 | `aidlc-sync-statusline` | `postToolUse` (shell) | Forward-only sync of `Current Stage` from the latest `STAGE_STARTED` in the audit (the `spec` event never fires in the IDE) |
 
 You will see a "Run Command Hook" line in chat each time one fires.
+
+**Gate-render floor.** The IDE gives the Stop hook no transcript, so nothing
+can verify that an approval gate's options were actually rendered in chat (the
+question-rendering annex). The stop adapter therefore blocks the FIRST park at
+each open gate with an instruction to render the numbered options, then lets
+re-stops through (one-shot per gate, marker under
+`.aidlc-stop-hook/gate-render-nudge.json`). Autonomous Construction is exempt;
+set `AIDLC_GATE_RENDER_FLOOR=0` to disable.
 
 ### Debugging hooks
 
