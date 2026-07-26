@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.9] - 2026-07-26
+
+The Kiro IDE gate-render floor (2.5.8) now also covers guided-mode question batches: observed in the field the same day it shipped — the conductor parked on "waiting for your last batch" with the batch never shown in chat. **Upgrade:** re-copy `.kiro/hooks/aidlc-kiro-adapter.ts` from `dist/kiro-ide/` into your project.
+
+* The floor's second trigger: the current stage is `[-]` in-progress with blank `[Answer]:` tags in its questions file, and the latest question-mode choice logged to the audit shard is NOT self-paced. "Guide me" (or no choice recorded yet — the mode-choice question itself must render) is floored once per batch state; "I'll edit the file" and "Chat" park legitimately and are exempt.
+* One marker, namespaced signatures (`gate:` / `q:<slug>:<blank-count>`): answering part of a batch changes the count and re-arms the floor for the next park. Same carve-outs as 2.5.8 (autonomous Construction, `AIDLC_GATE_RENDER_FLOOR=0`), fail-open throughout.
+
 ## [2.5.8] - 2026-07-26
 
 Approval gates on Kiro IDE can no longer park silently: twice in the field the conductor wrote the gate to the questions file, printed a bare "waiting at the gate" line with NO options in chat, and stopped — the user was told to "reply with a number" they never saw. Kiro IDE delivers no transcript to the Stop hook, so the annex rendering cannot be verified; instead the stop adapter gains a deterministic **gate-render floor**: the first allowed stop at each open gate is blocked once with an on-task instruction to render the numbered options in chat per `question-rendering.md`, then re-stops pass through. **Upgrade:** re-copy `.kiro/hooks/aidlc-kiro-adapter.ts` and `.kiro/skills/aidlc/question-rendering.md` from `dist/kiro-ide/` into your project.

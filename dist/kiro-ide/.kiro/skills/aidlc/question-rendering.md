@@ -39,10 +39,12 @@ Rules:
 
 - **Chat rendering is MANDATORY before parking a turn**: writing a gate or
   question to the questions FILE is the audit record, NOT the presentation.
-  Ending a turn at an approval gate with a bare "waiting for your decision"
-  line — without the numbered options in that same chat message — is a
-  protocol violation: the user cannot see what they are approving. The stop
-  hook blocks the first such park at each gate and instructs a re-render.
+  Ending a turn at an approval gate or an unanswered guided-mode question
+  batch with a bare "waiting for you" line — without the numbered options in
+  that same chat message — is a protocol violation: the user cannot see what
+  they are deciding. The stop hook blocks the first such park at each gate or
+  batch and instructs a re-render. (Self-guided "I'll edit the file" and Chat
+  modes park legitimately and are exempt.)
 - **Approval gate `[next stage]`**: on an approval question, render the
   `Continue to [next stage]` placeholder from the run-stage directive's
   `next_stage` field verbatim (e.g. `Continue to NFR Requirements`); render
