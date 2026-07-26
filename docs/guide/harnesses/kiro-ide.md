@@ -91,12 +91,14 @@ string `{ toolName, toolArgs, toolResult, toolSuccess }`. The IDE leaves
 You will see a "Run Command Hook" line in chat each time one fires.
 
 **Gate-render floor.** The IDE gives the Stop hook no transcript, so nothing
-can verify that an approval gate's options were actually rendered in chat (the
-question-rendering annex). The stop adapter therefore blocks the FIRST park at
-each open gate with an instruction to render the numbered options, then lets
-re-stops through (one-shot per gate, marker under
-`.aidlc-stop-hook/gate-render-nudge.json`). Autonomous Construction is exempt;
-set `AIDLC_GATE_RENDER_FLOOR=0` to disable.
+can verify that an approval gate's options — or a guided-mode question
+batch — were actually rendered in chat (the question-rendering annex). The
+stop adapter therefore blocks the FIRST park at each open gate and at each
+unanswered question batch with an instruction to render the numbered options,
+then lets re-stops through (one-shot per position, marker under
+`.aidlc-stop-hook/gate-render-nudge.json`). Self-guided "I'll edit the file"
+and Chat modes are exempt (their parks are legitimate), as is autonomous
+Construction; set `AIDLC_GATE_RENDER_FLOOR=0` to disable.
 
 ### Debugging hooks
 

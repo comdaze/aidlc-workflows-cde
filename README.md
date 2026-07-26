@@ -14,7 +14,7 @@ The methodology lives once, in a harness-neutral `core/`; each harness adds a th
 
 
 
-![version](https://img.shields.io/badge/version-2.5.8-blue)
+![version](https://img.shields.io/badge/version-2.5.9-blue)
 
 
 

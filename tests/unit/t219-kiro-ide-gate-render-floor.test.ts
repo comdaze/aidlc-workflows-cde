@@ -17,6 +17,11 @@
 //   4. Autonomous Construction -> no floor (unattended runs must park freely).
 //   5. AIDLC_GATE_RENDER_FLOOR=0 -> no floor (deterministic off-switch).
 //   6. No workflow state -> no floor (adapter is a no-op outside AIDLC).
+//   7. [-] stage + blank [Answer]: tags, no mode choice logged -> floored
+//      (the mode-choice question itself must render).
+//   8. Same, latest logged mode "Guide me" -> floored (batch must render).
+//   9. Same, latest logged mode "I'll edit the file" -> exempt (self-paced).
+//  10. All tags answered -> no floor (nothing is pending).
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -79,6 +84,43 @@ function runStop(dir: string, extraEnv: Record<string, string> = {}): string {
 
 const FLOOR_MARK = "question-rendering.md";
 
+// The fixture untouched: requirements-analysis stays [-] in-progress; add the
+// Current Stage line the core hook and the floor both key off.
+function questionPendingState(): string {
+  const base = readFileSync(
+    join(REPO_ROOT, "tests", "fixtures", "state-brownfield-feature.md"),
+    "utf-8",
+  );
+  return `${base}\n## Session State\n- **Current Stage**: requirements-analysis\n`;
+}
+
+// Seed the current stage's questions file (fixture phase is INCEPTION ->
+// <record>/inception/requirements-analysis/) with one answered and N blank tags.
+function seedQuestions(dir: string, blanks: number): void {
+  const qDir = join(seededRecordDir(dir), "inception", "requirements-analysis");
+  mkdirSync(qDir, { recursive: true });
+  const open = Array.from(
+    { length: blanks },
+    (_, i) => `## Q${i + 2}: pending question ${i + 2}\n\nA. yes\nX. Other\n\n[Answer]:\n`,
+  ).join("\n");
+  writeFileSync(
+    join(qDir, "requirements-analysis-questions.md"),
+    `# Questions\n\n## Q1: answered\n\nA. yes\nX. Other\n\n[Answer]: A\n\n${open}`,
+    "utf-8",
+  );
+}
+
+// Append a stage-protocol "Mode choice" block to a seeded audit shard.
+function seedModeChoice(dir: string, label: string): void {
+  const auditDir = join(seededRecordDir(dir), "audit");
+  mkdirSync(auditDir, { recursive: true });
+  writeFileSync(
+    join(auditDir, "host-t219clone.md"),
+    `# AI-DLC Audit Log\n\n## Questions: Requirements Analysis — Mode choice\n**Timestamp**: 2026-07-26T00:00:00Z\n**User Input**: "${label}"\n**AI Response**: "Recorded mode choice"\n**Context**: requirements-analysis\n\n---\n`,
+    "utf-8",
+  );
+}
+
 describe("t219 kiro-ide gate-render floor (stop adapter)", () => {
   test("open gate -> first stop blocks with the render instruction; second stop passes", () => {
     const dir = scratchProject(gateOpenState());
@@ -132,6 +174,54 @@ describe("t219 kiro-ide gate-render floor (stop adapter)", () => {
   test("no workflow state -> no floor", () => {
     const dir = scratchProject(null);
     try {
+      expect(runStop(dir)).not.toContain(FLOOR_MARK);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("pending question batch, no mode choice logged -> floored once", () => {
+    const dir = scratchProject(questionPendingState());
+    try {
+      seedQuestions(dir, 3);
+      const first = runStop(dir);
+      expect(first).toContain('"decision":"block"');
+      expect(first).toContain(FLOOR_MARK);
+      expect(runStop(dir)).not.toContain(FLOOR_MARK); // one-shot per batch state
+      // Two answers land -> blank count changes -> the floor re-arms.
+      seedQuestions(dir, 1);
+      expect(runStop(dir)).toContain(FLOOR_MARK);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("pending question batch under 'Guide me' -> floored", () => {
+    const dir = scratchProject(questionPendingState());
+    try {
+      seedQuestions(dir, 2);
+      seedModeChoice(dir, "Guide me");
+      expect(runStop(dir)).toContain(FLOOR_MARK);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("pending question batch under 'I'll edit the file' -> exempt", () => {
+    const dir = scratchProject(questionPendingState());
+    try {
+      seedQuestions(dir, 2);
+      seedModeChoice(dir, "I'll edit the file");
+      expect(runStop(dir)).not.toContain(FLOOR_MARK);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("all answers filled -> no floor", () => {
+    const dir = scratchProject(questionPendingState());
+    try {
+      seedQuestions(dir, 0);
       expect(runStop(dir)).not.toContain(FLOOR_MARK);
     } finally {
       rmSync(dir, { recursive: true, force: true });
