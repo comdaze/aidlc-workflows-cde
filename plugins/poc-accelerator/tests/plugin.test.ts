@@ -87,7 +87,9 @@ describe(`${PLUGIN_NAME} plugin — content validation`, () => {
 
   test("scope identity remains stable", () => {
     expect(scopeFiles).toHaveLength(1);
-    const raw = readFileSync(scopeFiles[0]!, "utf-8");
+    const [scopePath] = scopeFiles;
+    if (!scopePath) throw new Error("scope file missing after length assertion");
+    const raw = readFileSync(scopePath, "utf-8");
     const frontmatter = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
     expect(scalarField(frontmatter, "name")).toBe(SCOPE_NAME);
     expect(scalarField(frontmatter, "plugin")).toBe(PLUGIN_NAME);

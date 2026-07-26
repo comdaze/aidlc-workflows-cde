@@ -37,6 +37,12 @@ Reply with a number (or just tell me).
 
 Rules:
 
+- **Chat rendering is MANDATORY before parking a turn**: writing a gate or
+  question to the questions FILE is the audit record, NOT the presentation.
+  Ending a turn at an approval gate with a bare "waiting for your decision"
+  line — without the numbered options in that same chat message — is a
+  protocol violation: the user cannot see what they are approving. The stop
+  hook blocks the first such park at each gate and instructs a re-render.
 - **Approval gate `[next stage]`**: on an approval question, render the
   `Continue to [next stage]` placeholder from the run-stage directive's
   `next_stage` field verbatim (e.g. `Continue to NFR Requirements`); render

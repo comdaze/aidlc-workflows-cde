@@ -44,12 +44,14 @@ import {
   humanActedSinceGate,
   humanPresenceGuardDisabled,
   isAutonomousMode,
+  parseCheckboxes,
   recordHookDrop,
   resolveProjectDirFromHook,
   stateFilePath,
+  stopHookDir,
 } from "../tools/aidlc-lib.ts";
 import { appendAuditEntry } from "../tools/aidlc-audit.ts";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const HOOKS_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -375,6 +377,73 @@ if (target === "session-start") {
     if (result.stdout) process.stdout.write(result.stdout);
   }
   return 0;
+}
+
+// --- stop: the gate-render floor (runs ONLY when the core hook ALLOWED) ---
+//
+// Kiro IDE delivers no transcript to the Stop hook (context is USER_PROMPT
+// only), so no hook can VERIFY that the question-rendering annex was honored —
+// and twice in the field the conductor wrote an approval gate to the questions
+// file, printed a bare "waiting at the gate" line with NO options in chat, and
+// parked. The user was asked to "reply with a number" they never saw.
+//
+// Deterministic floor: when the core stop hook allows the turn to end while an
+// approval gate is OPEN ([?] awaiting-approval), block ONCE per gate with an
+// on-task instruction to render the gate options in chat per the annex. A
+// signature marker (the sorted [?] slugs) under .aidlc-stop-hook/ makes it
+// one-shot: the re-stop after rendering passes straight through, and a fresh
+// gate (new slug set, or a revision cycle re-opening the gate) re-arms it. A
+// correctly-rendering conductor pays one brief restatement per gate — the cost
+// of having no transcript to check.
+//
+// Scope is deliberately gates-only: mid-stage question batches ([-] + blank
+// [Answer]: tags) are NOT floored, because self-guided mode ("I'll edit the
+// file") legitimately parks without chat-rendering every question, and the
+// mode choice is not recoverable here. Carve-outs mirror the presence floor:
+// autonomous Construction, plus AIDLC_GATE_RENDER_FLOOR=0 as the off-switch.
+// Fail-open: any error forwards the core allow unchanged.
+if (target === "stop" && !result.stdout.includes('"decision"')) {
+  try {
+    if (process.env.AIDLC_GATE_RENDER_FLOOR !== "0") {
+      const sp = stateFilePath(projectDir);
+      const content = existsSync(sp) ? readFileSync(sp, "utf-8") : null;
+      if (content !== null && !isAutonomousMode(content) && hasOpenGate(content)) {
+        const signature = parseCheckboxes(content)
+          .filter((c) => c.state === "awaiting-approval")
+          .map((c) => c.slug)
+          .sort()
+          .join(",");
+        const markerPath = join(stopHookDir(projectDir), "gate-render-nudge.json");
+        let seen = "";
+        try {
+          seen = (JSON.parse(readFileSync(markerPath, "utf-8")) as { signature?: string })
+            .signature ?? "";
+        } catch {
+          // No marker yet (or unreadable) — this gate has not been nudged.
+        }
+        if (signature !== seen) {
+          mkdirSync(stopHookDir(projectDir), { recursive: true });
+          writeFileSync(markerPath, `${JSON.stringify({ signature })}\n`, "utf-8");
+          process.stdout.write(
+            JSON.stringify({
+              decision: "block",
+              reason:
+                "An approval gate is open. Before parking this turn, present the gate " +
+                "in chat per .kiro/skills/aidlc/question-rendering.md: the bolded header, " +
+                "the gate prompt, then ALL options as a numbered list (mapped from the " +
+                "questions file's letters, ending with an 'Other' escape), closing with " +
+                "'Reply with a number (or just tell me).' Never ask the user to answer " +
+                "with file letters. If you already rendered the options this turn, " +
+                "restate them once briefly. Then stop and wait for the user's decision.",
+            }),
+          );
+          return 0;
+        }
+      }
+    }
+  } catch {
+    // Advisory floor — never let it change the core stop decision.
+  }
 }
 
 // stop (and any future passthrough target): forward stdout + exit code

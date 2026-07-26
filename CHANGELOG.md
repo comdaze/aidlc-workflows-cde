@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.8] - 2026-07-26
+
+Approval gates on Kiro IDE can no longer park silently: twice in the field the conductor wrote the gate to the questions file, printed a bare "waiting at the gate" line with NO options in chat, and stopped — the user was told to "reply with a number" they never saw. Kiro IDE delivers no transcript to the Stop hook, so the annex rendering cannot be verified; instead the stop adapter gains a deterministic **gate-render floor**: the first allowed stop at each open gate is blocked once with an on-task instruction to render the numbered options in chat per `question-rendering.md`, then re-stops pass through. **Upgrade:** re-copy `.kiro/hooks/aidlc-kiro-adapter.ts` and `.kiro/skills/aidlc/question-rendering.md` from `dist/kiro-ide/` into your project.
+
+* The Kiro IDE stop adapter blocks ONCE per gate signature (the sorted `[?]` slugs, marker under `.aidlc-stop-hook/gate-render-nudge.json`) when the core stop hook allows a park while an approval gate is open. A correctly-rendering conductor pays one brief restatement per gate; a revision cycle or a new gate re-arms the floor.
+* Carve-outs mirror the human-presence floor: autonomous Construction is exempt, and `AIDLC_GATE_RENDER_FLOOR=0` is the deterministic off-switch. Mid-stage question batches are NOT floored (self-guided "I'll edit the file" mode legitimately parks without chat rendering). Fail-open throughout.
+* The Kiro IDE question-rendering annex now states the rule outright: writing a gate to the questions FILE is the audit record, not the presentation — ending a turn at a gate without the numbered options in chat is a protocol violation.
+
 ## [2.5.7] - 2026-07-23
 
 Fixes a Kiro IDE regression that silently disabled the agent-stop hooks: the forwarding-loop reminder and `SESSION_ENDED` never ran, because the IDE delivers an empty `USER_PROMPT` on agent stop and the adapter's entry guard then waited on stdin, which Kiro IDE opens but never writes. Hooks on prompt submit and after tool use were unaffected (the IDE populates `USER_PROMPT` for those events). Verified live on Kiro IDE against both the broken and fixed adapter. **Upgrade:** re-copy your `dist/<harness>/` shell into the project (on Kiro IDE the fix is in `.kiro/hooks/aidlc-kiro-adapter.ts` and `.kiro/tools/aidlc.ts`).
