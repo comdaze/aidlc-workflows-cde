@@ -1,0 +1,120 @@
+{
+  "$schema": "https://ai-ready-repo.dev/schemas/code-intel.v3.json",
+  "version": "3.0",
+  "repo": {
+    "name": "sample-repo",
+    "languages": [
+      "python"
+    ],
+    "total_symbols": 42,
+    "total_edges": 7
+  },
+  "modules": [
+    {
+      "name": "src/salary",
+      "purpose": "Salary rule engine",
+      "files": [
+        "src/salary/calc.py",
+        "src/salary/rules_loader.py"
+      ],
+      "file_count": 2,
+      "symbol_count": 30,
+      "class_count": 3,
+      "function_count": 18,
+      "depends_on": [
+        "src/db"
+      ]
+    },
+    {
+      "name": "src/db",
+      "purpose": "Repository layer",
+      "files": [
+        "src/db/repo.py"
+      ],
+      "file_count": 1,
+      "symbol_count": 12,
+      "class_count": 2,
+      "function_count": 8,
+      "depends_on": []
+    }
+  ],
+  "routes": [
+    {
+      "id": "route:salary-get-a1b2",
+      "method": "GET",
+      "path": "/api/salary/{id}",
+      "file_path": "src/api/salary.py",
+      "line": 42
+    }
+  ],
+  "entry_points": [],
+  "edges": [
+    {
+      "from": "src/salary",
+      "to": "src/db",
+      "type": "imports"
+    }
+  ],
+  "dependencies": {
+    "external": [
+      "fastapi",
+      "pymysql"
+    ]
+  },
+  "domains": [
+    {
+      "id": "domain:salary-config",
+      "name": "Salary Configuration",
+      "summary": "Config-driven salary rules.",
+      "entities": [
+        "SalaryItem",
+        "Rule"
+      ],
+      "business_rules": [
+        {
+          "rule": "Rounding is banker's rounding",
+          "anchor": "src/salary/calc.py:L88",
+          "verified": true
+        },
+        {
+          "rule": "Negative adjustments require approval",
+          "anchor": null,
+          "verified": false,
+          "absence_evidence": "grep -rn 'approval' src/salary → 0 hits in adjustment path"
+        }
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "name": "sample-repo",
+      "root": "."
+    }
+  ],
+  "flows": [
+    {
+      "id": "flow:get-salary",
+      "domain_id": "domain:salary-config",
+      "name": "Get Salary",
+      "summary": "Fetch computed salary for an employee.",
+      "entry_type": "http",
+      "entry_ref": "route:salary-get-a1b2",
+      "source": "llm"
+    }
+  ],
+  "steps": [
+    {
+      "id": "step:get-salary:compute",
+      "flow_id": "flow:get-salary",
+      "order": 1,
+      "name": "Compute salary",
+      "summary": "Apply rules to base salary.",
+      "file_path": "src/salary/calc.py",
+      "line_range": [
+        80,
+        120
+      ],
+      "source": "llm"
+    }
+  ]
+}
