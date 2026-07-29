@@ -1,6 +1,5 @@
 ---
 slug: knowledge-plugin-bootstrap
-number: 2.05
 name: Knowledge Base Bootstrap
 plugin: knowledge-plugin
 phase: inception
@@ -31,10 +30,25 @@ outputs: "<repo>/.ai-ready/ (PRODUCT/TECH/IMPROVEMENT/PROJECT.md + code-intel.js
 MANDATORY: Follow stage-protocol.md for approval gates, question format, and completion messages.
 
 Builds the deep, anchored knowledge base (`.ai-ready/`) for a brownfield repo
-**before** reverse-engineering runs, using the vendored repo-to-ddd engine.
-Reverse-engineering (2.1) then upgrades its codekb from this base via the
-knowledge-plugin overlay. This stage is where domain knowledge is BORN; the
-human approval gate at its end is where a senior domain expert SIGNS it.
+using the vendored repo-to-ddd engine. `reverse-engineering` upgrades its codekb
+from this base via the knowledge-plugin overlay. This stage is where domain
+knowledge is BORN; the human approval gate at its end is where a senior domain
+expert SIGNS it.
+
+ORDERING — read this before assuming when this stage runs. Compile does NOT
+honour an authored frontmatter `number:`; it harvests the number pinned in
+`stage-graph.json`, or auto-seeds `<phase-prefix>.<next free index>` for a new
+slug. A plugin stage is therefore seeded AFTER every core stage in its phase, so
+inside a workflow this stage runs at the END of inception — after
+`reverse-engineering`, which by then has already written the shallow native
+codekb that the downstream stages consumed. Its only ordering edge is
+`requires_stage: [state-init]`; there is no edge that puts it ahead of
+`reverse-engineering`, and the additive contribution seam cannot add one
+(`adds.requires_stage` is declared-and-logged, not implemented). CONSEQUENCE: run
+inside a workflow, this stage's knowledge reaches the NEXT requirement (via the
+`reverse-engineering` freshness rerun), not the current one. To have it feed the
+current run, run it out-of-band BEFORE the first intent — see the plugin README
+§4 "Run the bootstrap before you start a workflow".
 
 ## Steps
 
@@ -51,6 +65,25 @@ the target repo:
 
 To skip: run
 `bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts report --stage knowledge-plugin-bootstrap --result skipped --reason "<reason>"`.
+
+ISOLATED RUNS — when the run-stage directive you are executing carries
+`"single": true` (a stage-runner invocation, `/knowledge-plugin-bootstrap`), the
+skip command above does NOT apply and must not be attempted:
+
+- There is no main workflow, so the bare command fails with `No active intent
+  workflow state found (aidlc-state.md is absent)`.
+- Adding `--single` does not help either: `report --single` accepts forward
+  outcomes only (`approved`, `completed`, `complete`, `done`) and rejects
+  `skipped` with `report commits forward outcomes only`.
+
+So on a `single` run, if the conditions above say this stage should not do the
+work, tell the user plainly why (greenfield, or base present and valid) and STOP
+without calling `report` at all. Never report `completed` for work that was not
+done — that writes a false audit row.
+
+Also on a `single` run there is no `<record>/aidlc-state.md` to read: determine
+brownfield by inspecting the target repo directly (source files present) and have
+the user confirm, rather than guessing.
 
 Environment sanity (before any work):
 `bun {{HARNESS_DIR}}/tools/aidlc-ai-ready-gen.ts check` — python3 + the
