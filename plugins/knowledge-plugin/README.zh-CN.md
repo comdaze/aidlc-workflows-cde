@@ -161,9 +161,24 @@ bun <harness-dir>/tools/aidlc-utility.ts status
 第 2 步的 `reverse-engineering` 完成摘要必须报 `deep (.ai-ready)` 而不是 `native`。这是
 判断插件有没有生效的唯一可靠信号。
 
-这个顺序的代价：单跑的 directive 带 `gate: false`，没有引擎强制的审批门——senior 签字从
-「有留痕的流程转换」降级成你自己的纪律。要留痕就手工记进 `.ai-ready/REVIEW-REPORT.md` 和
-`IMPROVEMENT.md`。
+这个顺序的代价比「少一道门」更大。单跑（`"single": true`）**无法执行 stage-protocol 的
+三条 MANDATORY 动作**，因为它们都要经由活跃 intent 解析,而单跑刻意没有 intent。这需要改
+核心引擎（给 `--single` 造一个 synthetic intent），插件改不了,所以这是已知限制,不是让你
+去绕的 bug:
+
+| 协议要求 | 为什么失败 | 替代做法 |
+| --- | --- | --- |
+| §3 每轮问答记审计行 | `aidlc-log.ts` 直接报错 `No active workflow — refusing to log an interaction event with no resolvable intent`。它的 `--single` 只给 Workflow 字段打标签,并不绕过这道守卫。 | §3 本来就规定问答文件是权威来源——把它写全,并在完成摘要里说明未产生审计行。 |
+| §13 learnings 持久化并发 `RULE_LEARNED` | `aidlc-learnings.ts` 完全没有 `--single` 处理,读状态文件即失败。 | 写成 `.ai-ready/IMPROVEMENT.md` 的 KEM-lite 条目;团队级的经**显式批准**才写进 `team.md`。 |
+| §2 Part 0 门的持有 + 驳回/修订环 | `report --single` 只接受前向结果（`approved`/`completed`/`complete`/`done`）,`awaiting-approval`/`rejected`/`revised` 一律拒绝;directive 还带 `gate: false`。 | 照样呈上签字包、在对话里迭代,最后 `report --single --result completed` 一次。要明确告知审批人:他的签字留在产物里,不在状态机里——`/aidlc --status` 不会显示挂起的门。 |
+
+单跑的记录目录也缺 intent 段（是 `.../intents/<phase>/<stage>/`,而非文档约定的
+`.../intents/<slug>-<id8>/<phase>/<stage>/`）——同一个根因,不要靠手工搬文件去"修"。
+
+所以签字证据要留在产物里:`.ai-ready/REVIEW-REPORT.md`、`spec-details/*.spec.md` 里的
+`[human]` 标记、以及 `IMPROVEMENT.md`。如果这次交付确实需要引擎留痕的可审计签字,那就在真
+实 workflow 里跑并接受 §4.1 的顺序代价——或者两个都做:先单跑筑底,之后在 workflow 里再跑
+一次,那次因 `.ai-ready/` 校验通过会很便宜地报 `skipped`。
 
 ### 4.2 各入口分别是什么效果
 
@@ -360,6 +375,38 @@ vendored 引擎搭在 `tools/` 下面，是因为 packager 只投射一个内容
 收编溯源：`s_repo-to-ddd` 取自 SwarmAI VERSION 1.27.0（2026-07-24 快照），2026-07-26
 收编。完整记录与本地改动清单见
 [`tools/vendor/repo-to-ddd/VENDORED.md`](tools/vendor/repo-to-ddd/VENDORED.md)。
+
+### 实战测试加固（2026-07-29）
+
+首次真实运行——棕地仓库 519 个 git 跟踪文件、TypeScript + Python、压平的 2 提交历史——
+产出 107 条带锚点的业务规则并通过全部 fail-closed 门控,同时暴露 **14 个框架侧问题**。
+其中 5 个是**静默**失败:流程报告成功,而内容为空或为错。这比报错危险——一个不够怀疑的
+agent 会把空产物直接交给人类审核。落在插件内的都已修复并配了回归测试,带现场证据的清单见
+[`VENDORED.md`](tools/vendor/repo-to-ddd/VENDORED.md#本地改动清单相对上游逐条记录)。
+
+你能观察到的变化:
+
+- **spec-details §5 现在有内容了。** 域级 `business_rules` 原本在任何 section 都不渲染,
+  senior 拿到的是空白签字表,而完成摘要报着规则数(提取 107 条、可见 0 条)。现在 §5 有
+  规则本体加一行「总数 / verified / unverified」计数。**以后再看到空的 §5,不要签,退回去。**
+- **`BLIND-SPOTS.md` 不能再假报干净。** 风险跨度字段写成 `file` 而非 `file_path` 会静默
+  清空扫描并发布「零盲点」。实测:12 个风险跨度、3 个真盲点,报成了零。这种形状不匹配现在
+  会报错。
+- **锚点指对行了。** 字符串形式的 `line_range`（"88-102"）被逐字符索引、渲染成 `:8-8`
+  ——看着合法、指错行,且能通过只校验文件部分的锚点检查。现在要么正确解析,要么拒绝。
+- **无文本的断言被拒绝**,不再渲染成「有锚点、没内容」（文本键只认 `rule`/`cond`/`case`）。
+- **业务规则评分维度对本插件产物生效了。** 它原本只键 legacy SQL 层,所以永远 N/A——还
+  断言该仓库「没有业务规则可提取」。
+- **bulk 导入提交不再当 VERIFY 任务。** 压平历史下,一次触碰全仓库的提交定位不了任何东西;
+  两个这样的退化任务原本恰好越过「少于 2 个任务则跳过 VERIFY」的阈值。压平仓库上预期自动
+  选出 0 个任务,请手写——隔离式 VERIFY 值这个钱(那次运行里它抓到两处真实的跨文档矛盾)。
+- **入口文档写到 `.ai-ready/AGENTS.md`**,不写仓库根——AI-DLC 宿主的根上放着 harness
+  自己的 `AGENTS.md`。
+
+有 3 项**没有修**,因为需要改核心引擎、插件做不到:§4.1 里那三条 `--single` 协议豁免
+（§3 审计行、§13 learnings 持久化、门的持有/驳回环）以及单跑记录路径缺 intent 段。它们已
+写进 stage 文件,好让 conductor 不再自行编造绕法。真正的修法是给 `--single` 造一个
+synthetic intent——把 `report --single` 已经在用的合成 workflow id 前推到 intent 层。
 
 ## 9. 测试本插件
 

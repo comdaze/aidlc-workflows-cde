@@ -22,7 +22,7 @@ scopes:
   - mvp
   - workshop
 inputs: "<repo> source tree + optional <repo>/docs-input/ (customer docs: config exports, BPM flows, feishu docs — see {{HARNESS_DIR}}/knowledge/config-channel.md)"
-outputs: "<repo>/.ai-ready/ (PRODUCT/TECH/IMPROVEMENT/PROJECT.md + code-intel.json + REVIEW-REPORT.md + ai-ready.json + spec-details/*.spec.md) + <repo>/AGENTS.md"
+outputs: "<repo>/.ai-ready/ (PRODUCT/TECH/IMPROVEMENT/PROJECT.md + code-intel.json + REVIEW-REPORT.md + ai-ready.json + BLIND-SPOTS.md + spec-details/*.spec.md + AGENTS.md)"
 ---
 
 # Knowledge Base Bootstrap
@@ -49,6 +49,30 @@ inside a workflow, this stage's knowledge reaches the NEXT requirement (via the
 `reverse-engineering` freshness rerun), not the current one. To have it feed the
 current run, run it out-of-band BEFORE the first intent — see the plugin README
 §4 "Run the bootstrap before you start a workflow".
+
+ISOLATED-RUN PROTOCOL EXEMPTIONS — what stage-protocol.md requires but a
+`"single": true` directive CANNOT do. Read this before you start improvising:
+three MANDATORY protocol actions are structurally unavailable in an isolated run,
+because they resolve through the active intent that an isolated run deliberately
+has none of. They need a core-engine change (a synthetic intent for `--single`),
+which a plugin cannot make. Do NOT invent workarounds — do the documented
+substitute and say so in the completion summary.
+
+| Protocol requirement | Why it fails on `--single` | What to do instead |
+| --- | --- | --- |
+| §3 — log every question round (`aidlc-log.ts decision` / `answer`) | `resolveActiveProjectDir()` hard-errors with `No active workflow — refusing to log an interaction event with no resolvable intent` when there is no state file. The `--single` flag on `aidlc-log` only TAGS the Workflow field; it does not bypass that guard. | Keep the full Q&A in the stage's questions file (that file is the source of truth per §3 anyway) and state in the completion summary that no audit rows were emitted. Do not fabricate audit rows by other means. |
+| §13 — persist learnings via `aidlc-learnings.ts persist` (emits `RULE_LEARNED`) | `aidlc-learnings.ts` has no `--single` handling at all and fails reading state (`State file not found: …/aidlc-state.md`). | Write the learnings where they belong for THIS plugin — KEM-lite `[correction]` / `[pitfall]` entries in `.ai-ready/IMPROVEMENT.md` per `{{HARNESS_DIR}}/knowledge/kem-lite.md` — and, only with explicit human approval, the team-level ones into the space memory `team.md`. Note in the summary that no `RULE_LEARNED` event was emitted. |
+| §2 Part 0 — hold the gate (`report --result awaiting-approval`) and the reject/revise loop | `report --single` accepts FORWARD outcomes only (`approved`, `completed`, `complete`, `done`); `awaiting-approval` / `rejected` / `revised` are refused. The directive also carries `gate: false`. | Present the sign-off package and ask for approval as Step 5 describes, but understand the gate is NOT engine-held: `/aidlc --status` will not show it pending, and a rejection cannot be recorded as a transition. Say this explicitly at the gate so the approver knows their sign-off lives in the artifacts, not in the state machine. Iterate in-conversation, then `report --single --result completed` once. |
+
+Also note the isolated record path has no intent segment — produces/memory resolve
+under `aidlc/spaces/<space>/intents/<phase>/<stage>/` rather than the documented
+`.../intents/<slug>-<id8>/<phase>/<stage>/`. Same root cause; nothing to do about
+it from here, but do not "fix" it by hand-moving files.
+
+If any of this matters for the engagement (auditable sign-off, recorded rejection
+loop), run this stage inside a real workflow instead — accepting the ORDERING
+consequence above — or run it isolated first and re-run it in-workflow later,
+where the second run reports `skipped` cheaply once `.ai-ready/` validates.
 
 ## Steps
 
@@ -99,7 +123,16 @@ Follow the vendored engine's own workflow verbatim:
    ENRICH corpus per `{{HARNESS_DIR}}/knowledge/config-channel.md`: rules
    extracted from docs anchor to the doc location and start `verified: false`.
 2. **Honest coverage** — config-only/undocumented areas are declared in
-   REVIEW-REPORT.md and spec-details §8, never glossed over.
+   REVIEW-REPORT.md and spec-details §7 (Gaps & 改进区), never glossed over.
+3. **Write the entry document to `<repo>/.ai-ready/AGENTS.md`, NOT the repo root.**
+   The vendored INSTRUCTIONS say to write `AGENTS.md` at the output root and also
+   forbid overwriting an existing one without asking. On an AI-DLC host those two
+   rules collide by construction: the framework installs its own `AGENTS.md` at the
+   project root (harness configuration), so following the vendored instruction
+   literally overwrites it. Keep the generated entry document inside `.ai-ready/`.
+   Merging any of it into the repo-root `AGENTS.md` is an OPTIONAL, explicitly
+   approved human action — propose the merge at the gate, never perform it here.
+   (This is the resolution of CraftAI field-test finding L1.)
 
 The engine's fail-closed gates are not optional: after generation, run
 
@@ -116,7 +149,12 @@ The approval gate for this stage is a **domain sign-off**, not a formality.
 Present to the approver:
 
 - per-domain spec files (`.ai-ready/spec-details/*.spec.md`) with counts:
-  total business rules, verified vs `unverified`;
+  total business rules, verified vs `unverified`. These live in **§5 业务规则汇总**,
+  which the renderer fills from `domains[].business_rules` together with the counts
+  line. VERIFY THE SECTION IS NON-EMPTY before presenting the package: a rule that
+  is not in `domains[].business_rules` is a rule no reviewer will see, and a blank
+  §5 next to a completion message quoting a rule count is the exact failure this
+  step exists to prevent (CraftAI field-test finding C1);
 - the review checklist `{{HARNESS_DIR}}/knowledge/senior-review-checklist.md`
   (rule-by-rule confirm / correct / leave-unverified — watch the two
   high-risk classes: invented constraints and false "does not exist" claims);

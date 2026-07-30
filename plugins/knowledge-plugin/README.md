@@ -179,10 +179,28 @@ bun <harness-dir>/tools/aidlc-utility.ts status
 Step 2's `reverse-engineering` completion summary must report `deep (.ai-ready)`
 rather than `native`. That is the only reliable signal the plugin took effect.
 
-The cost of this sequence: an isolated run carries `gate: false`, so there is no
-engine-enforced approval gate — the senior sign-off becomes your own discipline
-rather than a recorded transition. Keep the audit trail by hand in
-`.ai-ready/REVIEW-REPORT.md` and `IMPROVEMENT.md`.
+The cost of this sequence is larger than just the missing gate. An isolated run
+(`"single": true`) cannot perform three MANDATORY stage-protocol actions, because
+all three resolve through the active intent an isolated run deliberately has none
+of. These need a core-engine change — a synthetic intent for `--single`, which a
+plugin cannot make — so they are documented limitations, not bugs to work around:
+
+| Protocol requirement | Fails because | Substitute |
+| --- | --- | --- |
+| §3 audit rows for every question round | `aidlc-log.ts` hard-errors with `No active workflow — refusing to log an interaction event with no resolvable intent`. Its `--single` flag only tags the Workflow field; it does not bypass the guard. | The stage's questions file is the §3 source of truth anyway — keep it complete and note the absent audit rows in the summary. |
+| §13 learnings persisted with a `RULE_LEARNED` event | `aidlc-learnings.ts` has no `--single` handling at all and fails on the missing state file. | KEM-lite entries in `.ai-ready/IMPROVEMENT.md`; team-level ones into `team.md` only with explicit approval. |
+| §2 Part 0 gate hold + reject/revise loop | `report --single` accepts forward outcomes only (`approved`/`completed`/`complete`/`done`); `awaiting-approval`/`rejected`/`revised` are refused. The directive also carries `gate: false`. | Present the package and iterate in conversation, then `report --single --result completed` once. Tell the approver their sign-off lives in the artifacts, not the state machine — `/aidlc --status` will not show a pending gate. |
+
+The isolated record path also drops the intent segment
+(`.../intents/<phase>/<stage>/` instead of `.../intents/<slug>-<id8>/<phase>/<stage>/`)
+— same root cause, and not something to repair by moving files.
+
+So keep the sign-off evidence in the artifacts: `.ai-ready/REVIEW-REPORT.md`,
+the `[human]` marks in `spec-details/*.spec.md`, and `IMPROVEMENT.md`. If the
+engagement genuinely needs an auditable, engine-recorded sign-off, run the stage
+inside a real workflow instead and accept the ordering consequence in §4.1 — or
+do both: isolated first, then in-workflow, where the second run reports `skipped`
+cheaply once `.ai-ready/` validates.
 
 ### 4.2 Entry points, and what each one actually does
 
@@ -395,6 +413,51 @@ vendored code.
 Vendoring provenance: `s_repo-to-ddd` from SwarmAI VERSION 1.27.0 (snapshot
 2026-07-24), vendored 2026-07-26. Full record and local-change list:
 [`tools/vendor/repo-to-ddd/VENDORED.md`](tools/vendor/repo-to-ddd/VENDORED.md).
+
+### Field-test hardening (2026-07-29)
+
+The first real run — a brownfield repo of 519 tracked files, TypeScript + Python,
+squashed 2-commit history — produced 107 anchored business rules and cleared every
+fail-closed gate, and surfaced 14 framework-side findings. Five of them were
+**silent** failures: the pipeline reported success over empty or wrong content,
+which is worse than an error because a trusting agent hands the empty artifact to
+the human reviewer. All the in-plugin ones are fixed and regression-tested; the
+inventory with field evidence is in
+[`VENDORED.md`](tools/vendor/repo-to-ddd/VENDORED.md#本地改动清单相对上游逐条记录).
+
+What changed that you can observe:
+
+- **spec-details §5 is now populated.** Domain-level `business_rules` were rendered
+  in no section at all, so the senior sign-off package was a blank sheet while the
+  completion message quoted a rule count (107 extracted, 0 visible). §5 now carries
+  the rules plus a total / verified / unverified counts line. **If you ever see an
+  empty §5 again, do not sign it — send it back.**
+- **`BLIND-SPOTS.md` can no longer lie about being clean.** Writing the risk-span
+  field as `file` instead of `file_path` silently emptied the scan and published
+  "no blind spots". Observed live: 12 risky spans, 3 genuinely blind, reported as
+  zero. That shape mismatch now raises.
+- **Anchors point at the right lines.** A string `line_range` ("88-102") was indexed
+  per character and rendered `:8-8` — a legitimate-looking anchor at the wrong line,
+  which passes the file-only anchor check. Now parsed correctly or rejected.
+- **An assertion with no text is rejected** rather than rendering as an anchor with
+  no claim attached (the text key is `rule` / `cond` / `case`, nothing else).
+- **The business-rules score applies to this plugin's output.** It keyed only on the
+  legacy SQL layer, so it was permanently N/A — while asserting the repo had no
+  business rules to extract.
+- **Bulk import commits are no longer used as VERIFY tasks.** On squashed history a
+  whole-repo commit cannot localize anything; two such degenerate tasks used to
+  clear the "skip VERIFY if fewer than 2" threshold. Expect 0 auto-selected tasks on
+  a squashed repo, and hand-write them — the isolated VERIFY step earns its keep
+  (it caught two real cross-document contradictions in that run).
+- **The entry document goes to `.ai-ready/AGENTS.md`**, never the repo root, which
+  on an AI-DLC host holds the harness's own `AGENTS.md`.
+
+Three findings are **not** fixed because they need core-engine changes a plugin
+cannot make — the `--single` protocol exemptions in §4.1 (§3 audit rows, §13
+learnings persistence, gate hold / reject loop) and the missing intent segment in
+the isolated record path. They are documented in the stage file so the conductor
+stops inventing workarounds. The fix would be to mint a synthetic intent for
+`--single`, extending the synthetic workflow id `report --single` already uses.
 
 ## 9. Testing this plugin
 

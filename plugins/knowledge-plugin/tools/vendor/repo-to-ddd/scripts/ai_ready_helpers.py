@@ -362,6 +362,19 @@ def check_llm_assertion_guards(doc: dict) -> list[str]:
             errors.append(f"{where}: 'verified' must be a bool, got {type(v).__name__} "
                           f"(unadjudicated or type-confused claim, §1.5)")
             return
+        # LOCAL DEVIATION (CraftAI field test H3): an assertion must carry TEXT. The
+        # renderer reads rule/cond/case; a dict putting its text under some other key
+        # (`statement` was the observed case) passed this guard, finalize_v3, and
+        # validate_code_intel_json, then rendered as `| 业务规则 |  (anchor: …) |` —
+        # an anchor with no claim attached, every gate green. Same logic as the
+        # plain-string arm above: a claim with no statement is not an adjudicable
+        # claim, whatever its `verified` flag says.
+        if not _nonblank(a.get("rule") or a.get("cond") or a.get("case")):
+            present = ", ".join(sorted(k for k in a if k != "verified")) or "(none)"
+            errors.append(f"{where}: assertion carries no text — expected a non-blank "
+                          f"'rule', 'cond', or 'case'; keys present: {present} "
+                          f"(an assertion with no statement is not adjudicable, §1.5)")
+            return
         if v is True:
             if not _nonblank(a.get("anchor")):
                 errors.append(f"{where}: verified:true assertion has no anchor (spurious risk, §1.5)")
@@ -518,19 +531,9 @@ def check_business_rule_anchor_files(doc: dict, repo_root=None) -> list[str]:
     anchors = _collect_doc_file_anchors(doc)
     _root_resolved = Path(repo_root).resolve() if repo_root is not None else None
 
-    def _file_of(anchor: str) -> str:
-        # anchor is "file:line" or "file:start-end" or bare "file". Strip a trailing
-        # ":<digits>" or ":<digits>-<digits>" line-spec; keep the file path (which may
-        # itself contain no colon on posix). rsplit once from the right on ':'.
-        if ":" in anchor:
-            head, tail = anchor.rsplit(":", 1)
-            # only treat tail as a line-spec if it's a line reference — digits with
-            # optional range/list separators (`216`, `216-232`, `216,232`, `L216`).
-            # Else the colon was part of the path (rare) — keep whole.
-            probe = tail.lstrip("Ll")
-            if probe and all(c.isdigit() or c in "-," for c in probe):
-                return head
-        return anchor
+    # anchor is "file:line" / "file:start-end" / bare "file" — see _anchor_file_part
+    # (promoted to module level so blind_spot_scan shares the one definition).
+    _file_of = _anchor_file_part
 
     def _resolves(f: str) -> bool:
         base = f.rsplit("/", 1)[-1]
@@ -975,12 +978,22 @@ def blind_spot_scan(doc: dict) -> dict:
             documented_files.add(fp)
     for dm in doc.get("domains") or []:
         for br in dm.get("business_rules") or []:
+            if not isinstance(br, dict):
+                continue
             anchor = br.get("anchor")
             if anchor:
-                documented_files.add(anchor)
+                # LOCAL DEVIATION (CraftAI field test M1): the raw anchor was added,
+                # but an anchor is "file:line" while steps[].file_path is "file", so
+                # the rule-anchor half of the documented set could never match and
+                # blind spots were systematically over-counted — while the docstring
+                # promised "documented iff step OR business_rule anchor". Strip the
+                # line-spec with the shared _anchor_file_part so both halves compare
+                # like with like.
+                documented_files.add(_anchor_file_part(anchor))
 
     # 2. Collect risky spans (dedup by (name, file_path); risk_areas carry the reason,
     #    hot_zones contribute high-fan-in files not already flagged).
+    declared_spans = len(doc.get("risk_areas") or []) + len(doc.get("hot_zones") or [])
     risky: dict[tuple, dict] = {}
     for ra in doc.get("risk_areas") or []:
         fp = ra.get("file_path")
@@ -1005,6 +1018,28 @@ def blind_spot_scan(doc: dict) -> dict:
                 "reason": f"High fan-in: {hz.get('callers')} callers",
                 "risk_score": None,
             }
+
+    # 2b. LOUD-on-shape-mismatch (CraftAI field test C2 — P0). Both loops above skip
+    #     an entry with no `file_path`. When the caller writes the field as `file`,
+    #     EVERY entry is skipped and this function used to return
+    #     {total_risky: 0, ..., clean: True} — render_blind_spots_md then published a
+    #     "no reverse-coverage blind spots" report. That outcome is INDISTINGUISHABLE
+    #     from a genuinely clean scan, over the one reverse-coverage check the whole
+    #     pipeline has. Observed live: 6 risk_areas (2 critical) + 6 hot_zones
+    #     declared, "zero blind spots" reported; the real answer after fixing the key
+    #     was 12 spans / 9 documented / 3 BLIND.
+    #
+    #     Fail loud instead — exactly the treatment extract_entry_anchors already
+    #     gives its own empty-menu case. This is not the deferred fail-closed
+    #     behavior_coverage gate (C042): the report stays report-only, we simply
+    #     refuse to publish a clean verdict over a set we silently emptied.
+    if declared_spans and not risky:
+        raise ValueError(
+            f"blind_spot_scan: {declared_spans} risk_areas/hot_zones present but NONE "
+            f"carry a non-blank 'file_path' — refusing to report clean:True over a "
+            f"silently emptied set (shape mismatch; did you write 'file' instead of "
+            f"'file_path'?)"
+        )
 
     # 3. Split documented vs blind (a span is documented iff its file is documented).
     blind_spots = [
@@ -1480,11 +1515,80 @@ def _fmt_assertion_row(a) -> str:
     joined cell."""
     if isinstance(a, dict):
         txt = a.get("rule") or a.get("cond") or a.get("case") or ""
+        # LOCAL DEVIATION (CraftAI field test H3): a dict whose text lives under some
+        # OTHER key (`statement`, `text`, …) used to render as an empty string — an
+        # anchored row with no content that every fail-closed gate passed green. The
+        # authoritative fix is the text guard in check_llm_assertion_guards; this is
+        # the render-side backstop so anything that still slips through is VISIBLE
+        # rather than blank. Never silently empty.
+        if not str(txt).strip():
+            keys = ", ".join(sorted(k for k in a if k not in ("verified",))) or "(none)"
+            txt = f"⚠ NO RULE TEXT — expected one of rule/cond/case; keys present: {keys}"
         if a.get("verified") is True:
             anc = str(a.get("anchor") or "").strip()
             return f"[llm-claim] {txt}" + (f" (anchor: `{anc}`)" if anc else "")
         return f"[llm-inferred] {txt}"
     return f"[llm-inferred] {a}"
+
+
+# LOCAL DEVIATION (CraftAI field test H4): `line_range` was indexed positionally
+# (`lr[0]`/`lr[1]`) with no type guard, so the string form "88-102" rendered as
+# `8-8` — lr[0]='8', lr[1]='8'. Observed three times in one run ("88-102"→8-8,
+# "71-87"→7-1, "206-247"→2-0). Those anchors look legitimate and pass
+# check_business_rule_anchor_files (which only validates the FILE part), so they
+# mislead the very human review the senior checklist exists to enable — a
+# framework-produced error wearing the costume of an LLM-produced one. Accept both
+# the canonical [start, end] list and the "start-end" / "start" string forms;
+# raise on anything else rather than emit a plausible-looking wrong anchor.
+_LINE_RANGE_STR_RE = re.compile(r"^\s*(\d+)\s*(?:[-–~]\s*(\d+)\s*)?$")
+
+
+def _fmt_line_range(lr) -> str:
+    """Render `line_range` as `start-end` (or a bare line). Canonical shape is a
+    2-element list/tuple; the "88-102"/"88" string forms are accepted and parsed
+    correctly. Any other shape raises — a wrong-but-plausible line anchor is worse
+    than a hard failure, because nothing downstream can detect it."""
+    if isinstance(lr, (list, tuple)):
+        if len(lr) == 2:
+            return f"{lr[0]}-{lr[1]}"
+        if len(lr) == 1:
+            return f"{lr[0]}"
+        raise ValueError(
+            f"line_range must hold 1 or 2 elements, got {len(lr)}: {lr!r}"
+        )
+    if isinstance(lr, bool):  # bool is an int subclass — reject before the int arm
+        raise ValueError(f"line_range must be [start, end], got bool: {lr!r}")
+    if isinstance(lr, int):
+        return str(lr)
+    if isinstance(lr, str):
+        m = _LINE_RANGE_STR_RE.match(lr)
+        if not m:
+            raise ValueError(
+                f"line_range string must be 'start-end' or 'start', got {lr!r} "
+                f"(canonical shape is the list [start, end])"
+            )
+        return f"{m.group(1)}-{m.group(2)}" if m.group(2) else m.group(1)
+    raise ValueError(
+        f"line_range must be [start, end] (list) or a 'start-end' string, got "
+        f"{type(lr).__name__}: {lr!r}"
+    )
+
+
+def _anchor_file_part(anchor: str) -> str:
+    """Strip a trailing `:<line-spec>` from an anchor, returning the file path.
+
+    Handles `file:line`, `file:start-end`, `file:216,232`, `file:L216`, and a bare
+    `file`. A colon that is part of the path (rare) is preserved. THE single
+    definition — check_business_rule_anchor_files and blind_spot_scan both use it,
+    so the "is this anchor about that file" question has one answer everywhere.
+    """
+    anchor = str(anchor)
+    if ":" in anchor:
+        head, tail = anchor.rsplit(":", 1)
+        probe = tail.lstrip("Ll")
+        if probe and all(c.isdigit() or c in "-," for c in probe):
+            return head
+    return anchor
 
 
 def _render_step_spec_table(st: dict) -> list[str]:
@@ -1572,6 +1676,38 @@ def project_domain_skeleton(domain: dict, flows: list, steps: list) -> str:
     return "\n".join(lines)
 
 
+def _render_domain_business_rules(domain: dict) -> list[str]:
+    """Render `domain['business_rules']` as the machine half of §5, with the
+    knowledge-maturity counts line the owning stage reports at its gate.
+
+    LOCAL DEVIATION (CraftAI field test C1). Each rule goes through
+    _fmt_assertion_row, so the honesty labelling is identical to the step-level
+    rows: `[llm-claim] … (anchor: …)` for an anchored assertion, `[llm-inferred] …`
+    for one that is not adjudicated. Nothing renders as bare fact.
+
+    Rendered as a numbered list rather than a table: a rule is a sentence, and the
+    counts line above it is what a reviewer tracks run over run. Newlines are
+    flattened so one multi-line rule cannot break the list structure.
+
+    An empty rule set renders an explicit `0` line rather than nothing — "this
+    domain has no extracted rules" and "the renderer dropped them" must not look
+    the same, which is the whole lesson of this finding.
+    """
+    rules = [r for r in (domain.get("business_rules") or []) if r is not None]
+    if not rules:
+        return ["规则总数:0 — `domains[].business_rules` 为空(未提取,或本域无域级不变量)", ""]
+    verified = sum(1 for r in rules if isinstance(r, dict) and r.get("verified") is True)
+    out = [
+        f"规则总数:{len(rules)} · verified(已带锚点、待人工裁决):{verified} · "
+        f"unverified(需 senior 确认):{len(rules) - verified}",
+        "",
+    ]
+    for n, r in enumerate(rules, 1):
+        out.append(f"{n}. " + _fmt_assertion_row(r).replace("\r", " ").replace("\n", " "))
+    out.append("")
+    return out
+
+
 def _render_domain_skeleton_body(domain: dict, flows: list, steps: list) -> str:
     """The raw 8-section skeleton render (no spec-hash marker). Split out so
     _spec_content_hash can hash the exact rendered content the human sees."""
@@ -1605,13 +1741,25 @@ def _render_domain_skeleton_body(domain: dict, flows: list, steps: list) -> str:
                         key=lambda s: s.get("order", 0))
         for st in fsteps:
             lr = st.get("line_range")
-            loc = f"{st.get('file_path', '?')}:{lr[0]}-{lr[1]}" if lr else st.get("file_path", "?")
+            fp = st.get("file_path", "?")
+            loc = f"{fp}:{_fmt_line_range(lr)}" if lr else fp
             L.append(f"#### 步骤 {st.get('order', '?')} — {st.get('name', '?')} (`{loc}`)")
             L.extend(_render_step_spec_table(st))
     L.append("")
 
-    L += ["## 5. 业务规则汇总(域级不变量)",
-          "<!-- [human] 区:人工增补业务承诺,merge 时受保护不覆盖(§8.2) -->",
+    # LOCAL DEVIATION (CraftAI field test C1 — P0). §5 used to render ONLY the
+    # [human] stub, so domain-level `business_rules` appeared in NO section of the
+    # 8-section spec. The stage that owns this render (knowledge-plugin-bootstrap)
+    # asks a senior domain expert to sign off rule-by-rule and to report
+    # "verified vs unverified remaining" — with an unrendered rule set that gate
+    # received a BLANK sign-off sheet while the completion message quoted a rule
+    # count nothing in the artifact could corroborate (107 rules extracted, 0
+    # visible). The machine-rendered rules go ABOVE the [human] stub so the stub
+    # (and therefore extract_human_spec_blocks / the §8.2 ownership boundary)
+    # keeps working unchanged.
+    L += ["## 5. 业务规则汇总(域级不变量)"]
+    L += _render_domain_business_rules(domain)
+    L += ["<!-- [human] 区:人工增补业务承诺,merge 时受保护不覆盖(§8.2) -->",
           "_(待人工增补 `[human]` 业务规则)_", ""]
 
     L += ["## 6. 潜在问题 & 风险", "| 严重度 | 位置 | 问题 | 来源 |", "|---|---|---|---|"]
@@ -1649,6 +1797,10 @@ def _render_domain_skeleton_body(domain: dict, flows: list, steps: list) -> str:
 _HUMAN_MARKER_RE = re.compile(r"`\[human\]`")
 _LIST_BULLET_RE = re.compile(r"^(?:[-*+]\s|\d+\.\s)")
 _SECTION_HDR_RE = re.compile(r"^##\s")
+# The §5 "no human rules yet" placeholder emitted by _render_domain_skeleton_body.
+# Matched (not string-compared) so regenerate_spec_preserving_human drops exactly
+# this line and keeps the rest of the fresh §5 body — see that function's note.
+_SPEC_HUMAN_STUB_RE = re.compile(r"^\s*_\(待人工增补\s*`\[human\]`\s*业务规则\)_\s*$")
 
 
 def _is_top_level_bullet(raw: str) -> bool:
@@ -1746,14 +1898,20 @@ def regenerate_spec_preserving_human(existing_spec_md: str, domain: dict,
         out.append(line)
         if line.startswith("## 5.") and not injected:
             i += 1
-            # carry any HTML-comment ownership note lines verbatim; drop the stub
+            # Carry the fresh §5 body forward and drop ONLY the stub placeholder.
+            # LOCAL DEVIATION (CraftAI field test C1): this used to keep HTML
+            # comments and discard every other §5 line, which was correct while §5
+            # held nothing but the stub. Now that _render_domain_business_rules
+            # emits the machine rule set there, discarding the body would delete
+            # the freshly rendered rules the moment a human added one [human] block
+            # — turning the preservation feature into a data-loss bug for the other
+            # half of the section. The machine half is domains[]-authoritative
+            # (re-rendered every time), the [human] half is preserved; both survive.
             while i < len(lines) and not lines[i].startswith("## "):
                 nxt = lines[i]
-                if nxt.strip().startswith("<!--"):
+                if not _SPEC_HUMAN_STUB_RE.match(nxt):
                     out.append(nxt)
-                # skip the stub placeholder + blanks; real content comes from human_blocks
                 i += 1
-            out.append("")
             out.extend(human_blocks)
             out.append("")
             injected = True
@@ -3329,10 +3487,43 @@ def select_verification_tasks(repo_path: Path) -> list[dict[str, Any]]:
                 return f
         return None
 
+    # LOCAL DEVIATION (CraftAI field test M3). A commit that touches (almost) the
+    # whole repo carries NO discriminative power as a verification task: "which file
+    # implements X?" is unanswerable-by-design when the ground-truth commit changed
+    # everything, and `correct_file` degenerates to whatever sorts first
+    # alphabetically. Observed live on a repo with a flattened 2-commit history —
+    # one commit was the initial import of all 519 files, and the selector happily
+    # returned it with correct_file=`scripts/_archive/analyze_docx.py`. Two such
+    # degenerate tasks cleared INSTRUCTIONS' "skip VERIFY if fewer than 2 tasks"
+    # threshold, so the isolated-VERIFY phase ran against noise.
+    #
+    # Bulk-import commits are common in customer deliveries (squashed history,
+    # scrubbed repos), so this is a load-bearing guard, not an edge case.
+    total_source_files = len({
+        f for c in commits for f in c["files"]
+        if not f.startswith("tests/") and f.endswith((".py", ".ts", ".js", ".rs", ".go"))
+    })
+    _BULK_ABSOLUTE = 50        # a commit touching this many files is a bulk change
+    _BULK_FRACTION = 0.30      # ...or this share of every source file git ever saw
+
+    def _is_discriminative(c: dict) -> bool:
+        """False for a bulk/import commit — one that touches so much of the repo
+        that it cannot localize anything. Small repos are protected by the absolute
+        floor: with 6 source files total, a 3-file commit is 50% but only 3 files,
+        which is still a usable ground truth."""
+        n = len(c["files"])
+        if n <= 3:
+            return True
+        if n >= _BULK_ABSOLUTE:
+            return False
+        return not (total_source_files and n / total_source_files > _BULK_FRACTION)
+
     def _try_add(c: dict, task_type: str) -> bool:
         """Append a task for commit c if it yields an unclaimed source file + the
         commit isn't already used. Records the file in seen_files. Returns success."""
         if c["hash"][:7] in [t.get("commit") for t in tasks]:
+            return False
+        if not _is_discriminative(c):
             return False
         src = _first_unclaimed_source(c)
         if not src:
@@ -3976,8 +4167,69 @@ def _br_spec_covers_all(spec_markdown: str, rule_ids: list[str]) -> bool:
     return True
 
 
+def _business_rules_dimension_from_domains(doc: dict) -> dict | None:
+    """Score Business-Rules Extraction from the v3 ``domains[].business_rules`` layer.
+
+    LOCAL DEVIATION (CraftAI field test M2). Returns None when no domain carries any
+    rule (caller then reports an honest N/A); otherwise a dict in the same shape as
+    the legacy path plus two v3-specific fields:
+
+      * ``coverage``  — fraction of domains that produced >= 1 rule. Same meaning as
+        the legacy coverage, so the score scale is comparable.
+      * ``anchored``  — fraction of rules carrying ``verified: true`` (i.e. an anchor
+        is present). This is the honest v3 analogue of legacy traceability: it says
+        the rule points at code a human can check, NOT that the prose was confirmed.
+        ``traceability_pass`` stays None — spec citation is not measurable here.
+
+    Scored on coverage and anchored ratio only. Deliberately NOT on rule COUNT: a
+    count target rewards splitting one rule into five, and this engine's whole
+    posture is that an unverifiable claim is worth less than no claim.
+    """
+    if not isinstance(doc, dict):
+        return None
+    domains = [d for d in (doc.get("domains") or []) if isinstance(d, dict)]
+    if not domains:
+        return None
+    per_domain = [
+        [r for r in (d.get("business_rules") or []) if isinstance(r, dict)]
+        for d in domains
+    ]
+    total_rules = sum(len(rs) for rs in per_domain)
+    if total_rules == 0:
+        return None
+
+    domains_with_rules = sum(1 for rs in per_domain if rs)
+    coverage = domains_with_rules / len(domains)
+    anchored_count = sum(
+        1 for rs in per_domain for r in rs if r.get("verified") is True
+    )
+    anchored = anchored_count / total_rules
+    # Equal weighting: breadth (did we look at every domain) and evidence (can a
+    # human check what we claim) are both necessary and neither substitutes.
+    score = round(((coverage + anchored) / 2) * 10)
+    return {
+        "applicable": True,
+        "score": score,
+        "coverage": coverage,
+        "traceability_pass": None,
+        "anchored": anchored,
+        "source": "domains[].business_rules",
+        "detail": (
+            f"{total_rules} rule(s) across {domains_with_rules}/{len(domains)} domain(s); "
+            f"{anchored_count}/{total_rules} carry an anchor (verified:true = "
+            f"LLM-asserted + anchor present, human-unadjudicated). Spec-citation "
+            f"traceability not measurable from the v3 layer."
+        ),
+    }
+
+
 def compute_business_rules_dimension(doc: dict, specs: dict | None = None) -> dict:
-    """Score the Business-Rules Extraction dimension from ``doc['domain_rules']``.
+    """Score the Business-Rules Extraction dimension.
+
+    Two layers, in precedence order: the legacy/SQL ``doc['domain_rules']`` manifest
+    (below), else the v3 ``domains[].business_rules`` layer this plugin's generation
+    path produces (see _business_rules_dimension_from_domains). N/A only when neither
+    carries a rule.
 
     Args:
         doc: a code-intel document. Reads ``doc['domain_rules']`` =
@@ -4000,11 +4252,23 @@ def compute_business_rules_dimension(doc: dict, specs: dict | None = None) -> di
     rules = (dr or {}).get("rules") or []
 
     if not dr or not domains:
+        # LOCAL DEVIATION (CraftAI field test M2). This dimension keyed ONLY on the
+        # legacy/SQL `domain_rules` manifest, so on a v3 doc — where rules live at
+        # `domains[].business_rules` — it was permanently N/A and its detail string
+        # asserted the repo "has no business rules to extract". Observed live with 107
+        # extracted rules, 95 anchored: the single dimension that measures this
+        # plugin's core value scored N/A and told the reader there was nothing to
+        # measure. Fall back to the v3 layer before declaring N/A. The legacy path
+        # above is untouched and still takes precedence.
+        v3 = _business_rules_dimension_from_domains(doc)
+        if v3 is not None:
+            return v3
         return {
             "applicable": False, "score": None, "coverage": None,
-            "traceability_pass": None,
-            "detail": "N/A — no domain_rules layer (non-legacy/non-SQL repo has no "
-                      "business rules to extract; excluded from overall, not penalized)",
+            "traceability_pass": None, "anchored": None, "source": None,
+            "detail": "N/A — no business rules found in either layer "
+                      "(`domain_rules` manifest absent AND no domains[].business_rules); "
+                      "excluded from overall, not penalized",
         }
 
     # Coverage: how many detected domains actually produced ≥1 business rule.
@@ -4056,6 +4320,9 @@ def compute_business_rules_dimension(doc: dict, specs: dict | None = None) -> di
         detail += "; traceability not measured (no specs supplied — coverage-only score)"
 
     return {
+        # `source`/`anchored` added locally (M2) so a caller can tell WHICH layer
+        # produced the score; the legacy layer has no per-rule anchor notion.
+        "source": "domain_rules", "anchored": None,
         "applicable": True, "score": score, "coverage": round(coverage, 4),
         "traceability_pass": (round(traceability_pass, 4) if traceability_pass is not None else None),
         "detail": detail,
