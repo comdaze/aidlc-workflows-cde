@@ -278,6 +278,24 @@ For repos 50-200 files, read 10-15. For repos >200 files, read 15-20.
 **Level 3 depth (MANDATORY for hot-zone files):** For the top 3-5 files by
 fix-commit count (from `parse_git_gotchas` output), read the FULL file and
 extract function-level knowledge:
+
+> **LOCAL ADDITION (knowledge-plugin, CraftAI field test M4) — flattened-history
+> fallback.** `parse_git_gotchas` returns `[]` on a repo with squashed or shallow
+> history, so "top files by fix-commit count" yields nothing and this MANDATORY
+> step has no input. Squashed history is the norm in customer deliveries (scrubbed
+> or re-published repos), so do NOT skip Level 3. Rank by these substitutes, in
+> order, and use the first that produces a signal:
+>
+> 1. **fix-commit count** (`parse_git_gotchas`) — preferred; it encodes real pain.
+> 2. **Import fan-in** — how many modules import this one (`code-intel.json`
+>    `dependencies` / `hot_zones[].callers`). Proxy for blast radius.
+> 3. **File length** — longest source files. Weakest signal; use only as a tiebreak
+>    or when both above are empty.
+>
+> Whichever you use, **state the basis in `REVIEW-REPORT.md`** — e.g. "hot zones
+> ranked by import fan-in + LOC; fix-commit counts unavailable (2-commit squashed
+> history)". A reader must never have to guess whether "hot zone" meant
+> historically-buggy or merely large; those justify different amounts of trust.
 - Every public function: name, approximate line range (~N), signature, what it does (1 sentence)
 - Callers: which other functions call this one (from grep or import graph)
 - Gotchas: function-specific bugs/traps (from git history + code reading)
@@ -656,11 +674,26 @@ Group the REAL anchors into business domains and flows. For each:
   `entry_type`, optional `diagram`.
 - `step`: id, `flow_id` (a real flow id), `order`, `name`, `file_path`, `line_range`,
   optional `io`/`contract`/`rules`/`preconditions`/`exceptions`.
+  **`line_range` is a LIST of two ints — `[88, 102]`, not `"88-102"`.** (The string
+  form is now parsed correctly rather than mis-rendered, but the list is canonical;
+  any other shape raises. Before the fix a string was indexed per character, so
+  `"88-102"` rendered as `auth.py:8-8` — a plausible-looking anchor pointing at the
+  wrong line, which passes the file-only anchor check and misleads human review.)
 - **§1.5 assertion rule (fail-closed):** every rule/precondition/exception is a
   dict with an explicit bool `verified`. `verified:true` REQUIRES a non-blank
   `anchor` (code file:line). `verified:false` REQUIRES `absence_evidence` (a
   `grep`-returned-0 proof) — a "rule doesn't exist" claim is unreliable unless
   proven absent. A bare-string rule or a missing `verified` is rejected.
+  **The assertion text goes in `rule` (or `cond` / `case`) — no other key is read.**
+  (LOCAL ADDITION, CraftAI field test H3: a dict putting its text under
+  `statement` used to pass every gate and render as an anchor with no claim
+  attached. An assertion with no text is now rejected here.)
+- **Domain-level `business_rules` render into spec-details §5** with a
+  total / verified / unverified counts line. That section IS the senior sign-off
+  sheet the owning stage gates on, so a rule you do not put in
+  `domains[].business_rules` is a rule no reviewer will ever see. (LOCAL ADDITION,
+  CraftAI field test C1: §5 previously rendered only the `[human]` stub, so an
+  extracted rule set of any size produced a blank sign-off sheet.)
 
 ```python
 # 4. Assemble + FAIL-CLOSED validate. Raises ValueError if ANY flow.entry_ref is
@@ -751,6 +784,13 @@ md = render_blind_spots_md(scan, unit_name)        # unit_name = project_name | 
 ```
 
 Rules (load-bearing):
+- **The field is `file_path`, on BOTH `risk_areas[]` and `hot_zones[]`** — not `file`.
+  (LOCAL ADDITION, CraftAI field test C2: entries missing `file_path` are skipped, so
+  writing `file` emptied the whole set and `blind_spot_scan` returned `clean: True` —
+  a published "no blind spots" report indistinguishable from a genuinely clean scan,
+  over the only reverse-coverage check in this flow. Observed live: 6 risk_areas
+  including 2 critical + 6 hot_zones declared, zero blind spots reported; the real
+  answer was 12 spans / 9 documented / **3 blind**. That shape mismatch now raises.)
 - **PER-PACKAGE, never shared.** Blind spots are that repo's own — one `BLIND-SPOTS.md`
   per package `.ai-ready/` dir. In the §4.9 monorepo fan-out, each package writes its own
   (inside its per-package dir); there is NO global/merged BLIND-SPOTS.md.
@@ -816,6 +856,24 @@ tasks = select_verification_tasks(Path(repo_path))
 
 If fewer than 2 tasks found (repo has < 3 meaningful commits), skip VERIFY
 and note in REVIEW-REPORT.md: "VERIFY skipped — insufficient commit history."
+
+> **LOCAL ADDITION (knowledge-plugin, CraftAI field test M3).**
+> `select_verification_tasks` now rejects **bulk commits** — one touching >= 50
+> source files, or > 30% of every source file in the history (commits of <= 3 files
+> are always kept, so small repos are unaffected). A whole-repo import commit
+> cannot localize anything: "which file implements X?" is unanswerable by
+> construction, and `correct_file` degenerates to whatever sorts first
+> alphabetically. Two such degenerate tasks used to clear the >= 2 threshold above
+> and send the isolated VERIFY phase off against noise.
+>
+> Consequence for a squashed-history repo: you will often get **0 tasks**, and the
+> skip note above applies. Do NOT treat that as "VERIFY not required" — the
+> isolated read-only check is one of the highest-value steps in this flow (it
+> catches internal contradictions between the generated documents that no gate
+> can see). Instead, **hand-write 3-4 tasks** from what you know of the repo,
+> keeping the isolation rule intact: the sub-agent reads ONLY the generated
+> artifacts, never the source. Record in REVIEW-REPORT.md that tasks were
+> hand-authored and why.
 
 **Step 5.2: Build verification prompt**
 

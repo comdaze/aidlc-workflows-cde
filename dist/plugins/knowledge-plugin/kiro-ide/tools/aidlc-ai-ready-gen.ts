@@ -84,7 +84,19 @@ function cmdTest(): void {
     "and not TestSpecDetailsIndexRow " +
     "and not TestValidatorMatchesRealExporter " +
     "and not test_e2e_on_real_swarmai_domains";
-  const r = py(["-m", "pytest", "test_ai_ready_helpers.py", "-q", "-k", EXCLUDE]);
+  // TWO files, both required:
+  //   test_ai_ready_helpers.py  — upstream's suite (replaced wholesale on re-vendor)
+  //   test_local_deviations.py  — OUR regression tests for the local fixes recorded
+  //                               in VENDORED.md. Kept separate precisely so a
+  //                               re-vendor that reverts a fix fails here instead of
+  //                               silently regressing (every local fix so far turned
+  //                               a silent-empty/wrong result into a loud one, which
+  //                               is invisible in a green run without these).
+  const r = py([
+    "-m", "pytest",
+    "test_ai_ready_helpers.py", "test_local_deviations.py",
+    "-q", "-k", EXCLUDE,
+  ]);
   process.stdout.write(r.stdout.split("\n").slice(-4).join("\n"));
   process.stderr.write(r.stderr);
   process.exit(r.status ?? 1);

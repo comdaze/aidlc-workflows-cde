@@ -25,7 +25,8 @@
 
 生成阶段(vendor INSTRUCTIONS.md 的 GENERATE),docs-input/ 作为补充语料参与:
 
-- 提取出的规则写入 spec-details `## 4 Core Business Rules`;
+- 提取出的规则写入 `domains[].business_rules`,由渲染器落到 spec-details
+  **`## 5. 业务规则汇总(域级不变量)`**;
 - 锚点格式:`docs-input/<file>.md#<标题锚>` 或 `docs-input/<file>.md:L<行号>`;
 - `verified` 初始一律 `false`——**文档说的 ≠ 系统真的这么跑**(文档会过时,
   配置会被改),必须经 senior 审核(见 senior-review-checklist.md)才置 true。
@@ -38,8 +39,26 @@
 | 文档+人工确认 | 规则来自文档,senior 确认现行有效 | anchor 指向 docs-input,`[human]` |
 | 仅文档 | 来自文档,未经人确认 | `unverified`,列入 §8 缺口 |
 
-spec-details `## 8 Coverage & Known Gaps` 必须写清三个等级各占多少——
-**"依据文档 + 人工确认"和"代码验证"是两种可信度,不许混着算覆盖率。**
+spec-details **`## 7. Gaps & 改进区`** 与 `REVIEW-REPORT.md` 必须写清三个等级各占
+多少——**"依据文档 + 人工确认"和"代码验证"是两种可信度,不许混着算覆盖率。**
+
+> 章节号对照(CraftAI 实战测试 L2 修正)。本文早前引用的
+> `## 4 Core Business Rules` 与 `## 8 Coverage & Known Gaps` 是
+> `templates/domain-spec.md.tmpl` 那套 9 节英文结构的编号,而实际渲染器
+> `project_domain_skeleton()` 产出的是 8 节中文结构:
+>
+> | § | 实际章节 |
+> |---|---|
+> | 1 | 域概述 |
+> | 2 | 架构图(本域) |
+> | 3 | 用户流程图(每条 flow) |
+> | 4 | 业务流 & 步骤规格(step 级断言在此) |
+> | 5 | **业务规则汇总(域级不变量)** ← 域级业务规则 + `[human]` 区 |
+> | 6 | 潜在问题 & 风险 |
+> | 7 | **Gaps & 改进区** ← 覆盖缺口 |
+> | 8 | 关联 |
+>
+> 那份模板不被渲染器读取,见 `tools/vendor/repo-to-ddd/VENDORED.md`。
 
 ## 更新
 
