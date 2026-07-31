@@ -87,3 +87,172 @@ not be assumed to live under `cwd`.
 **Only `execute_bash` was captured** — the probe's matcher excluded write tools,
 so this capture says nothing about `tool_input` for `fs_write` / `str_replace` /
 `fs_append`. That gap is called out in the chapter as the thing to measure next.
+
+## Follow-up attempt: blocked, and why (same day)
+
+Measuring the write-tool gap was attempted immediately afterwards and **could not
+be completed in that session**. Probes for `PreToolUse` / `PostToolUse` on
+`fs_write|str_replace|fs_append` never fired; neither did a diagnostic
+`PostToolUse` probe with **no matcher at all**, despite the write tools provably
+running (the target file carried all three edits).
+
+Cause: the probe cleanup had `rm -rf`'d `.kiro/`, and hook pickup never recovered
+for the rest of the session even after `createHook` recreated the directory and
+wrote valid files. Last firing of the pre-deletion probes was 14:50:09, the
+deletion followed at ~14:50, and nothing fired thereafter.
+
+Two lessons, both now in the chapter's §5:
+
+- Remove hook probe **files**, not the directory.
+- A silent probe is only evidence when a control fires in the *same* window. Here
+  the matcher-free control was itself silent, which is what identified the stale
+  registry rather than a wrong matcher regex — exactly the discrimination the
+  control discipline exists for.
+
+---
+
+## Write-tool run — raw capture (session `sess_be38d26e`)
+
+Closes the write-tool gap the section above flagged as "the thing to measure
+next". A fresh session restored hook pickup: the three probe files written at
+14:56–14:57 (before this session began at ~15:02) all fired.
+
+### The write-tool payloads
+
+`PreToolUse` and `PostToolUse` both fire for all three write tools, and the
+matcher alternation `fs_write|str_replace|fs_append` matches. Verbatim, one
+firing each (`PostToolUse` shown only for `fs_write`; the other two are identical
+plus their own `tool_response`):
+
+```json
+{"session_id":"sess_be38d26e…","hook_event_name":"PreToolUse","cwd":"/Users/zhihay/workspaces/aidlc-workflows-cde","tool_name":"fs_write","tool_input":{"path":"/tmp/aidlc-probe-scratch/probe-target.txt","text":"PROBE LINE ONE\nPROBE LINE TWO\n"}}
+{"session_id":"sess_be38d26e…","hook_event_name":"PostToolUse","cwd":"/Users/zhihay/workspaces/aidlc-workflows-cde","tool_name":"fs_write","tool_input":{"path":"/tmp/aidlc-probe-scratch/probe-target.txt","text":"PROBE LINE ONE\nPROBE LINE TWO\n"},"tool_response":"Created the /tmp/aidlc-probe-scratch/probe-target.txt file."}
+{"session_id":"sess_be38d26e…","hook_event_name":"PreToolUse","cwd":"/Users/zhihay/workspaces/aidlc-workflows-cde","tool_name":"str_replace","tool_input":{"path":"/tmp/aidlc-probe-scratch/probe-target.txt","oldStr":"PROBE LINE TWO","newStr":"PROBE LINE TWO EDITED","replace_all":false}}
+{"session_id":"sess_be38d26e…","hook_event_name":"PreToolUse","cwd":"/Users/zhihay/workspaces/aidlc-workflows-cde","tool_name":"fs_append","tool_input":{"path":"/tmp/aidlc-probe-scratch/probe-target.txt","text":"PROBE LINE THREE APPENDED"}}
+```
+
+Three things follow, and they are what the chapter's §4 was waiting on:
+
+- **`tool_input.path` is present and absolute** on both Pre and Post. Nothing has
+  to be scraped out of prose.
+- **The full write payload is present too** (`text`, or `oldStr`/`newStr`/
+  `replace_all`) — and on `PreToolUse`, i.e. *before* the write lands.
+- **`PreToolUse` carries `tool_input` but no `tool_response`.** Otherwise the two
+  payloads are the same shape.
+
+### Payload contract across every tool captured
+
+Derived by parsing both logs and reducing to distinct
+`(hook_event_name, tool_name)` → key sets:
+
+```
+PostFileCreate  -               top=[cwd, file_path, hook_event_name, session_id]
+PostFileSave    -               top=[cwd, file_path, hook_event_name, session_id]
+PreTaskExec     -               top=[cwd, hook_event_name, session_id, spec_name, task_name]
+PostTaskExec    -               top=[cwd, hook_event_name, session_id, spec_name, task_name, task_success]
+PreToolUse      fs_write        top=[cwd, hook_event_name, session_id, tool_input, tool_name]
+                                tool_input=[path, text]
+PreToolUse      fs_append       tool_input=[path, text]
+PreToolUse      str_replace     tool_input=[newStr, oldStr, path, replace_all]
+PostToolUse     fs_write        top=[… , tool_input, tool_name, tool_response]
+                                tool_input=[path, text]
+PostToolUse     fs_append       tool_input=[path, text]
+PostToolUse     str_replace     tool_input=[newStr, oldStr, path, replace_all]
+PostToolUse     execute_bash    tool_input=[command, cwd, run_in_background, timeout]
+PostToolUse     read_file       tool_input=[limit, offset, path]
+PostToolUse     list_directory  tool_input=[depth, explanation, path]
+```
+
+`session_id` + `cwd` are on **every** payload regardless of trigger.
+`grep_search` is absent from the table only because the no-matcher probe piped
+through `head -c 600` and its lines did not survive JSON parsing; read raw, it
+carries `{query, caseSensitive, excludePattern, explanation, includePattern}`.
+That truncation is the probe's, not Kiro's — the full-`cat` probe shows
+`tool_response` arriving complete.
+
+Note `read_file` and `list_directory` also expose `tool_input.path`, so a
+read-scope check has something to inspect at least on the **Post** side.
+
+### Key-name split across event families — counted
+
+The table above shows it structurally; these are the counts backing the warning
+in the chapter's §4, because an adapter that forwards verbatim will silently
+no-op rather than fail:
+
+```
+tool events, "tool_input":{"path"        46
+tool events, "tool_input":{"file_path"    0
+file events, top-level "file_path"       41
+```
+
+Tool events say `path`; file events say `file_path`. The core hooks expect the
+Claude shape `{tool_input:{file_path}}`, so neither family matches as-is and an
+adapter must map.
+
+### The registry is snapshotted at session start
+
+Three mutations were attempted mid-session. **None took effect**, and each was
+established against a control that fired in the same window:
+
+| mutation | method | result |
+|---|---|---|
+| **create** a hook | `createHook` wrote `probe-block-test.json` (`PreToolUse`, matcher `fs_append`) and `probe-read-pre.json` | never fired — while the pre-existing `probe-write-pre` fired on the *same* `fs_append` call |
+| **edit** a registered hook's command | pointed `probe-write-pre.json` at a different script | the **old** command still ran (old log header), so contents are cached, not re-read at fire time |
+| **delete** a registered hook file | `rm probe-write-post.json` | still fired afterwards |
+
+The create test is the clean one: two `PreToolUse` hooks both matching
+`fs_append`, one registered at session start and one created minutes later. The
+registered one fired, the new one did not, on the same tool call. Multiple hooks
+per trigger definitely do run (`probe-alltools` and `probe-write-post` both fired
+for the same `fs_append`), so this is not first-match-wins short-circuiting.
+
+The block script was self-tested standalone first — exit 0 unarmed, exit 2 armed,
+sentinel consumed — so its silence as a hook is attributable to registration, not
+to a broken script:
+
+```
+===== PreToolUse(BLOCKTEST) … =====
+{"self_test":"unarmed"}
+  -> not armed: exit 0, passing through
+===== PreToolUse(BLOCKTEST) … =====
+{"self_test":"armed"}
+  -> ARMED: sentinel consumed, exiting 2
+```
+
+#### This revises the earlier session's explanation
+
+The section above attributed that session's dead probes to `rm -rf .kiro/`
+breaking a directory watcher. A snapshot-at-session-start registry explains the
+same silence without the watcher story: **those probes were mid-session
+creations, which do not fire whether or not anything was deleted.**
+
+The two sessions do genuinely conflict on one point — the earlier one recorded a
+newly written hook firing on the very next tool call; this one measured the
+opposite three ways. Unreconciled, and it does not need reconciling to be
+actionable: **do not rely on mid-session hook pickup in either direction.**
+Register probes, then start a new session, then treat the hook set as frozen.
+
+Whole-directory removal was not re-tested here, so whether it differs from
+single-file removal is still open. Single-file removal is now known *not* to
+deregister.
+
+### Still unmeasured, and now blocked until a new session
+
+Both probes exist on disk and will be live at the next session start:
+
+- **`PreToolUse` on read tools** (`probe-read-pre.json`, matcher
+  `read_file|read_files|grep_search|list_directory`) — whether read-scope
+  enforcement can act *before* a read.
+- **`PreToolUse` exit 2 as a block** (`probe-block-test.json`, one-shot
+  sentinel-gated on `fs_append`) — whether the v2 channel honours the block
+  contract that `PreTaskExec` demonstrably does not (§3). `aidlc-block` and
+  `aidlc-reviewer-scope` both rest on this, and it is asserted from the v1
+  channel, not measured on v2.
+
+To run them: start a fresh session, confirm `probe-read-pre` fires on any read,
+then `touch /tmp/aidlc-probe-block.armed` and issue one `fs_append` to a scratch
+path. If the append lands anyway, `PreToolUse` exit 2 is no more a veto than
+`PreTaskExec` exit 2 — which would matter a great deal more.
+
+Probe files live in the **untracked** `.kiro/hooks/` at the repo root. `.kiro/`
+is not gitignored here: do not commit it.

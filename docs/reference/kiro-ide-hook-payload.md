@@ -10,7 +10,10 @@ stdin-based mechanism.
 > only.** A newer `.kiro/hooks/*.json` v2 hook format exists and behaves
 > differently on every limitation listed below — stdin carries a JSON payload,
 > the shell command is recoverable, file paths arrive absolute, and `cwd` is
-> supplied. Measured evidence and the resulting harness opportunity are in
+> supplied. In particular, limitation 1 below (`toolArgs` always `{}`) does not
+> hold there: v2 supplies `tool_input` for write tools, with an absolute `path`
+> and the full content, on **both** `PreToolUse` and `PostToolUse`. Measured
+> evidence and the resulting harness opportunity are in
 > [Kiro Spec integration boundary §4](19-kiro-spec-integration.md#4-the-consequence-that-matters-for-the-harness).
 > Both chapters are accurate about their own mechanism; do not read the
 > limitations here as properties of Kiro IDE in general.
