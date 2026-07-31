@@ -20,23 +20,23 @@
     "render-surface": "tui"
   },
   "counts": {
-    "total": 477,
+    "total": 481,
     "enumeratedByClass": {
-      "function": 246,
+      "function": 249,
       "audit": 74,
       "scope": 9,
       "stage": 32,
       "hook": 13,
-      "subcommand": 96,
+      "subcommand": 97,
       "render-surface": 7
     },
     "coveredByClass": {
-      "function": 101,
+      "function": 104,
       "audit": 33,
       "scope": 9,
       "stage": 9,
       "hook": 13,
-      "subcommand": 83,
+      "subcommand": 84,
       "render-surface": 7
     }
   },
@@ -1225,6 +1225,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:computeArs",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t258-ars-subcommand.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:consumersOf",
       "minMechanism": "none",
       "coveredBy": [
@@ -1883,6 +1895,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:loadArsPriors",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t258-ars-subcommand.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:loadGraph",
       "minMechanism": "none",
       "coveredBy": [
@@ -1952,6 +1976,10 @@
         {
           "file": "tests/unit/t225-scope-name-decoupling.test.ts",
           "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t257-default-scope-resolver.test.ts",
+          "mechanism": "none"
         }
       ],
       "status": "covered"
@@ -2575,6 +2603,18 @@
         {
           "file": "tests/integration/t166-multi-repo-construction.test.ts",
           "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:resolveDefaultScope",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t257-default-scope-resolver.test.ts",
+          "mechanism": "none"
         }
       ],
       "status": "covered"
@@ -4289,6 +4329,18 @@
         },
         {
           "file": "tests/unit/t77-bolt-worktree-flags.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-graph ars",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t258-ars-subcommand.test.ts",
           "mechanism": "cli"
         }
       ],
