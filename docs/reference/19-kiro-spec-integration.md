@@ -131,13 +131,35 @@ do, and the content is available *before* the write lands, not just after.
 `list_directory` also expose `tool_input.path`, so a read-scope check has
 something to inspect on the Post side at least.
 
-**What still gates the enforcement work** is the other half of the reviewer-scope
-question, and it is a bigger one: **whether `PreToolUse` exit 2 actually blocks.**
-§3 showed `PreTaskExec` exit 2 does not. `aidlc-block` and `aidlc-reviewer-scope`
-both assume `preToolUse` exit 2 is a live-verified block — verified on the **v1**
-channel, never on v2. Until that is measured, treat the v2 payload as good for
-*observing* tool calls, not for refusing them. Also unmeasured: whether
-`PreToolUse` fires for read tools at all.
+**`PreToolUse` exit 2 DOES block on the v2 channel.** This was the open question
+gating the whole migration, and it is now measured. A hook that refuses only calls
+carrying a marker string, tested as a same-session A/B on the same tool:
+
+| write | branch taken | file on disk |
+|---|---|---|
+| no marker (control) | pass-through, exit 0 | **created** (67 bytes) |
+| marker present | exit 2 + stderr | **absent** |
+
+One allowed, one refused, same tool and directory — so the control rules out "the
+probe broke everything". `aidlc-block` and `aidlc-reviewer-scope` assume
+`preToolUse` exit 2 is a live block; that assumption **survives** a move to v2.
+
+Note the contrast with §3: exit 2 blocks a **tool call** but not a **spec task**.
+The two triggers do not share a semantics, so a working `PreToolUse` block says
+nothing about `PreTaskExec`, and vice versa. Measure each trigger you intend to
+enforce on.
+
+**The `permissionDecision: ask` contract did not gate**, but the test is
+confounded and should be redone before anyone relies on the result. A hook emitted
+`{"hookSpecificOutput":{"permissionDecision":"ask",…}}` on stdout with exit 0; the
+write proceeded with no confirmation prompt. The confound: a *second* hook matched
+the same call and exited 0 with empty stdout, so a last-writer-wins merge over
+multiple matching hooks could equally explain it. Re-test with exactly one
+matching hook.
+
+**Still unmeasured:** whether `PreToolUse` fires for read tools, which reviewer
+read-scope needs in order to refuse an out-of-scope read before it happens. Write
+tools are confirmed on both Pre and Post; reads are confirmed on Post only.
 
 > [!IMPORTANT] **The path key differs between the two event families, and the
 > core hooks match neither.** Tool events carry `tool_input.path`; file events
@@ -192,13 +214,21 @@ Discipline that made the result trustworthy, worth keeping:
    and a deleted hook file kept firing. The registry appears to be snapshotted at
    session start, contents and all.
 
-   One observation conflicts and is recorded rather than smoothed over: in the
-   earliest session, four hooks written by `createHook` into a `.kiro/` that had
-   not existed before **did** fire, on the very next tool call. Later sessions
-   never reproduced it. So "mid-session registration never takes effect" is the
-   safe operating assumption, not an established fact — do not build a workflow
-   that depends on mid-session pickup either way. Register, then restart; it costs
-   one restart and removes the whole question.
+   **Correction, after four data points: pickup is not strictly session-scoped —
+   it is eventually consistent with unpredictable latency.** Observed, in order:
+   a mid-session `createHook` fired on the very next tool call; a later
+   mid-session registration never fired at all; a third registration did not fire
+   early in a session; and **the same registration fired ~25 minutes later in
+   that same session** (confirmed by the `session_id` in the payload matching the
+   session that had earlier seen nothing).
+
+   So neither "works mid-session" nor "never works mid-session" is true. The
+   operating rule is unchanged and is the point of this item — **register every
+   probe, then start a fresh session** — but the reason is now "the latency is
+   unbounded and unobservable", not "the registry is frozen". Never conclude a
+   trigger is dead from a probe registered in the same session; that mistake cost
+   one round here, and only a control registered *before* the session start can
+   distinguish the two.
 
    An earlier session recorded the opposite for creation — a newly written hook
    firing on the very next tool call. Unreconciled, so rely on mid-session pickup

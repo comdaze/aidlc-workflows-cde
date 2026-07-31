@@ -256,3 +256,62 @@ path. If the append lands anyway, `PreToolUse` exit 2 is no more a veto than
 
 Probe files live in the **untracked** `.kiro/hooks/` at the repo root. `.kiro/`
 is not gitignored here: do not commit it.
+
+## `PreToolUse` exit-2 blocking test — raw capture
+
+Answers the question the write-tool round left as "the only thing gating the
+enforcement work". Probe design: refuse **only** calls whose payload carries the
+marker `AIDLC_BLOCK_PROBE_EXIT2`, so it is self-limiting by content — it cannot
+interfere with normal work and needs no sentinel to clean up. Both branches log.
+
+```
+===== PreToolUse(fs_write) 2026-07-31T16:05:05+08:00 =====
+{… "tool_name":"fs_write","tool_input":{"path":"/tmp/aidlc-probe-scratch/control-unmarked.txt","text":"control write, no marker present…
+  -> pass-through: exit 0
+
+===== PreToolUse(fs_write) 2026-07-31T16:05:34+08:00 =====
+{… "tool_name":"fs_write","tool_input":{"path":"/tmp/aidlc-probe-scratch/armed-should-be-blocked.txt","text":"AIDLC_BLOCK_PROBE_EXIT2…
+  -> EXIT2 BRANCH: writing stderr and exiting 2
+```
+
+Outcome on disk:
+
+```
+/tmp/aidlc-probe-scratch/
+  control-unmarked.txt          67 bytes   <- pass-through call landed
+  armed-should-be-blocked.txt   ABSENT     <- exit-2 call was refused
+```
+
+**`PreToolUse` exit 2 blocks the tool call.** The control write proves the probe
+was not simply breaking every call, which is the only reading a single blocked
+write would also support.
+
+Contrast with §3 of the chapter: exit 2 blocks a **tool call** but does *not*
+block a **spec task**. Two triggers, two different behaviours, no shared
+semantics — measure each one you intend to enforce on.
+
+### The `ask` contract — confounded, needs a redo
+
+```
+===== ASK probe fired 2026-07-31T16:07:58+08:00 =====
+  -> emitting permissionDecision=ask on stdout, exit 0
+===== PreToolUse(fs_write) 2026-07-31T16:07:58+08:00 =====
+{… "path":"/tmp/aidlc-probe-scratch/ask-contract-target.txt" …}
+  -> pass-through: exit 0
+```
+
+The write landed (92 bytes) with no confirmation prompt. But **two hooks matched
+that same call** — both probes used the matcher `fs_write` — and the second exited
+0 with empty stdout. A last-writer-wins merge across matching hooks explains the
+outcome just as well as "ask is not honoured". Re-test with exactly one matching
+hook before treating this as a result.
+
+### Hook-pickup timing — the fourth data point
+
+This round produced the observation that corrected the "registry is snapshotted at
+session start" claim. The exit-2 probe did **not** fire early in a session, then
+**did** fire roughly 25 minutes later *in that same session* — the payload's
+`session_id` matches the session that had earlier seen nothing. Combined with the
+two earlier contradictory observations, pickup is eventually consistent with
+unbounded latency, not session-frozen. Chapter §5 item 4 carries the operating
+rule.
