@@ -315,3 +315,119 @@ session start" claim. The exit-2 probe did **not** fire early in a session, then
 two earlier contradictory observations, pickup is eventually consistent with
 unbounded latency, not session-frozen. Chapter §5 item 4 carries the operating
 rule.
+
+## Read tools + the `ask` redo — raw capture (session `sess_2c7f5544`)
+
+Closes both items the write-tool round left open. Two probe files registered
+before this session started, with **deliberately disjoint matchers** so the
+last-writer-wins confound of the previous `ask` attempt cannot recur:
+
+| probe | trigger | matcher | question |
+|---|---|---|---|
+| `probe-read-block.json` | `PreToolUse` | `read_file\|read_files\|grep_search\|list_directory` | do read tools fire, and does exit 2 refuse a read? |
+| `probe-ask-solo.json` | `PreToolUse` | `fs_append` | does `permissionDecision: ask` gate, with exactly one matching hook? |
+
+Both log to `/tmp/aidlc-read-probe.log`. Liveness is not assumed: the read probe
+fired on the session's ordinary reads before any test was staged, which is what
+makes a null result elsewhere interpretable.
+
+### `PreToolUse` fires for every read tool
+
+All four matched tools fired, each carrying its own input shape:
+
+```
+tool_name":"read_file"       tool_input":{"path":"/abs/path", "offset":null,"limit":null}
+tool_name":"read_files"      tool_input":{"paths":["/abs/one","/abs/two"], …}
+tool_name":"grep_search"     tool_input":{"query":"ask","caseSensitive":null,"excludePattern":null, …}
+tool_name":"list_directory"  tool_input":{"path":"/abs/dir","explanation":"…"}
+```
+
+Firing tally for the session: `read_file` × 4, `read_files` × 1,
+`grep_search` × 1, `list_directory` × 1, `fs_append` × 1.
+
+Note the key varies with the tool — `path` for the single-target reads, **`paths`
+(array)** for `read_files`, and **`query` with no path at all** for
+`grep_search`. A read-scope check cannot assume one field: `read_files` needs
+every element checked, and a content search has no path to check against scope.
+
+### `PreToolUse` exit 2 blocks a read
+
+A/B on the same tool, same directory, same session. The probe refuses only
+payloads carrying `AIDLC_READ_BLOCK_PROBE`, which here rides in the target's
+filename:
+
+```
+===== PreToolUse(read) 2026-07-31T16:18:51+08:00 =====
+{… "tool_name":"read_file","tool_input":{"path":"/tmp/aidlc-read-probe/control-target.txt" …}}
+  -> pass-through: exit 0
+
+===== PreToolUse(read) 2026-07-31T16:18:56+08:00 =====
+{… "tool_name":"read_file","tool_input":{"path":"/tmp/aidlc-read-probe/AIDLC_READ_BLOCK_PROBE-target.txt" …}}
+  -> BLOCK BRANCH: exit 2
+```
+
+Outcome: the control read returned the file's contents; the marked read returned
+no content at all. The marked file **exists on disk** (120 bytes), so the refusal
+is the hook's, not a missing target — the reading that a single blocked call
+would also support.
+
+What the agent receives in place of the content is worth recording, because it is
+not a bare error:
+
+```
+Tool "read_file" was intercepted by PreToolUse hooks before execution.
+… <HOOK_INSTRUCTION> … [the hook's stderr] …
+The tool was NOT executed. Address each hook instruction, then decide whether to
+proceed with the original tool call, modify your approach, or take a different action.
+```
+
+So the block is **real at the tool boundary** (nothing executed) but is
+**presented to the model as advisory** — the surface explicitly invites deciding
+to proceed with the original call. Enforcement therefore depends on the agent
+honouring the refusal, which the Kiro system prompt does instruct. For
+`aidlc-reviewer-scope` that is the difference between a hard sandbox and a
+strongly-worded fence; the stderr should read as a refusal with a reason, since
+it is the only thing standing between the model and a retry.
+
+### The `ask` contract does NOT gate — clean single-hook redo
+
+The confound is removed: the `fs_append` matcher is disjoint from the read
+probe's, and the log shows exactly **one** hook entry for the call.
+
+```
+===== PreToolUse(fs_append) ASK 2026-07-31T16:19:08+08:00 =====
+{… "tool_name":"fs_append","tool_input":{"path":"/tmp/aidlc-r…
+  -> emitting permissionDecision=ask, exit 0 (SOLE matching hook)
+```
+
+Emitted on stdout, exit 0:
+
+```json
+{"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"AIDLC probe: clean single-hook test of the ask contract"}}
+```
+
+Outcome: **no confirmation prompt appeared and the append landed.** Target went
+from 24 bytes (baseline) to 153 bytes, with the appended text present. Same
+verdict as the confounded run, now on a test that supports it.
+
+Consequence: on the v2 channel there is exactly **one** enforcement primitive —
+exit 2, all-or-nothing. There is no "escalate to the human" middle setting, so a
+hook that wants a human in the loop must refuse outright and say why in stderr.
+Anything relying on `ask` to soften a gate should be designed as a hard refusal
+instead.
+
+### Scoreboard after this round
+
+| Question | Verdict |
+|---|---|
+| `PreToolUse` fires on write tools | yes (previous round) |
+| `PreToolUse` fires on read tools | **yes — all four probed** |
+| `PreToolUse` exit 2 blocks a write | yes (previous round) |
+| `PreToolUse` exit 2 blocks a read | **yes** |
+| `PreTaskExec` exit 2 blocks a spec task | no (§3) |
+| `permissionDecision: ask` gates a call | **no — clean test** |
+
+Every `PreToolUse` finding needed for `aidlc-block` and `aidlc-reviewer-scope`
+now holds on v2. The remaining unmeasured surface is not about blocking:
+whether `PreTaskExec`/`PostTaskExec` fire per execution or per status transition
+(§2), still one observation only.

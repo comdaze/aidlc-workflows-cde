@@ -113,8 +113,9 @@ unnecessary: `extractWrittenPath()`'s prose scraping, `runtime-compile` dropping
 its command filter, and `sync-statusline` deriving stage from the audit tail
 because "the IDE gives no task payload". A fourth — the reviewer-scope note that
 Kiro IDE "ships no registration … a pre-tool matcher has nothing to inspect
-there" — is only **half** answered: there is now plenty to inspect, but whether a
-pre-tool hook can *act* on it is the open question below.
+there" — is now **fully** answered, in two steps below: there is plenty to
+inspect (reads carry their target in `tool_input`), and a pre-tool hook can act
+on it (exit 2 refuses the call before it runs).
 
 **Now measured — the write-tool payload is there.** All three write tools fire
 both `PreToolUse` and `PostToolUse`, and `tool_input` carries an absolute `path`
@@ -149,17 +150,52 @@ The two triggers do not share a semantics, so a working `PreToolUse` block says
 nothing about `PreTaskExec`, and vice versa. Measure each trigger you intend to
 enforce on.
 
-**The `permissionDecision: ask` contract did not gate**, but the test is
-confounded and should be redone before anyone relies on the result. A hook emitted
-`{"hookSpecificOutput":{"permissionDecision":"ask",…}}` on stdout with exit 0; the
-write proceeded with no confirmation prompt. The confound: a *second* hook matched
-the same call and exited 0 with empty stdout, so a last-writer-wins merge over
-multiple matching hooks could equally explain it. Re-test with exactly one
-matching hook.
+**`PreToolUse` fires for read tools too, and exit 2 refuses a read.** This is
+what reviewer read-scope needs to act *before* an out-of-scope read. All four
+probed tools fired — `read_file`, `read_files`, `grep_search`, `list_directory` —
+and the block was tested A/B on one tool in one session:
 
-**Still unmeasured:** whether `PreToolUse` fires for read tools, which reviewer
-read-scope needs in order to refuse an out-of-scope read before it happens. Write
-tools are confirmed on both Pre and Post; reads are confirmed on Post only.
+| read | branch taken | content returned |
+|---|---|---|
+| unmarked path (control) | pass-through, exit 0 | **yes** |
+| marked path | exit 2 + stderr | **none** (target exists, 120 bytes) |
+
+Two caveats that shape any read-scope check:
+
+- **The payload key varies by tool.** `path` for the single-target reads,
+  **`paths` (array)** for `read_files`, and **`query` with no path at all** for
+  `grep_search`. A scope check must handle every element of an array read, and
+  has nothing to match a content search against.
+- **The refusal is hard at the tool boundary but advisory in presentation.**
+  Nothing executes, yet the agent is told the tool "was NOT executed" and invited
+  to "decide whether to proceed with the original tool call". Enforcement rests on
+  the agent honouring it, so the hook's stderr must read as a refusal with a
+  reason — it is the only thing between the model and a retry.
+- **It gates a call, not a capability — and that part is not about obedience.**
+  A `read_file` matcher does not match `execute_bash cat <path>`, so a perfectly
+  compliant agent can still reach the same bytes by a route the matcher never
+  sees. Any read-scope check must therefore cover **every** path to a read, shell
+  included, or it is a speed bump rather than a boundary. Matcher coverage is the
+  hard part of this design, not the block itself.
+
+**The `permissionDecision: ask` contract does NOT gate.** The earlier attempt was
+confounded by a second matching hook; redone with **exactly one** matching hook
+(disjoint matchers, log confirms a single entry for the call), the outcome is the
+same — the hook emitted
+`{"hookSpecificOutput":{"permissionDecision":"ask",…}}` on stdout with exit 0, no
+confirmation prompt appeared, and the write landed.
+
+So v2 offers exactly **one** enforcement primitive: exit 2, all-or-nothing. There
+is no "escalate to the human" middle setting. A hook that wants a human in the
+loop must refuse outright and explain itself in stderr; nothing should be designed
+around `ask` softening a gate.
+
+Full capture for this round: [research/2026-07-31-kiro-spec-hook-probe.md](research/2026-07-31-kiro-spec-hook-probe.md)
+§ "Read tools + the `ask` redo".
+
+**Still unmeasured** — and no longer about blocking: whether the spec task
+triggers fire per *execution* or only on a status *transition* (§2), still one
+observation.
 
 > [!IMPORTANT] **The path key differs between the two event families, and the
 > core hooks match neither.** Tool events carry `tool_input.path`; file events
@@ -253,10 +289,10 @@ Discipline that made the result trustworthy, worth keeping:
 An asymmetry, not a symmetric conflict:
 
 - `aidlc-block` is a `preToolUse` hook with **no tool filter**, and `preToolUse`
-  exit 2 *is* a working block (the adapter calls it a live-verified contract — on
-  the v1 channel; see §4, it is not yet measured on v2). So while an AI-DLC gate
-  is open with no human turn since, it blocks the tool calls a spec task needs —
-  and Kiro shows no reason why.
+  exit 2 *is* a working block — measured on v2 for both write and read tools
+  (§4), not merely inherited from the v1 channel. So while an AI-DLC gate is open
+  with no human turn since, it blocks the tool calls a spec task needs — and Kiro
+  shows no reason why.
 - Yet AI-DLC **cannot** gate a spec task at the clean task boundary (§3).
 
 **AI-DLC can break Kiro Spec crudely, but cannot govern it cleanly.** Both ends
