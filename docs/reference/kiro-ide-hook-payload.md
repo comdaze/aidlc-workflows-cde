@@ -6,6 +6,15 @@ the full environment. This is the evidence base for the `harness/kiro-ide/`
 adapter's IDE branch; the CLI harness (`harness/kiro/`) uses a different,
 stdin-based mechanism.
 
+> [!IMPORTANT] **Scope: this chapter describes the `.kiro.hook` v1.0.0 channel
+> only.** A newer `.kiro/hooks/*.json` v2 hook format exists and behaves
+> differently on every limitation listed below — stdin carries a JSON payload,
+> the shell command is recoverable, file paths arrive absolute, and `cwd` is
+> supplied. Measured evidence and the resulting harness opportunity are in
+> [Kiro Spec integration boundary §4](19-kiro-spec-integration.md#4-the-consequence-that-matters-for-the-harness).
+> Both chapters are accurate about their own mechanism; do not read the
+> limitations here as properties of Kiro IDE in general.
+
 ## The channel: `USER_PROMPT` env var, not stdin
 
 A Kiro IDE `runCommand` hook receives its event context through the
