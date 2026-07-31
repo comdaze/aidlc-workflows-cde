@@ -115,14 +115,17 @@ function main(): void {
   const [cmd, ...rest] = process.argv.slice(2);
   switch (cmd) {
     case "check":
-      return cmdCheck();
+      cmdCheck();
+      return;
     case "validate": {
       const i = rest.indexOf("--repo-path");
       if (i === -1 || !rest[i + 1]) fail("validate requires --repo-path <repo>");
-      return cmdValidate(rest[i + 1]);
+      cmdValidate(rest[i + 1]);
+      return;
     }
     case "test":
-      return cmdTest();
+      cmdTest();
+      return;
     default:
       fail(`unknown command: ${cmd ?? "(none)"} — expected check | validate --repo-path <repo> | test`);
   }

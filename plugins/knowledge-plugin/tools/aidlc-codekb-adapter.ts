@@ -14,7 +14,7 @@
 // Self-contained — no import of the framework's aidlc-lib (a plugin tool ships
 // in its own delta and must not depend on a sibling core tool being present).
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join } from "node:path";
 
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -268,7 +268,10 @@ function componentInventory(a: AiReady): string {
 function technologyStack(a: AiReady): string {
   const parts = [HEADER("TECH.md"), "# Technology Stack\n"];
   const stack = extractSection(a.docs["TECH.md"], /stack|technolog|技术栈/i);
-  parts.push(stack ?? "_TECH.md has no explicit stack section — full doc follows._\n\n" + a.docs["TECH.md"].trim());
+  parts.push(
+    stack ??
+      `_TECH.md has no explicit stack section — full doc follows._\n\n${a.docs["TECH.md"].trim()}`,
+  );
   return parts.join("\n");
 }
 
@@ -298,8 +301,8 @@ function codeQualityAssessment(a: AiReady): string {
 }
 
 function timestamp(a: AiReady): string {
-  const gen = (a.aiReadyMeta["generated_at"] ?? a.aiReadyMeta["generated"] ?? "unknown") as string;
-  const ver = (a.aiReadyMeta["version"] ?? "unknown") as string;
+  const gen = (a.aiReadyMeta.generated_at ?? a.aiReadyMeta.generated ?? "unknown") as string;
+  const ver = (a.aiReadyMeta.version ?? "unknown") as string;
   return [
     HEADER("ai-ready.json"),
     "# Reverse Engineering Timestamp\n",
@@ -341,7 +344,7 @@ function main(): void {
     "reverse-engineering-timestamp.md": timestamp(a),
   };
   for (const [name, content] of Object.entries(files)) {
-    writeFileSync(join(flags.outputDir, name), content.endsWith("\n") ? content : content + "\n");
+    writeFileSync(join(flags.outputDir, name), content.endsWith("\n") ? content : `${content}\n`);
   }
   process.stdout.write(
     `codekb adapted from .ai-ready/: 9 artifacts written to ${flags.outputDir} ` +
