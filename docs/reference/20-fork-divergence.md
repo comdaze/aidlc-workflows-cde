@@ -10,33 +10,71 @@ vendored engine, applied one level up to the fork itself.
 decide each row. After a sync, run §4. §5 regenerates the whole table from git,
 so re-derive rather than trust — the numbers below are a snapshot.
 
-**Sync log.** Last merge: `github/v2` @ `d0cd10a6` (upstream 2.5.30) on
-2026-07-31, landing as fork 2.5.31. Sixteen conflicts — eight source, eight
-`dist/`. See §7 for what that merge taught us.
+**Sync log.**
+
+| Date | Upstream | Conflicts | Notes |
+| --- | --- | --- | --- |
+| 2026-08-01 | `9c9201b8` (2.5.33) | 8 (3 source, 5 `dist/`) | **All eight were the version-number cluster.** `AGENTS.md`, `gen-coverage-registry.test.ts`, and `docs/guide/harnesses/kiro-ide.md` auto-merged clean. Adopted the frozen-version policy (A3), so an equivalent merge from here is a zero-conflict `git merge`. |
+| 2026-07-31 | `d0cd10a6` (2.5.30) | 16 (8 source, 8 `dist/`) | The fork had been sitting on a 2.5.7 base. Found the dead IDE hook layer. See §7. |
+
+**Cadence.** Weekly. Upstream runs 10–27 commits/week on `v2` and about 1.6
+releases/day (49 distinct versions in 30 days), so a week is ~14 commits — one
+sitting. A month is 60+ and nobody volunteers for it.
+
+**No CI.** `.github/workflows/ci.yml` is inherited from upstream and does nothing
+here; this repo is on GitLab and has no `.gitlab-ci.yml`. Every guard in §4 only
+runs when a human remembers to run it locally. Until that is fixed, the cadence
+is a promise rather than a mechanism.
 
 ## 1. The shape of the problem
 
-Divergence measured against the merge base with `github/v2`, re-derived
-2026-07-31 (base `d0cd10a6`):
+Divergence of the merged tree against `github/v2`, re-derived 2026-08-01 at
+upstream `9c9201b8`:
 
 | Surface | Files changed by us | Conflict risk |
 | --- | --- | --- |
 | `plugins/` | 59 | **None.** Ours entirely; upstream has no such directory. |
 | `docs/` | 8 | None in practice (new chapters + our own research notes). |
-| `dist/` | 261 | **Not a conflict** — generated. Never merge it; regenerate (§3). |
-| `core/` | 3 | Low. All three are small and policy-driven, not functional. |
+| `dist/` | 256 | **Not a conflict** — generated. Never merge it; regenerate (§3). |
+| `core/` | 2 | Low. Both are small and policy-driven, not functional. See A1, A2. |
 | `harness/` | 6 | **One real risk**, the Kiro IDE adapter. See B1. |
 | `tests/` | 2 | Low. One new file, one ratchet entry. See A5. |
-| root files | 6 | Low, but **two are guaranteed conflicts every release**. See A3, A4. |
+| root files | 6 | Low. No longer includes `CHANGELOG.md` or the version — see A3. |
 
 The plugin mechanism is doing its job: the majority of this fork's work lives in
 `plugins/` and can never conflict. **Protect that property** — new CDE-specific
 behaviour belongs in a plugin, not in `core/`. Anything that has to go outside
 `plugins/` should be recorded here on the way in, not discovered at merge time.
 
+**Read the risk column, not the file counts.** File counts say `dist/` is the
+problem; it is not, it is generated. What actually costs time is *how often
+upstream edits a file the fork also edits*. Measured over 60 days across the 15
+files this fork diverged on, upstream made 341 edits, distributed like this:
+
+| Upstream edits (60d) | File | Fork's stake |
+| --- | --- | --- |
+| 81 | `README.md` | badge (**resolved**, A3) + the plugins section (A4) |
+| 72 | `CHANGELOG.md` | **resolved** — A3, no longer diverges |
+| 70 | `core/tools/aidlc-version.ts` | **resolved** — A3, no longer diverges |
+| 37 | `tests/unit/gen-coverage-registry.test.ts` | one ratchet line, exists only for B1 (A5) |
+| 25 | `core/tools/aidlc-utility.ts` | one doctor string (A1) |
+| 11 | `AGENTS.md` | the plugins paragraph + the changelog policy (A4) |
+| 8 | `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` | 147 lines in the enforcement path (B1) |
+| 8, 7, 7, 7 | `harness/*/onboarding.fills.ts` | one prereq bullet each (A1) |
+| 4 | `harness/kiro-ide/skills/aidlc/question-rendering.md` | B1 |
+| 3 | `.gitignore` | A4 |
+| 1 | `core/knowledge/.../security-guide.md` | one word (A2) |
+| 0 | `tests/unit/t219-kiro-ide-gate-render-floor.test.ts` | B1, ours alone |
+
+The top three were **65% of the fork's entire exposure and none of them was a
+feature** — they were version bookkeeping the fork created for itself. A3 removed
+them. What remains is B1 (49 edits' worth, and the only high-severity one) and A1
+(54 edits' worth, one string repeated across five files). Both have exits: B1
+gets rewritten or deleted, A1 gets offered upstream.
+
 ## 2. The inventory
 
-Twenty-five files outside `plugins/` and `dist/`, but only **six logical
+Twenty-three files outside `plugins/` and `dist/`, but only **six logical
 changes**. Resolve by change, not by file.
 
 ### A1 — Replace `curl | bash` with a package-manager install (5 files)
@@ -60,22 +98,45 @@ Original upstream text, for recognition when re-applying:
 | Upstream | **Offer it.** Cheapest possible contribution; removes a row from this table. |
 | On conflict | Keep ours. |
 
-### A3 — Framework version (1 file)
+### A3 — Framework version — **RESOLVED 2026-08-01: the version line is frozen**
 
 | | |
 | --- | --- |
-| File | `core/tools/aidlc-version.ts` |
-| Class | **A — guaranteed conflict on every single upstream release.** |
-| On conflict | Take upstream's number, then re-apply our patch level on top, and update `CHANGELOG.md` + the README badge in the same commit. `tests/unit/t68-version-changelog-sync.test.ts` pins all three agreeing, so a half-done resolution fails loudly. |
+| Files | `core/tools/aidlc-version.ts` · `CHANGELOG.md` · the `README.md` badge |
+| Class | **Was the single largest conflict surface in this table. Now zero.** |
+| Policy | **The fork does not bump any of the three.** All are taken byte-for-byte from upstream on every sync. Fork release notes live in `CHANGELOG.fork.md`; CDE behaviour lives in a plugin and bumps `plugins/<name>/.aidlc-plugin/plugin.json`. |
+| On conflict | Resolve all three to upstream's side, always. No judgement required. |
 
-### A4 — Fork-identity root files (4 files)
+This row used to read *"take upstream's number, then re-apply our patch level on
+top"*. That was the wrong instruction, and it was expensive. Measured over 60
+days, these three files absorbed **223 of the 341** upstream edits to files this
+fork diverges on — 65% of the entire conflict surface, for pure bookkeeping. And
+the patch numbers collided outright twice: the fork's 2.5.8/2.5.9 against
+upstream's own, then the fork's 2.5.31 against upstream's `cd209eb1`. Each
+collision trips `t68`'s duplicate-heading guard, and each resolution meant
+deciding what to do with an entry that had already shipped.
+
+**The freeze is guard-safe.** `t68` only pins that the three agree *with each
+other*, which upstream's CI already guarantees; it never requires the fork to
+bump. `scripts/ci-changelog-guard.ts` only forbids *deleting* an existing
+heading, never requires adding one.
+
+This restores a policy the fork already had and drifted off. At `80a96461`:
+*"Going forward plugin-only changes bump the plugin version only."* Every commit
+from plugin 0.17.0 to 0.21.0 carries *"core version frozen per the
+zero-divergence policy"*. The drift began at `fa2d9b63`/`fdb56a7a` (2.5.8/2.5.9)
+— the B1 gate-render floor, the first change that could not be a plugin. It
+forced a core edit, which forced a core version bump, which un-froze the version
+line. See §7.
+
+### A4 — Fork-identity root files (6 files)
 
 | | |
 | --- | --- |
-| Files | `README.zh-CN.md` (new, +130) · `AGENTS.md` (+10, the plugins paragraph) · `.gitignore` (+`.refer`, +`/build`) · `Config` (new, BuilderHub package descriptor) |
+| Files | `README.md` (+177/−65: the plugins section, the install walkthrough, the 中文 link) · `README.zh-CN.md` (new) · `AGENTS.md` (the plugins paragraph + the A3 changelog policy) · `CHANGELOG.fork.md` (new, A3) · `.gitignore` (+`.refer`, +`/build`) · `Config` (BuilderHub package descriptor) |
 | Class | **A — must diverge.** These describe *this* repository, not the framework. |
-| Upstream | No. `Config` and `/build` are GitFarm/Brazil artefacts; `.refer` is our scratch directory. The Chinese README is arguably offerable, but it would then need upstream maintenance. |
-| On conflict | Keep ours, additively. `AGENTS.md` is the only one upstream also edits — take upstream's body and re-apply our `plugins/` paragraph, the same shape as A1. |
+| Upstream | No. `Config` and `/build` are GitFarm/Brazil artefacts; `.refer` is our scratch directory; the plugins section is about plugins upstream does not ship. The Chinese READMEs are arguably offerable but would then need upstream maintenance. |
+| On conflict | Keep ours, additively. `README.md` and `AGENTS.md` are the two upstream also edits: take upstream's body and re-apply our section, the same shape as A1. `CHANGELOG.fork.md` can never conflict — nothing upstream has that path. |
 
 ### A5 — Coverage ratchet entry (1 file)
 
@@ -251,9 +312,44 @@ either way — rewritten and upstreamed, or deleted — the fork's `harness/`
 divergence falls to the four `onboarding.fills.ts` one-liners, and A5 goes with
 it.
 
-## 7. What the 2.5.30 merge taught us
+## 7. What the merges taught us
 
 Recorded because each of these will recur, and none was predicted by §2.
+
+### From 2.5.33 (2026-08-01)
+
+**The fork's merge cost was self-inflicted, and one change caused all of it.**
+This merge produced 8 conflicts and *every one* was the version number —
+`core/tools/aidlc-version.ts`, `CHANGELOG.md`, the README badge, and the five
+generated `dist/` copies. `AGENTS.md`, `gen-coverage-registry.test.ts`, and
+`docs/guide/harnesses/kiro-ide.md` all auto-merged. So the merge would have been
+**zero-conflict** if the fork had not been maintaining its own version line.
+
+Trace it back and it is one decision. B1 was the first fork change that could not
+be a plugin. It forced an edit to `core/`, which under the inherited changelog
+policy forced a core version bump, which un-froze a version line the fork had
+deliberately frozen at `80a96461`. From then on the three bookkeeping files
+conflicted on every single release — 223 upstream edits over 60 days — the patch
+numbers collided twice, and each collision needed a judgement call about an entry
+that had already shipped. B1 also brought the `gen-coverage-registry` ratchet line
+(37 more edits) and the 147-line adapter conflict (8 more, the only high-severity
+one). And it does not work on IDE ≥1.0.
+
+**The lesson is not "B1 was a mistake."** It is that *the first change which
+escapes `plugins/` is much more expensive than it looks*, because it can drag
+policy obligations behind it that outlive the change itself. Price that in before
+accepting a core edit, and prefer offering it upstream.
+
+**Fixing a red test can be the wrong move — check whether upstream already did.**
+`t89`'s 13 failures were a genuine upstream fixture gap, so the fix was written
+by hand: five `aidlc-claim-sources.md` fixtures plus two assertion updates. Moving
+it onto an upstream base to submit it revealed upstream had shipped *the same five
+files and the same two assertions* in 2.5.33 — the work was thrown away. **Before
+writing a fix for anything that reproduces at upstream tip, `git fetch` and check
+whether tip has moved.** Upstream ships ~1.6 releases a day; the tip you measured
+against this morning is not the tip.
+
+### From 2.5.30 (2026-07-31)
 
 **A dead hook layer can sit there for releases without anyone noticing.** The
 fork shipped nine legacy `.kiro.hook` files and zero v2 `.json` hooks. Upstream

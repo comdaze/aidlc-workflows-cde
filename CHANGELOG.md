@@ -1,13 +1,28 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.5.33] - 2026-08-01
+
+Stage rules are now delivered deterministically instead of depending on the conductor choosing to read paths. The engine emits the active-space rule bundle as bounded `load-steering` directives before `run-stage`, and reviewer checklists are absorbed into reviewer agent bodies at build time - closing the observed skip where stages ran with none of their org/phase memory applied. **Upgrade:** re-copy your `dist/<harness>/` shell into the project so the updated engine, skills, agents, and hooks are installed.
+
+* `load-steering` delivers every substantive rule as ordered `{path, text}` content. Opaque `continue` tokens use a random machine-local MAC key and bind the stage, workflow state, bundle hash, directive hash, route, and next part; they cannot be re-signed from the public project path, and a fresh `next` restarts at part 1.
+* Every directive remains below the common 28 KiB output floor. Oversized rules split at Markdown headings and then UTF-8 boundaries, with no size-based path fallback. Missing, unreadable, or invalid UTF-8 required rules stop before stage work with repair guidance.
+* `run-stage.rules_in_context` now names the active-space files actually delivered. Persona and supplemental knowledge remain path-loaded pending a retrieval system; missing, unreadable, or invalid UTF-8 optional files produce actionable `context_warnings` and are omitted without blocking the stage. Large warning sets are summarized within the directive limit.
+* Dispatched briefs carry the exact delivered rule content, not legacy rule paths. Claude, Codex, and opencode append a digest-framed active-stage bundle at the subagent tool boundary for every installed core or plugin agent; markerless copies cannot suppress it, and unknown path-shaped stage references fall back to the live stage. Kiro CLI cannot rewrite tool input and its agents already preload the active memory tree natively, so an incomplete or valid oversized brief proceeds with an advisory warning instead of a block (an unloadable required rule file still stops the dispatch with repair guidance); Kiro IDE retains native memory-resource preload. Comment-only rule templates remain excluded until they contain an affirmed practice.
+* The two reviewer agents (`aidlc-product-lead-agent`, `aidlc-architecture-reviewer-agent`) now carry their `knowledge/<agent>/reviewing.md` checklist inside their generated agent bodies on every harness. The redundant per-agent knowledge globs were removed from the Kiro reviewer JSONs.
+
+## [2.5.32] - 2026-07-31
+
+Closes a silent-failure trap in the plugin mechanism: a plugin that shipped a sensor manifest under any name other than `aidlc-<id>.md` (or nested it in a subdirectory) composed successfully but was never discovered by graph compile or sensor dispatch, giving the author no signal at all. The compose hook now validates a plugin's `sensors/` manifests against the discovery contract and records a degraded drop naming the file and the required shape when a manifest could never fire; `/aidlc --doctor` surfaces that drop. **Upgrade:** re-copy your `dist/<harness>/` shell so the updated plugin compose hook is installed; if you author a plugin sensor, name its manifest `sensors/aidlc-<id>.md` at the top of `sensors/`.
+
+* Plugin `sensors/` manifests are now checked at compose time: a manifest whose basename lacks the `aidlc-` prefix, or that sits in a subdirectory the flat sensor scan never reads, is not copied and is recorded as a degraded compose drop (surfaced by `/aidlc --doctor`) naming the file and the required `aidlc-<id>.md` shape.
+* An undiscoverable sensor manifest an older compose hook already landed is reported the same way on the next compose, so an upgrade never leaves a dead sensor silently on disk.
+
 ## [2.5.31] - 2026-07-31
 
-Merges upstream `awslabs/aidlc-workflows` v2 through 2.5.30 into this fork, which had been sitting on a 2.5.7 base. **The headline is a defect this fixes, not a feature: on Kiro IDE ≥ 1.0.1xx the fork's entire hooks layer was silently inert.** Kiro IDE stopped executing the legacy `.kiro.hook` format, and this fork shipped only that format — so audit emission, sensor dispatch, human-presence mint, the pre-tool approval-gate block, and runtime-graph compile were all registered and none of them ran. Upstream fixed this in 2.5.4 by shipping the v2 hook JSON schema alongside legacy for coexistence; that fix is now in. **Upgrade: re-copy your `dist/<harness>/` shell into the project, then re-run `plugin sync` (or start a session and let the compose hook run) so plugin contributions re-merge.** Verify with `--doctor` and confirm `.kiro/hooks/` now contains `aidlc-*.json` files, not only `.kiro.hook`.
+Sensor output parsing now tolerates leading stdout noise. When a sensor runs against a sibling repository, that repo's package manager (pnpm and similar) can print a run banner or lockfile warning before the wrapped tool's JSON; previously the dispatcher and the linter sensor did a bare parse of that stdout, so any preamble made the parse throw and the sensor's real verdict was silently discarded as an advisory PASS. Both parse sites now slice stdout to the first structural JSON character before parsing, and still degrade gracefully when even the sliced output is not JSON. **Upgrade:** re-copy your `dist/<harness>/` shell into the project so the updated `aidlc-sensor` dispatcher and `linter` sensor are installed. No configuration or command changes.
 
-* Also arriving from upstream: bundle-aware default-scope resolution for plugin-only installs, the ARS deterministic subcommand, hardened Kiro `execute_bash` permission lists, the 1.x stdin hook context channel, a v2 PR gate in CI, and `.gitattributes` pinning LF so Windows checkouts pass the drift guard.
-* The Codex CLI floor moves to **≥ 0.145.0** (upstream): earlier releases defer compact-source `SessionStart` after a mid-turn auto-compaction, so a continuation can run without the restored workflow mission. `--doctor` enforces the pin.
-* **The fork's Kiro IDE gate-render floor (previously released here as 2.5.8/2.5.9) is inert on IDE 1.x and is not being re-announced.** It works by returning `{"decision":"block"}` from the Stop hook, and on the v2 schema the IDE's `Stop` trigger cannot block — upstream's own hook registration documents it as advisory-only. The code is retained but does nothing on a 1.x IDE; it needs re-implementing on a trigger that can genuinely block (`PreToolUse` and `UserPromptSubmit` can) or removing. Tracked as B1 in `docs/reference/20-fork-divergence.md`. Those two version numbers also collided with upstream's own 2.5.8/2.5.9, so their headings are dropped here rather than duplicated.
+* The sensor dispatcher (`aidlc-sensor fire`) and the `linter` sensor now strip package-manager banners and lockfile warnings that precede a wrapped tool's JSON, so a real FAILED or clean PASS verdict is no longer masked as `script-error: bad-output` when firing against a sibling repo.
 
 ## [2.5.30] - 2026-07-30
 
@@ -251,142 +266,6 @@ Reviewers are now verifiers: every declared review runs under an explicit **adve
 * Both reviewer personas restate the contract in their own domain voice - the Product Lead hunts untestable acceptance criteria, uncovered requirements, and orphan stories; the Architecture Reviewer hunts broken references, circular dependencies, and cross-unit claims the passed contracts do not back. Identity-marker and read-scope contracts are unchanged.
 * The four harness orchestrator skills' reviewer steps carry a one-line restatement of the adversarial framing, following the read-scope precedent.
 * No behavior change to the review loop mechanics: verdict flow, `reviewer_max_iterations`, HITL escalation, dispatch records, and the read-scope hook are all as in 2.3.4.
-## [2.3.26] - 2026-07-16
-
-PoC accelerator requirements capture now performs a mandatory, auditable team-knowledge preflight before customer domain discovery, so configured knowledge sources cannot be silently skipped. **Upgrade:** re-run `bun scripts/package.ts`, re-compose `dist/plugins/poc-accelerator/<harness>/`, and add an approved local checkout or repository URL under `## Team Knowledge Repository` in `aidlc/spaces/<space>/memory/org.md` when your team maintains shared packs.
-
-* Step 1 searches the active space's local shared and product knowledge seats, then checks any Team Knowledge Repository named in org, team, or project memory for a domain-matching pack.
-* Step 1 writes `poc-accelerator-team-knowledge-preflight.md` with its sources, queries, result, revision/date, import path, and blocked/absent-source status. A missing, unavailable, or non-matching source now explicitly asks the user to provide an approved URL/local path or to skip team knowledge for this PoC; silence is not a skip.
-* The plugin ships a deterministic TypeScript sensor gate, `poc-accelerator-team-knowledge-preflight` (advisory, fired by the existing sensor pipeline — no core changes): the preflight artifact must end with a fenced `preflight:` yaml block recording `resolution: pack-imported | user-source-provided | skipped-by-user` plus the fields that resolution requires, or the write reports `SENSOR_FAILED` with the missing fields.
-* Plugin version bumps to 0.21.0.
-
-## [2.3.25] - 2026-07-16
-
-The customer-delivery PoC accelerator now requires an explicit CDE scope selection, preventing the unsupported `pocx` shorthand from being confused with the core throwaway `poc` scope. **Upgrade:** re-run `bun scripts/package.ts`, re-compose `dist/plugins/poc-accelerator/<harness>/`, then start new customer PoC workflows with either `/poc-accelerator-cde <scenario>` or `/aidlc --scope poc-accelerator-cde <scenario>`.
-
-* `/aidlc pocx` and `/aidlc poc cde` are no longer documented or registered as keyword routes for `poc-accelerator-cde`; the plugin declares no shortcut keywords.
-* The plugin, English/Chinese READMEs, and customization guide now identify the direct `/poc-accelerator-cde <scenario>` runner and `/aidlc --scope poc-accelerator-cde <scenario>` as the two supported customer-delivery entry points. Bare `/aidlc poc` continues to select the separate disposable feasibility-spike flow.
-* Plugin version bumps to 0.20.0.
-
-## [2.3.24] - 2026-07-17
-
-Zero-core-divergence restoration: the CDE knowledge added to core in 2.3.20–2.3.23 moves into the poc-accelerator plugin, restoring the upstream core files byte-identical (only the GitFarm-mandated 2.3.14 compliance strings remain as core divergence). **Upgrade:** re-run `bun scripts/package.ts` and re-compose the plugin; if you copied the 2.3.20–2.3.23 core knowledge into an install, re-copy the shell to revert it.
-
-* Core `branching-strategies.md`, `cicd-patterns.md`, `testing-guide.md`, and `security-guide.md` are restored to their upstream content. The removed sections re-home as plugin knowledge: `aidlc-quality-agent/llm-evaluation.md` (LLM evals + the five test-design categories), `aidlc-pipeline-deploy-agent/cicd-cde-practices.md` (pipeline reading, OIDC credentials, IaC delivery, GitOps — reframed for customer environments), and `aidlc-pipeline-deploy-agent/credential-hygiene.md` (SSO/assume-role over long-lived keys, recognize-on-sight anti-patterns). The repo-inspection branching fallback is covered by the plugin's `git-collaboration.md`.
-* The plugin README documents the upstream upgrade procedure and the exact expected conflict surface. Going forward, plugin-only changes bump only the plugin version; this fork's core version freezes here until an upstream merge.
-* Step 5's verification treats test-suite tampering as a first-class review signal: a skipped test, weakened assertion, or modified test setup usually means the implementation is wrong and the evidence is being hidden — the fix is the implementation, never the test.
-* Plugin version bumps to 0.16.0.
-
-## [2.3.23] - 2026-07-17
-
-Credential-hygiene and customer-security-boundary guidance. **Upgrade:** re-copy your `dist/<harness>/` shell; poc-accelerator users also re-compose the plugin.
-
-* Core `security-guide.md` gains a **Human AWS Credentials** section: prefer SSO/assume-role short-lived credentials over long-lived `AKIA` keys (per-person audit identity, self-expiring); treat any long-lived key found on disk as also existing elsewhere — rotate, don't just delete the copy you found; plus a recognize-on-sight anti-pattern list (`AKIA` strings, `sk_live_` keys, hardcoded production database URLs, `.env` files shared through chat).
-* The poc-accelerator playbook gains a **customer security boundaries** rule: work safely inside the customer's existing security pattern rather than refactoring their secrets pipeline inside the PoC time box — don't make it worse, don't lecture, put the migration on the extension recommendations as an owned follow-up, flag recognized anti-patterns factually, and when unsure raise it before acting. Plugin version bumps to 0.15.0.
-* Already covered and deliberately not duplicated: secret scanning (pre-commit + CI) and the rotate-revoke-then-purge leak response live in `devsecops-pipeline-patterns.md`; CI OIDC landed in 2.3.21.
-
-## [2.3.22] - 2026-07-17
-
-The quality knowledge gains LLM evaluation guidance — the missing test layer for GenAI workloads. **Upgrade:** re-copy your `dist/<harness>/` shell; poc-accelerator users also re-compose the plugin.
-
-* Core `testing-guide.md` gains an **LLM Evaluation (Evals)** section: eval LLM endpoints instead of exact-match unit-testing them (the deterministic code around the call still gets normal tests); build an eval set from acceptance criteria and real usage, pick a grader per case type (exact match, substring/regex, numeric tolerance, pinned LLM-as-judge, behavioral tool-call checks), assert on aggregate accuracy against a threshold rather than individual cases, grow the set from production failures, and version/run it in CI so model or prompt swaps are judged by eval delta.
-* Core `testing-guide.md` also gains a **Test Case Design Categories** section: the auditor-believable five categories per feature (core, edge, boundary, error, security) and the community-standard-framework rule.
-* poc-accelerator step 6 requires an eval set for LLM-driven behavior with a stated aggregate threshold and names it a handoff deliverable; the cost analysis's two-way-door framing notes that an LLM seam without evals is a door you cannot walk through with confidence. Plugin version bumps to 0.14.0.
-
-## [2.3.21] - 2026-07-17
-
-The core CI/CD patterns knowledge gains the pipeline-reading, credential, IaC-delivery, and GitOps guidance the ci-pipeline and deployment-pipeline stages were missing. **Upgrade:** re-copy your `dist/<harness>/` shell; poc-accelerator users also re-compose the plugin.
-
-* `cicd-patterns.md` gains four sections: **Reading an Existing Pipeline First** (workflow files tell you what the team trusts to ship; missing stages are information, not something to silently fix); **Pipeline Credentials** (OIDC short-lived tokens, long-lived keys in CI secrets are a finding to flag, least-privilege pipeline roles); **IaC Delivery** (every resource in IaC using the customer's existing tool, scan → plan → apply in a pipeline not on a laptop, remote Terraform state, every infra change is a commit, infra PRs reviewed with their plan output); **GitOps** (desired state in git + in-environment reconciler — Argo/Flux for clusters, Atlantis/Terraform Cloud for IaC; find the gitops repo first).
-* poc-accelerator step 3 now checks whether the target account/repo is managed by an existing pipeline or GitOps controller and requires coordinating with its owner before any direct `cdk deploy`, recording the agreement in the readiness evidence. Plugin version bumps to 0.13.0.
-
-## [2.3.20] - 2026-07-17
-
-Git collaboration discipline for customer repos, and the branching fallback now inspects pre-existing repositories. **Upgrade:** re-copy your `dist/<harness>/` shell and re-compose `dist/plugins/poc-accelerator/<harness>/`.
-
-* Core `branching-strategies.md`: when no branching practice is affirmed and the repository pre-exists, the agent inspects it (`git branch -r`, `git log --graph`) and matches the observed model — a live `develop` means GitFlow, `release/*` means Release Branches — before falling back to hardcoded trunk-based defaults; the observed strategy is recorded in the response notes.
-* New poc-accelerator knowledge `git-collaboration.md` separating the two actors in a customer repo: the workflow's agents keep the framework's git safety line (no force pushes, no history rewriting), while the SA-as-human gets the CDE discipline — discover the branching model before the first commit, rebase only unshared branches, `--force-with-lease` never plain `--force`, resolve conflicts by understanding both sides' intent, clean up noisy WIP before the PR without rewriting anything shared.
-* Step 3 records the observed branching model in the readiness evidence for pre-existing customer repos; step 8's extension recommendations now name the CI/CD pipeline explicitly, note the deliverable is pipeline-ready (all-CDK + configuration-only portability), and point it at the follow-on workflow's ci-pipeline/deployment-pipeline stages instead of building one inside the PoC time box.
-* Plugin version bumps to 0.12.0.
-
-## [2.3.19] - 2026-07-17
-
-The poc-accelerator handoff gains a recorded quality checklist. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.
-
-* The PoC playbook gains a ten-item handoff quality checklist condensing every delivery gate (runnable demo, four-questions README, deployed-accurate diagram, verified teardown, safe-error and no-leak evidence, config-only portability, ADR/door-note agreement, three-tier cost analysis with parametrized model, owned value metrics, data-safety red lines) with each item tracing to its detailed knowledge file.
-* Step 8 gains a dedicated verification step before the customer acceptance gate: the checked list is recorded in the demo package with evidence pointers, and an unchecked item is either fixed or presented as an explicit owner-assigned exception — never silently skipped.
-* Plugin version bumps to 0.11.0.
-
-## [2.3.18] - 2026-07-17
-
-The poc-accelerator handoff cost projection grows into a full three-tier cost analysis. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.
-
-* New architect knowledge `cost-analysis.md`: scale estimates at pilot / production / over-production (2x–10x — the tier that exposes inflection points), per-service breakdown with each service's cost driver, inline assumptions, and architecture trade-offs at scale (managed LLM API vs. self-hosting crossover, on-demand vs. provisioned capacity, AgentCore consumption vs. self-managed runtime).
-* Each component that turns expensive at scale is labeled a two-way door (behind a seam, swappable) or a one-way door (rewrite first) — the framing must agree with the extension recommendations, and it is where the code-organization seams pay off.
-* The step-8 cost projection is built as a parametrized model (spreadsheet or calc script) committed with the analysis so assumptions adjust live in the handoff conversation, and the customer-facing version publishes to `docs/COST_ANALYSIS.md` in the workspace repo. Estimates-not-quotes and billing-data guardrails unchanged.
-* Plugin version bumps to 0.10.0.
-
-## [2.3.17] - 2026-07-17
-
-The poc-accelerator developer flow gains documentation guidance, completing the CDE code-quality trio (code organization, robust portable code, documentation). **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.
-
-* New developer knowledge `documentation-guide.md`: the repo must answer four questions from the README and `docs/adr/` alone — what is this, how do I run it, how do I tear it down, why was it built this way. README sections (purpose, deployed-architecture diagram consistent with the stack inventory, prerequisites incl. non-obvious account steps like Bedrock model access, config-only setup/run, mandatory teardown, known limitations); ADRs for real tradeoff decisions (data store, model choice, sync vs. async, runtime fallback) and not for obvious defaults.
-* Wired into the gates: the walking skeleton starts the README with the first slice, feature expansion keeps it current and adds ADRs per questioned decision, and the step-8 handoff verifies the four-questions documentation gate; the demo package references the README instead of duplicating it. The playbook completion definition now includes the README and ADRs.
-* Plugin version bumps to 0.9.0.
-
-## [2.3.16] - 2026-07-17
-
-The poc-accelerator developer flow gains robust-portable-code guidance, completing the CDE code-quality pair started by the code-organization knowledge. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.
-
-* New developer knowledge `robust-portable-code.md`: readability habits (why-not-what comments, no dead code, no magic numbers, one casing convention, lint before every gate); error handling at every external boundary (one wrapped call per named function, safe and specific error messages that leak no ARNs/account IDs/stack traces, dead-letter queues for async consumers, one error-handling decorator instead of per-route boilerplate); portability (environment values in configuration, account/region/partition always from `Stack.of(this)` — including the `aws-cn` partition trap for hardcoded ARN prefixes).
-* The rules are enforced at the delivery gates, not just documented: the walking skeleton applies them from the first slice, feature expansion carries them through every new external call, the step-6 invalid-input test must prove the safe-error-message behavior, the step-7 smoke output must not leak internals, and the step-8 demo package's launch steps double as the portability proof (config-only redeploy to another account/region).
-* Plugin version bumps to 0.8.0.
-
-## [2.3.15] - 2026-07-17
-
-The poc-accelerator plugin gains code-organization guidance for the developer persona. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.
-
-* New developer knowledge `code-organization.md` with three principles adapted to the 3–5-day PoC: modularity through action-oriented file names (no `utils` dumping ground), small files and small units (~500-line split signal), and indirection at every external-system boundary (api/service/client/adapter layout with a reference tree).
-* The walking-skeleton stage establishes the layered layout on its first slice, feature expansion fills it in file-by-file, and solution design names the layer seams as the thing the production extension path swaps — tying code structure to the PoC-to-production story.
-* The data redaction/masking boundary is called out as its own module on the data path, keeping the GenAIIC-approved handling one visible seam.
-* Plugin version bumps to 0.7.0.
-
-## [2.3.14] - 2026-07-17
-
-Security-scan compliance sweep for the doctor and onboarding output strings. **Upgrade:** re-copy your `dist/<harness>/` shell if you surface these messages to users.
-
-* The bun/uv install guidance in the doctor fix message and every harness's onboarding prerequisites now points to package managers (`npm install -g bun`, `brew install oven-sh/bun/bun`, `brew install uv`, `pipx install uv`) or the tools' official installation guides instead of embedding `curl | bash` pipe-to-shell commands with third-party URLs.
-* The devsecops security guide's SSRF rule now reads "validate against an approved allowlist" (inclusive terminology).
-
-## [2.3.13] - 2026-07-17
-
-The poc-accelerator plugin's architecture guidance now defaults GenAI, AI agent, and agentic AI workloads to Amazon Bedrock AgentCore. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.
-
-* New CDK pattern "GenAI / AI agent / agentic AI application": AgentCore Runtime/Gateway/Memory/Identity/Observability as the default agent infrastructure, defined in TypeScript CDK via the AgentCore construct library (alpha) or `AWS::BedrockAgentCore::*` L1 resources; Bedrock Agents Classic is explicitly ruled out for new PoCs (closed to new customers 2026-07-30).
-* The default carries a region gate: AgentCore is not in every region and not yet in the China partition (BJS/ZHY planned) — the solution-design stage requires confirming availability via the documentation MCP server, and where unavailable, falling back to the same agent framework on Lambda/ECS with the deviation recorded and AgentCore named as the production migration path.
-* AgentCore consumption pricing is included in the stack plan's cost watchpoints and the step-8 cost projection; the previous "AI/ML inference workflow" pattern is renamed non-agentic and scoped to single-shot inference.
-* Plugin version bumps to 0.6.0.
-
-## [2.3.12] - 2026-07-17
-
-The poc-accelerator plugin's handoff stage now closes the business case with cost estimation. Step 8 (demo and handoff) produces a new `poc-accelerator-cost-projection.md` artifact alongside the demo package, extension recommendations, and value-metrics register. **Upgrade:** re-run `bun scripts/package.ts` and re-compose `dist/plugins/poc-accelerator/<harness>/` into your install.
-
-* New handoff artifact `poc-accelerator-cost-projection`: (1) PoC running cost estimated from the deployed CDK stack's resource inventory with cited pricing sources, and (2) a production-scale monthly cost range driven by explicit, customer-agreed scale assumptions and the costed production additions from the extension recommendations, including the dominant cost levers (savings plans, reserved capacity, serverless tiers, storage classes).
-* All cost figures are labeled estimates with inline assumptions — never quotes or commitments — and pulling billing data from customer accounts still requires the data owner's approval.
-* The value-metrics register's estimated-MRR row may now cite the PoC running cost as its labeled basis; the no-fabrication rule for CFN/MRR/SFDC values is unchanged.
-* Every delivery stage now names the MCP servers it uses at the point of use — documentation checks for regional availability at requirements/design, pricing quotes for the stack plan's cost watchpoints, read-only API discovery before mutation at environment readiness, IaC validation before every deploy at skeleton/expansion/deployment, API-verified resource inventories for test evidence and the stack inventory. The MCP setup knowledge gains a step-by-server overview table.
-* The MCP setup knowledge is now harness-neutral: it maps the configuration to each host's native location (Kiro `.kiro/settings/mcp.json`, Claude Code `.mcp.json`, Codex `~/.codex/config.toml`) instead of hardcoding the Kiro path, and the plugin README documents the Claude Code and Codex install commands alongside the Kiro compose route.
-* The regional MCP setup knowledge adds `awslabs.aws-pricing-mcp-server` to both examples so cost figures come from real-time Price List API quotes instead of manual page lookups: Global config uses the nearest Pricing API endpoint; China config resolves the China partition endpoint (`pricing.cn-northwest-1.amazonaws.com.cn`, CNY catalog). Requires `pricing:*` IAM permissions; calls are free and return only public price data.
-* Terminology fix: the approved co-creation path for real customer data is named GenAIIC (Generative AI Innovation Center) throughout — the previous "GRIC" spelling was a transcription error from meeting notes.
-* Plugin version bumps to 0.5.0.
-
-## [2.3.11] - 2026-07-16
-
-Adds an optional customer-delivery PoC accelerator: an eight-step, CDK-first workflow for a 3–5 working-day customer demo, delivered entirely as an AIDLC plugin. Core `poc` remains the existing throwaway feasibility spike. **Upgrade:** re-run `bun scripts/package.ts`, install/compose `dist/plugins/poc-accelerator/<harness>/`, and select `aidlc,poc-accelerator`.
-
-* New `/aidlc --scope poc-accelerator-cde` stages cover customer-approved requirements, small solution design, environment readiness, a walking skeleton, constrained feature expansion, test evidence, TypeScript CDK deployment, and customer handoff.
-* The plugin uses the existing product, architect, developer, quality, and pipeline/deploy personas; it ships methodology guidance for PoC delivery, regional MCP setup (Global and China `mcp.json` examples in the pipeline-deploy knowledge file), and CDK patterns without changing the core `poc` scope.
-* PoC value tracking records accountable owners and identifiers for CFN/MRR/SFDC/production conversion; it deliberately does not fabricate business metrics, connect to commercial systems, or allow unapproved production data.
 
 ## [2.3.10] - 2026-07-14
 
@@ -1241,7 +1120,7 @@ Three read-only session skills become typeable: `/aidlc-session-cost`, `/aidlc-r
 
 **For everyone running `/aidlc`**
 
-* **Gates now capture what you teach them.** Between a stage finishing and you approving it, the framework surfaces what the agent noticed during the stage — interpretations it had to make, places it deviated, tradeoffs it weighed — and asks "anything to add for next time?" You tick what is worth keeping and pick one of four headings; the framework saves it as a standing rule so the correction carries into the next workflow. Most stages surface nothing, which is healthy — the prompt only has substance when something genuinely came up. See [Rules and the Learning Loop](docs/guide/09-rules-and-the-learning-loop.md).
+* **Gates now capture what you teach them.** Between a stage finishing and you approving it, the framework surfaces what the agent noticed during the stage — interpretations it had to make, places it deviated, tradeoffs it weighed — and asks "anything to add for next time?" You tick what is worth keeping and pick one of four headings; the framework saves it as a standing rule so the correction carries into the next workflow. Most stages surface nothing, which is healthy — the prompt only has substance when something genuinely came up. See [Rules and the Learning Loop](docs/guide/08-rules-and-the-learning-loop.md).
 * **Automatic checks on every file write.** Four deterministic sensors — a linter, a type-checker, a required-sections check, and an upstream-coverage check — now run by themselves whenever an agent writes a stage's output. They are advisory: a finding leaves a note in the audit log pointing at exactly what is missing, but it never blocks your gate. The first time one fires in a workspace, a one-line banner points you at the guide.
 * **`/aidlc --doctor --rule-drift`** flags where your team or project rules have drifted from the framework defaults — it quotes the conflicting default inline so you can review it. Advisory; it never fails the health check.
 * **Architecture choices now get a written trade-off.** When a design decision has more than one viable approach, the design stage lays out Option A / Option B with reversibility and a recommendation tied to your non-functional requirements, then records the rejected alternatives in the ADR.
