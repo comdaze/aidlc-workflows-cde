@@ -92,8 +92,17 @@ function cmdTest(): void {
   //                               silently regressing (every local fix so far turned
   //                               a silent-empty/wrong result into a loud one, which
   //                               is invisible in a green run without these).
+  // -p no:cacheprovider: never write .pytest_cache into the vendored tree. Same
+  // reason as -B for __pycache__ above — the packager copies tools/vendor/
+  // wholesale, so a cache dir created by running this suite gets projected into
+  // all five dist/plugins/knowledge-plugin/<harness>/ trees. It is self-gitignored
+  // (pytest writes its own .gitignore with `*`), so it never shows up in git
+  // status and survives a branch switch, then trips `package.ts --check` with an
+  // ORPHAN report on a branch where the plugin source does not exist. Observed
+  // exactly that. The -B comment anticipated this class for __pycache__ and
+  // missed the pytest cache.
   const r = py([
-    "-m", "pytest",
+    "-m", "pytest", "-p", "no:cacheprovider",
     "test_ai_ready_helpers.py", "test_local_deviations.py",
     "-q", "-k", EXCLUDE,
   ]);
@@ -106,14 +115,17 @@ function main(): void {
   const [cmd, ...rest] = process.argv.slice(2);
   switch (cmd) {
     case "check":
-      return cmdCheck();
+      cmdCheck();
+      return;
     case "validate": {
       const i = rest.indexOf("--repo-path");
       if (i === -1 || !rest[i + 1]) fail("validate requires --repo-path <repo>");
-      return cmdValidate(rest[i + 1]);
+      cmdValidate(rest[i + 1]);
+      return;
     }
     case "test":
-      return cmdTest();
+      cmdTest();
+      return;
     default:
       fail(`unknown command: ${cmd ?? "(none)"} — expected check | validate --repo-path <repo> | test`);
   }

@@ -737,6 +737,10 @@ describe("mechanismsOf is body-derived (milestone 3)", () => {
   // when their segment stopped saying cli. Same predicate, same honesty ratchet:
   // a new spawning test still cannot land without a human edit here.
   const EXPECTED_NONE_TO_CLI = [
+    "unit/t150-codex-packaging.test.ts",
+    // CDE fork delta (docs/reference/20-fork-divergence.md B1): spawns
+    // .kiro/hooks/aidlc-kiro-adapter.ts under bun, so its body derives cli.
+    "unit/t219-kiro-ide-gate-render-floor.test.ts",
     "unit/t220-tier-projection-module.test.ts",
     "unit/t233-upstream-coverage-matching.test.ts",
     "unit/t231-handler-additions.test.ts",
@@ -879,6 +883,8 @@ describe("mechanismsOf is body-derived (milestone 3)", () => {
     "unit/t236-ensemble-evidence-gate.test.ts",
     "unit/t242-state-transition-guard.test.ts",
     "unit/t243-doctor-bundle.test.ts",
+    "unit/t247-claim-sources-sensor.test.ts",
+    "unit/t258-ars-subcommand.test.ts",
     "unit/t27.test.ts",
     "unit/t29.test.ts",
     "unit/t30-hook-session-end.test.ts",

@@ -61,6 +61,7 @@ export const TOOLS = {
   runnerGen: "aidlc-runner-gen.ts",
   runtime: "aidlc-runtime.ts",
   sensor: "aidlc-sensor.ts",
+  sensorClaimSources: "aidlc-sensor-claim-sources.ts",
   sensorLinter: "aidlc-sensor-linter.ts",
   sensorRequiredSections: "aidlc-sensor-required-sections.ts",
   sensorTypeCheck: "aidlc-sensor-type-check.ts",
@@ -672,6 +673,7 @@ function resolveAlias(argv: string[]): Action | undefined {
   }
   if (head === "__sensor-script") {
     const scripts: Record<string, string> = {
+      "claim-sources": TOOLS.sensorClaimSources,
       linter: TOOLS.sensorLinter,
       "required-sections": TOOLS.sensorRequiredSections,
       "type-check": TOOLS.sensorTypeCheck,
@@ -867,6 +869,8 @@ async function loadDelegate(tool: string): Promise<DelegateModule | null> {
       return import("./aidlc-runtime.ts");
     case TOOLS.sensor:
       return import("./aidlc-sensor.ts");
+    case TOOLS.sensorClaimSources:
+      return import("./aidlc-sensor-claim-sources.ts");
     case TOOLS.sensorLinter:
       return import("./aidlc-sensor-linter.ts");
     case TOOLS.sensorRequiredSections:
@@ -915,6 +919,39 @@ async function runDelegateInProcess(tool: string, args: string[]): Promise<numbe
 
 async function readStdin(): Promise<string> {
   return await Bun.stdin.text();
+}
+
+async function readStdinWithTimeout(timeoutMs: number): Promise<string> {
+  return await new Promise<string>((resolve) => {
+    const chunks: Buffer[] = [];
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout>;
+    const cleanup = () => {
+      clearTimeout(timeout);
+      process.stdin.off("data", onData);
+      process.stdin.off("end", onEnd);
+      process.stdin.off("error", onError);
+    };
+    const finish = (value: string) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+    const onData = (chunk: Buffer | string) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    };
+    const onEnd = () => finish(Buffer.concat(chunks).toString("utf-8"));
+    const onError = () => finish("");
+    timeout = setTimeout(() => {
+      process.stdin.pause();
+      finish("");
+    }, timeoutMs);
+    process.stdin.on("data", onData);
+    process.stdin.once("end", onEnd);
+    process.stdin.once("error", onError);
+    process.stdin.resume();
+  });
 }
 
 async function withProjectDir(
@@ -979,11 +1016,25 @@ async function runAdapter(action: Extract<Action, { type: "adapter" }>): Promise
       text(2, `aidlc adapter ${action.harness} ${action.target}: adapter does not export run(target, input, extraArgs)\n`);
       return 1;
     }
-    // kiro-ide: NEVER read stdin - the IDE opens hook stdin without writing
-    // or closing it, so awaiting it hangs the hook process forever. The IDE
-    // adapter's run() ignores its input parameter (context arrives via the
-    // USER_PROMPT env var); mirrors the adapter's own entry guard.
-    const input = action.harness === "kiro-ide" ? "" : await readStdin();
+    let input = "";
+    if (action.harness !== "kiro-ide") {
+      input = await readStdin();
+    } else if (action.target === "audit-and-sensors" || action.target === "log-subagent") {
+      // Mirror the adapter entry point's dual-generation channel contract.
+      // IDE 0.12 provides USER_PROMPT and leaves stdin open forever, so consume
+      // a non-empty env payload immediately. IDE 1.x leaves USER_PROMPT empty
+      // and writes+closes stdin; the timeout is only a broken-channel ceiling.
+      const legacyPayload = process.env.USER_PROMPT ?? "";
+      if (legacyPayload.trim().length > 0) {
+        input = legacyPayload;
+      } else if (!process.stdin.isTTY) {
+        // AIDLC_IDE_STDIN_TIMEOUT_MS mirrors the adapter's test seam so both
+        // entry points share one contract.
+        const override = Number(process.env.AIDLC_IDE_STDIN_TIMEOUT_MS ?? "");
+        const ceiling = Number.isFinite(override) && override > 0 ? override : 2000;
+        input = await readStdinWithTimeout(ceiling);
+      }
+    }
     return await mod.run(action.target, input, action.extraArgs);
   } finally {
     if (previousHarness === undefined) delete process.env.AIDLC_HARNESS_DIR;

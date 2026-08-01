@@ -9,8 +9,10 @@ never hand-edit it (the drift guard fails CI).
 
 ## Prerequisites
 
-- **Codex CLI ≥ 0.139.0** — earlier releases do not surface the real agent
-  role in subagent hook payloads and do not resolve hyphenated agent TOMLs.
+- **Codex CLI ≥ 0.145.0** — earlier releases defer compact-source
+  `SessionStart` after a mid-turn auto-compaction, so one model continuation
+  can run without the restored workflow mission. Releases before 0.139.0 also
+  lack reliable subagent role attribution and hyphenated agent-TOML resolution.
   `/aidlc --doctor` enforces the pin. Check with `codex --version`.
 - **bun** — same requirement as the Claude harness; every tool and hook runs
   via bun.
@@ -21,6 +23,16 @@ never hand-edit it (the drift guard fails CI).
   Bedrock; the market-research stage degrades gracefully.
 
 ## Install
+
+The copies below come from a clone of the
+[aidlc-workflows](https://github.com/awslabs/aidlc-workflows) repository on the
+`v2` branch:
+
+```bash
+git clone https://github.com/awslabs/aidlc-workflows.git
+cd aidlc-workflows
+git checkout v2
+```
 
 1. Copy the distribution into your project (which must be a **git
    repository** — Codex only discovers a project `.codex/hooks.json` inside
@@ -78,10 +90,12 @@ never hand-edit it (the drift guard fails CI).
    do not append a second copy because duplicate TOML tables invalidate the
    entire config.
 
-4. Merge the shipped `.codex/config.toml` into your `~/.codex/config.toml`
-   (or keep it project-level — trusted projects read it). Verify with:
+4. Back in `your-project/` (step 3 ran from the AI-DLC source checkout), merge
+   the shipped `.codex/config.toml` into your `~/.codex/config.toml` (or keep
+   it project-level — trusted projects read it). Verify with:
 
    ```bash
+   cd your-project
    bun .codex/tools/aidlc-utility.ts doctor
    ```
 
@@ -113,8 +127,10 @@ implicit skill matching so 37 runner descriptions don't pollute the index).
   and loud-degrades (`SWARM_DEGRADED` is audited).
 - **Session lifecycle**: Codex has no SessionEnd event; an unclosed session
   is reconciled as an inferred `SESSION_ENDED` audit row at the next session
-  start. The Codex-only PostCompact event re-injects the workflow mission
-  after compaction — a determinism upgrade over the Claude harness.
+  start. After compaction, Codex emits SessionStart with `source=compact`;
+  that supported event re-injects the workflow mission before the first
+  post-compaction continuation. This immediate drain is why AI-DLC requires
+  Codex >= 0.145.0.
 - **Artifact audit fidelity**: in headless `codex exec` runs the model often
   writes files via shell heredocs, which bypass the `apply_patch` hook
   matcher — `ARTIFACT_*` rows can be sparse. Interactive TUI sessions (where
@@ -122,7 +138,7 @@ implicit skill matching so 37 runner descriptions don't pollute the index).
 - **AIDLC rule layers** live at the workspace root under `aidlc/spaces/<active-space>/memory/` (one hand-editable source, identical on every harness); the `AIDLC_RULES_DIR` env seam in `config.toml` points the resolver there and the orchestrator injects an `@aidlc/spaces/<active-space>/memory/...` prompt mention. Codex's native `.codex/rules/` directory holds Starlark permission rules — distinct from the AIDLC method.
 - **No welcome message**: the Claude harness renders the Phases/Stages/Scopes
   onboarding banner from `settings.json` `companyAnnouncements` at session start;
-  Codex has no equivalent. The session-start path injects resume context only.
+  Codex has no equivalent. The session-start path injects workflow context only.
 - **MCP servers**: Codex reads MCP definitions from `[mcp_servers.<name>]`
   tables in `config.toml` (project `.codex/config.toml` or `~/.codex/config.toml`)
   — add the servers you need there. The shipped config declares **none** (the
