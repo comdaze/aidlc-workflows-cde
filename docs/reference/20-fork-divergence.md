@@ -217,13 +217,15 @@ does not explain is an undocumented divergence — add a row.
 ## 6. Prepared upstream submission (B1) — **withdrawn**
 
 > [!WARNING]
-> **Do not submit this.** The branch described below (`upstream/kiro-ide-gate-render-floor`,
-> `44d89644`) is off `9f914544`, which the 2.5.30 merge superseded, and more
-> importantly the floor it carries is inert on IDE ≥1.0 — see B1. Delete the
-> branch. The remainder of this section is kept only as the recipe for
-> hand-assembling *some future* submission off a fork commit, since the mechanics
-> (strip the version bump, strip the plugin edits, regenerate `dist/`) apply to any
-> B-class row.
+> **Do not submit this.** The branch described below was off `9f914544`, which the
+> 2.5.30 merge superseded, and more importantly the floor it carries is inert on
+> IDE ≥1.0 — see B1. It was **deleted 2026-08-01** (`upstream/kiro-ide-gate-render-floor`,
+> local-only, last at `44d89644`; recoverable from the reflog if ever needed, though
+> nothing on it is unique — the floor itself and its test are both on `main`, and
+> its one commit was purely a re-packaging for submission). The remainder of this
+> section is kept only as the recipe for hand-assembling *some future* submission
+> off a fork commit, since the mechanics (strip the version bump, strip the plugin
+> edits, regenerate `dist/`) apply to any B-class row.
 
 The two local commits are **not** cherry-pickable as-is: both also bump
 `core/tools/aidlc-version.ts` plus five `dist/*/tools/aidlc-version.ts` copies,
