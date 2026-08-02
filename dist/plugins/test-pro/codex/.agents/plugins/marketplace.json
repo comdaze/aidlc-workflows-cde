@@ -1,0 +1,20 @@
+{
+  "name": "aidlc-plugins",
+  "interface": {
+    "displayName": "AIDLC Plugins"
+  },
+  "plugins": [
+    {
+      "name": "aidlc-test-pro",
+      "source": {
+        "source": "local",
+        "path": "./plugins/aidlc-test-pro"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

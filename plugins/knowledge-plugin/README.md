@@ -73,7 +73,8 @@ AIDLC_PLUGIN_ROOT="$PLUGIN_ROOT" AIDLC_PROJECT_DIR="<project>" \
   AIDLC_HARNESS_DIR=.kiro bun "$PLUGIN_ROOT/hooks/compose.ts"
 ```
 
-> [!IMPORTANT] The framework must be installed **first**. The composer returns
+> [!IMPORTANT]
+> The framework must be installed **first**. The composer returns
 > immediately — no error, no health record — when
 > `<project>/<harness-dir>/tools/aidlc-graph.ts` is missing, because it validates
 > every plugin stage against the *installed* engine's schema before copying
@@ -126,7 +127,8 @@ Passing `--scope` skips inference entirely, so the routing is deterministic.
 (Only `bugfix`, `feature`, `mvp`, and `security-patch` declare `runner: true`, so
 there is no `/aidlc-enterprise` shortcut — use `/aidlc --scope enterprise`.)
 
-> [!IMPORTANT] **An active workflow's scope wins, and `--scope` cannot override it.**
+> [!IMPORTANT]
+> **An active workflow's scope wins, and `--scope` cannot override it.**
 > Scope precedence is: active `aidlc-state.md` → `--scope` flag → the
 > `AWS_AIDLC_DEFAULT_SCOPE` env var → `feature`. So while a `poc`-scope workflow is
 > active, *every* entry point into this stage is refused — including

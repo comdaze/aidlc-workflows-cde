@@ -632,6 +632,18 @@ describe("mechanismsOf is body-derived (milestone 3)", () => {
     expect(mechanismsOf("t99.none.test.ts", src)).toEqual(["cli"]);
   });
 
+  test("runOrchestrateNext derives cli through the shared spawned-engine helper", () => {
+    const src = [
+      "// covers: subcommand:aidlc-orchestrate:next",
+      'import { runOrchestrateNext } from "../harness/fixtures.ts";',
+      'test("x", () => {',
+      '  const r = runOrchestrateNext(ORCH, projectDir, ["--stage", "x"]);',
+      "  expect(r.status).toBe(0);",
+      "});",
+    ].join("\n");
+    expect(mechanismsOf("t99.none.test.ts", src)).toEqual(["cli"]);
+  });
+
   test("a // inside a string literal (a URL) does NOT truncate the real spawn", () => {
     // codeView strips comments while respecting string literals — so the "//" in
     // an "https://…" string is NOT treated as a line-comment opener. This fixture
@@ -738,10 +750,9 @@ describe("mechanismsOf is body-derived (milestone 3)", () => {
   // a new spawning test still cannot land without a human edit here.
   const EXPECTED_NONE_TO_CLI = [
     "unit/t150-codex-packaging.test.ts",
-    // CDE fork delta (docs/reference/20-fork-divergence.md B1): spawns
-    // .kiro/hooks/aidlc-kiro-adapter.ts under bun, so its body derives cli.
-    "unit/t219-kiro-ide-gate-render-floor.test.ts",
     "unit/t220-tier-projection-module.test.ts",
+    // Spawns the project's own aidlc-utility.ts doctor under bun.
+    "unit/t259-doctor-ide-hook-registration.test.ts",
     "unit/t233-upstream-coverage-matching.test.ts",
     "unit/t231-handler-additions.test.ts",
     "unit/t238-build-binaries.test.ts",
@@ -885,6 +896,8 @@ describe("mechanismsOf is body-derived (milestone 3)", () => {
     "unit/t243-doctor-bundle.test.ts",
     "unit/t247-claim-sources-sensor.test.ts",
     "unit/t258-ars-subcommand.test.ts",
+    "unit/t262-plugin-sensor-name-guard.test.ts",
+    "unit/t248-steering-content-delivery.test.ts",
     "unit/t27.test.ts",
     "unit/t29.test.ts",
     "unit/t30-hook-session-end.test.ts",

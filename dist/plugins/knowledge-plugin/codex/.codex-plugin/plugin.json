@@ -1,8 +1,0 @@
-{
-  "name": "aidlc-knowledge-plugin",
-  "version": "0.1.0",
-  "description": "Deep knowledge engineering for brownfield AIDLC runs — replaces the shallow reverse-engineering codekb with anchored, human-signed domain knowledge (vendored s_repo-to-ddd engine: DDD 4-docs + code-intel.json + spec-details with fail-closed anti-hallucination gates), and closes the knowledge flywheel by writing gate rejections and stage learnings back as KEM-lite entries that the next reverse-engineering rerun absorbs.",
-  "author": {
-    "name": "AWS GCR — SF Express AIDLC co-build"
-  }
-}

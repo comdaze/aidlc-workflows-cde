@@ -25,9 +25,17 @@ type HarnessCapabilities = {
   plugin: {
     kind: "store" | "kiro";
     manifestDir: string;
+    marketplaceDir: string;
+    pluginParentDir: string | null;
+    marketplaceFormat: "legacy" | "codex";
     wiringFile: string;
   };
-  memoryInclude: "claude-import" | "codex-env" | "kiro-resources" | "opencode-instructions";
+  memoryInclude:
+    | "claude-import"
+    | "codex-env"
+    | "kiro-resources"
+    | "kiro-steering"
+    | "opencode-instructions";
   kiroAgentJson: boolean;
   ideAgentTools: boolean;
   reviewerScopeRegistration: ReviewerScopeRegistration;
@@ -49,6 +57,9 @@ const HARNESS_CAPABILITIES = {
     plugin: {
       kind: "store",
       manifestDir: ".claude-plugin",
+      marketplaceDir: ".claude-plugin",
+      pluginParentDir: null,
+      marketplaceFormat: "legacy",
       wiringFile: "hooks/hooks.json",
     },
     memoryInclude: "claude-import",
@@ -68,6 +79,9 @@ const HARNESS_CAPABILITIES = {
     plugin: {
       kind: "store",
       manifestDir: ".codex-plugin",
+      marketplaceDir: ".agents/plugins",
+      pluginParentDir: "plugins",
+      marketplaceFormat: "codex",
       wiringFile: "hooks/hooks.json",
     },
     memoryInclude: "codex-env",
@@ -87,9 +101,12 @@ const HARNESS_CAPABILITIES = {
     plugin: {
       kind: "kiro",
       manifestDir: ".kiro-plugin",
+      marketplaceDir: ".kiro-plugin",
+      pluginParentDir: null,
+      marketplaceFormat: "legacy",
       wiringFile: "hooks/aidlc-plugin-compose.kiro.hook",
     },
-    memoryInclude: "kiro-resources",
+    memoryInclude: "kiro-steering",
     kiroAgentJson: true,
     ideAgentTools: true,
     reviewerScopeRegistration: "unsupported",
@@ -106,6 +123,9 @@ const HARNESS_CAPABILITIES = {
     plugin: {
       kind: "kiro",
       manifestDir: ".kiro-plugin",
+      marketplaceDir: ".kiro-plugin",
+      pluginParentDir: null,
+      marketplaceFormat: "legacy",
       wiringFile: "hooks/aidlc-plugin-compose.kiro.hook",
     },
     memoryInclude: "kiro-resources",
@@ -125,6 +145,9 @@ const HARNESS_CAPABILITIES = {
     plugin: {
       kind: "store",
       manifestDir: ".opencode-plugin",
+      marketplaceDir: ".opencode-plugin",
+      pluginParentDir: null,
+      marketplaceFormat: "legacy",
       wiringFile: "hooks/hooks.json",
     },
     memoryInclude: "opencode-instructions",
@@ -217,7 +240,12 @@ function validateManifest(
     fail(name, "kiroAgentJson does not agree with manifest harnessFiles");
   }
   if (
-    (capabilities.memoryInclude === "kiro-resources") !== hasKiroAgentJson ||
+    (capabilities.memoryInclude === "kiro-resources") !==
+      (hasKiroAgentJson && !capabilities.ideAgentTools) ||
+    (capabilities.memoryInclude === "kiro-steering") !==
+      manifest.harnessFiles.some(
+        (file) => file.dst === "steering/aidlc-active-memory.md",
+      ) ||
     (capabilities.memoryInclude === "claude-import") !==
       manifest.harnessFiles.some((file) => file.dst === "rules/aidlc.md") ||
     (capabilities.memoryInclude === "codex-env") !==
@@ -230,10 +258,22 @@ function validateManifest(
   if (manifestGrantsIdeAgentTools(manifest) !== capabilities.ideAgentTools) {
     fail(name, "ideAgentTools does not agree with manifest agent tools grants");
   }
+  const plugin = {
+    kind: manifest.plugin?.kind ?? "store",
+    manifestDir: manifest.plugin?.manifestDir ?? `${manifest.harnessDir}-plugin`,
+    marketplaceDir:
+      manifest.plugin?.marketplaceDir ??
+      manifest.plugin?.manifestDir ??
+      `${manifest.harnessDir}-plugin`,
+    pluginParentDir: manifest.plugin?.pluginParentDir ?? null,
+    marketplaceFormat: manifest.plugin?.marketplaceFormat ?? "legacy",
+  };
   if (
-    manifest.plugin &&
-    (manifest.plugin.kind !== capabilities.plugin.kind ||
-      manifest.plugin.manifestDir !== capabilities.plugin.manifestDir)
+    plugin.kind !== capabilities.plugin.kind ||
+    plugin.manifestDir !== capabilities.plugin.manifestDir ||
+    plugin.marketplaceDir !== capabilities.plugin.marketplaceDir ||
+    plugin.pluginParentDir !== capabilities.plugin.pluginParentDir ||
+    plugin.marketplaceFormat !== capabilities.plugin.marketplaceFormat
   ) {
     fail(name, "plugin metadata does not agree with the manifest plugin block");
   }

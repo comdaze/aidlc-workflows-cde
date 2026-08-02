@@ -23,7 +23,7 @@ harness parameter. Add a column when you port to a new harness.
 | **Orchestrator entry** (`/aidlc` + runners) | Skills (`/aidlc`) | Skills (`/aidlc`) | Skills (`/aidlc`) | Skills (`$aidlc`) | Command → skill (`/aidlc`; skills from `.aidlc/skills` via `skills.paths`) |
 | **Agent personas** (14 total) | `.claude/agents/*.md` | `.kiro/agents/*.json` + persona `.md` | Persona `.md`; delegation targets add IDE `tools:` grants | `.codex/agents/` TOMLs | `.opencode/agents/*.md` (subagents) + persona `.md` |
 | **Automation** (audit, state, tracking) | Hooks via `settings.json` | Hooks via `agents/aidlc.json` | `.kiro/hooks/aidlc-*.json` (v2, IDE >= 1.0) + `.kiro/hooks/aidlc-*.kiro.hook` (legacy, pre-1.0) | Hooks via `.codex/hooks.json` (one adapter) | Adapter plugin (`.opencode/plugin/`) |
-| **Standing rules** (the layer chain) | `aidlc/spaces/<active-space>/memory/` (via `.claude/rules/aidlc.md` @-import stub) | `aidlc/spaces/<active-space>/memory/` (via Kiro resources glob) | `aidlc/spaces/<active-space>/memory/` (via Kiro resources glob) | `aidlc/spaces/<active-space>/memory/` (via `AIDLC_RULES_DIR`) | `aidlc/spaces/<active-space>/memory/` (via `instructions` glob) |
+| **Standing rules** (the layer chain) | `aidlc/spaces/<active-space>/memory/` (via `.claude/rules/aidlc.md` @-import stub) | `aidlc/spaces/<active-space>/memory/` (via agent resources) | `aidlc/spaces/<active-space>/memory/` (via always-included steering live references) | `aidlc/spaces/<active-space>/memory/` (via `AIDLC_RULES_DIR`) | `aidlc/spaces/<active-space>/memory/` (via `instructions` glob) |
 | **Project onboarding doc** | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md` | `AGENTS.md` | `AGENTS.md` |
 | **Permissions / config** | `.claude/settings.json` | `.kiro/settings/cli.json` + agent config | Agent `.md` `tools:` frontmatter for delegates | `.codex/config.toml` (+ Starlark `rules/`) | `opencode.json` (project root) |
 
@@ -302,7 +302,7 @@ The five shipped servers cover the integrations the framework's agents reach for
 | `aws-iac` | `uvx` (`awslabs.aws-iac-mcp-server@latest`) | AWS credential chain | Infrastructure-as-code tooling |
 | `aws-serverless` | `uvx` (`awslabs.aws-serverless-mcp-server@latest`) | AWS credential chain | Serverless tooling |
 
-The registry carries only environment-variable placeholders — no committed secrets. Credentials flow through your shell: `context7` reads `CONTEXT7_API_KEY` from the environment, and the four `uvx`-launched AWS servers authenticate against your standard AWS credential chain (install `uv`/`uvx` via `curl -fsSL https://astral.sh/uv/install.sh | sh`). A server you have no credentials for is simply unavailable to the session and never blocks a workflow.
+The registry carries only environment-variable placeholders — no committed secrets. Credentials flow through your shell: `context7` reads `CONTEXT7_API_KEY` from the environment, and the four `uvx`-launched AWS servers authenticate against your standard AWS credential chain (install `uv`/`uvx` via `brew install uv` or `pipx install uv`). A server you have no credentials for is simply unavailable to the session and never blocks a workflow.
 
 `.mcp.json` lives at the project root because that is the path Claude Code reads for project-scoped MCP servers. This implementation currently ships as a `.claude/` directory copy rather than a Claude Code plugin, but the project-root `.mcp.json` placement is also the canonical plugin location, so the registry is plugin-portable without change.
 

@@ -19,7 +19,7 @@ hook wiring, activation) differs.
 
 - **Kiro IDE**, signed in
 - **Claude Opus 4.8** selected as the chat model (see the note above)
-- **bun** on your PATH (`curl -fsSL https://bun.sh/install | bash`)
+- **bun** on your PATH (`brew install bun` or `npm install -g bun`)
 
 > [!TIP]
 > bun must be on the PATH that *non-interactive* shells see — that's what the
@@ -62,6 +62,9 @@ Open `your-project/` in Kiro IDE. The install ships:
 - `.kiro/skills/aidlc/SKILL.md` — the conductor loaded when you invoke
   `/aidlc`. The shipped `.kiro/settings/cli.json` and agent-v1 JSON files are
   CLI-only compatibility surfaces; they do not select an IDE default agent.
+- `.kiro/steering/aidlc-active-memory.md` — always-included IDE steering whose
+  live file references preload the active-space memory files for both the
+  conductor and delegated agents.
 - `.kiro/hooks/aidlc-*.json` — the framework hooks registered in the IDE's
   native v2 hook format. They appear in the IDE's Agent Hooks panel. (Kiro IDE
   1.x no longer executes the legacy `.kiro.hook` format the harness shipped
@@ -109,7 +112,6 @@ touches neither channel and keeps its zero-latency path.
 | `aidlc-session-start` | `SessionStart` | Injects workflow resume context once per session (the legacy pre-1.0 file stays wired to per-prompt `promptSubmit` — that generation has no session-start trigger) |
 | `aidlc-mint` | `UserPromptSubmit` | Records a human-turn event on every prompt (human-presence gate) |
 | `aidlc-stop` | `Stop` | Forwarding-loop audit (advisory-only; the Stop trigger cannot block on the IDE - enforcement relies on the conductor's own Stop protocol) |
-| | | **Fork note:** this fork's stop adapter also carries a *gate-render floor* — it returns `{"decision":"block"}` on the first park at an unrendered approval gate or question batch. Written against the pre-1.0 `agentStop` contract, so on IDE 1.x it is **inert**, for exactly the reason the row above states. It needs re-implementing on a trigger that can actually block, or removing. See `docs/reference/20-fork-divergence.md` B1. |
 | `aidlc-block` | `PreToolUse` | Hard-blocks tool calls while an approval gate is open and no human has acted since (human-presence floor) |
 | `aidlc-audit-logger` | `PostToolUse` (`fs_write\|str_replace\|fs_append`) | Logs artifact create/update, then fires applicable sensors (path from the tool result) |
 | `aidlc-log-subagent` | `PostToolUse` (`^(subagent_.+\|invoke_sub_agent)$`) | Records `SUBAGENT_COMPLETED` with the delegate's identity. The matcher is broad so any delegate name reaches the adapter; the adapter drops the auxiliary `subagent_response` shell |
@@ -169,15 +171,17 @@ workflow.
 substituted to `.kiro` and the `rules/` → `steering/` rename). `bun
 scripts/package.ts --check` is the drift guard and runs in CI. The authored
 Kiro IDE surfaces live in `harness/kiro-ide/`: the orchestrator skill
-(`skills/aidlc/`), CLI-compatibility agent JSONs (`agents/`), the hook adapter
-and v2 hook JSON files (`hooks/`), CLI-only `settings/cli.json`, and
-`AGENTS.md` — edit those (or `core/`), never the generated `dist/kiro-ide`.
+(`skills/aidlc/`), always-included active-memory steering (`steering/`),
+CLI-compatibility agent JSONs (`agents/`), the hook adapter and v2 hook JSON
+files (`hooks/`), CLI-only `settings/cli.json`, and `AGENTS.md` — edit those
+(or `core/`), never the generated `dist/kiro-ide`.
 
-The IDE harness differs from the CLI harness (`harness/kiro/`) in three ways:
+The IDE harness differs from the CLI harness (`harness/kiro/`) in four ways:
 the `/aidlc` skill is its conductor rather than an agent selected through
 `settings/cli.json`; it ships v2 hook JSON files (the CLI relies on the
-agent-JSON `hooks` block, which the IDE ignores); and its manifest injects a
-`tools:` frontmatter grant into the delegation-target agent `.md` files
+agent-JSON `hooks` block, which the IDE ignores); it preloads standing rules
+through always-included steering rather than CLI-only agent resources; and its
+manifest injects a `tools:` frontmatter grant into delegation-target agent `.md` files
 (`frontmatterAdditions`), because the IDE resolves a delegated subagent's tools
 from the `.md` frontmatter rather than the agent-v1 JSON - without the grant an
 IDE delegate runs toolless. Note the frontmatter grant is unscoped (the IDE has

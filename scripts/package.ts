@@ -46,10 +46,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, posix, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import type { HarnessManifest } from "./manifest-types.ts";
+import { absorbReviewerKnowledge, agentNameFromPath } from "./agent-knowledge.ts";
 import { renderOnboarding } from "./onboarding.ts";
 import {
   kiroModelDefaults,
@@ -243,7 +244,12 @@ function transform(
   harness?: "claude" | "codex" | "kiro" | "opencode",
 ): Buffer {
   if (srcPath.endsWith(".md")) {
-    let s = substituteToken(content.toString("utf-8"), harnessDir);
+    // Reviewer knowledge absorption runs FIRST (on the raw core text) so the
+    // token substitution below covers the absorbed prose like any core .md.
+    let s = content.toString("utf-8");
+    const agentName = agentNameFromPath(srcPath);
+    if (agentName) s = absorbReviewerKnowledge(s, agentName, CORE_ROOT);
+    s = substituteToken(s, harnessDir);
     s = applyRulesRename(s, harnessDir, rulesRename);
     if (harness) s = projectTierFrontmatter(s, srcPath, harness);
     return Buffer.from(s, "utf-8");
@@ -826,14 +832,30 @@ function discoverPluginNames(): string[] {
 // of being silently skipped (the omission class that lost kiro-ide in round 1).
 // harnessLeaf = manifest.harnessDir; manifestDir + kind come from the manifest's
 // optional `plugin` block, defaulting to "<harnessDir>-plugin" + "store".
-type PluginTarget = { manifestDir: string; harnessLeaf: string; kind: "store" | "kiro" };
+type PluginTarget = {
+  manifestDir: string;
+  harnessLeaf: string;
+  kind: "store" | "kiro";
+  marketplaceDir: string;
+  pluginParentDir: string | null;
+  marketplaceFormat: "legacy" | "codex";
+};
 function pluginTargetFor(harnessName: string): PluginTarget | null {
   if (!existsSync(join(HARNESS_ROOT, harnessName, "manifest.ts"))) return null;
   const m = loadManifest(harnessName);
   const harnessLeaf = m.harnessDir;
   const manifestDir = m.plugin?.manifestDir ?? `${harnessLeaf}-plugin`;
   const kind = m.plugin?.kind ?? "store";
-  return { manifestDir, harnessLeaf, kind };
+  const marketplaceDir = m.plugin?.marketplaceDir ?? manifestDir;
+  const pluginParentDir = m.plugin?.pluginParentDir ?? null;
+  const marketplaceFormat = m.plugin?.marketplaceFormat ?? "legacy";
+  return { manifestDir, harnessLeaf, kind, marketplaceDir, pluginParentDir, marketplaceFormat };
+}
+
+function pluginPayloadRoot(outDir: string, target: PluginTarget, hostPluginName: string): string {
+  return target.pluginParentDir
+    ? join(outDir, target.pluginParentDir, hostPluginName)
+    : outDir;
 }
 
 // Render ONE plugin's projection for ONE harness into `outDir`. Pure builder —
@@ -855,9 +877,10 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
   const version = manifest.version || "0.0.1";
   const author = manifest.author || { name: "AIDLC" };
   const description = manifest.description || "";
+  const hostPluginName = `aidlc-${pluginName}`;
   const target = pluginTargetFor(harnessName);
   if (!target) throw new Error(`no plugin target for harness "${harnessName}" (missing manifest)`);
-  const { manifestDir, harnessLeaf, kind } = target;
+  const { manifestDir, harnessLeaf, kind, marketplaceDir, marketplaceFormat } = target;
   const templateHooks = join(REPO_ROOT, "scripts", "plugin-hooks-template");
   // Primitive content copied verbatim into the host plugin projection. Core
   // scope files keep the `aidlc-` prefix; plugin scope files use
@@ -868,24 +891,59 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
 
   if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
+  const payloadRoot = pluginPayloadRoot(outDir, target, hostPluginName);
+  mkdirSync(payloadRoot, { recursive: true });
 
   // 1. Host-native manifest (.claude-plugin / .codex-plugin / .kiro-plugin).
-  const hostManifestDir = join(outDir, manifestDir);
+  const hostManifestDir = join(payloadRoot, manifestDir);
   mkdirSync(hostManifestDir, { recursive: true });
+  const hostManifest = { name: hostPluginName, version, description, author } as Record<string, unknown>;
+  if (marketplaceFormat === "codex") {
+    const developerName =
+      typeof author === "object" && author !== null && "name" in author
+        ? String((author as { name: unknown }).name)
+        : "AIDLC";
+    hostManifest.interface = {
+      displayName: `AIDLC ${pluginName}`,
+      shortDescription: description || `${pluginName} workflow plugin`,
+      longDescription: description || `${pluginName} workflow plugin for AIDLC.`,
+      developerName,
+      category: "Developer Tools",
+      capabilities: ["Write"],
+      defaultPrompt: [`Use the ${pluginName} AIDLC workflow.`],
+    };
+  }
   writeFileSync(
     join(hostManifestDir, "plugin.json"),
-    JSON.stringify({ name: `aidlc-${pluginName}`, version, description, author }, null, 2) + "\n"
+    JSON.stringify(hostManifest, null, 2) + "\n"
   );
 
   // 2. Marketplace catalogue entry.
+  const marketplaceRoot = join(outDir, marketplaceDir);
+  mkdirSync(marketplaceRoot, { recursive: true });
+  const marketplace = marketplaceFormat === "codex"
+    ? {
+        name: "aidlc-plugins",
+        interface: { displayName: "AIDLC Plugins" },
+        plugins: [{
+          name: hostPluginName,
+          source: {
+            source: "local",
+            path: `./${relative(outDir, payloadRoot).split(sep).join(posix.sep)}`,
+          },
+          policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
+          category: "Developer Tools",
+        }],
+      }
+    : {
+        name: "aidlc-plugins",
+        owner: author,
+        description: "AIDLC plugin catalogue.",
+        plugins: [{ name: hostPluginName, source: ".", version, description }],
+      };
   writeFileSync(
-    join(hostManifestDir, "marketplace.json"),
-    JSON.stringify({
-      name: "aidlc-plugins",
-      owner: author,
-      description: "AIDLC plugin catalogue.",
-      plugins: [{ name: `aidlc-${pluginName}`, source: ".", version, description }],
-    }, null, 2) + "\n"
+    join(marketplaceRoot, "marketplace.json"),
+    JSON.stringify(marketplace, null, 2) + "\n"
   );
 
   // 3. The compose hook + per-harness wiring. Prefer an installed aidlc binary
@@ -893,7 +951,7 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
   //    to the direct bun compose.ts path for source/tree installs. Claude
   //    populates CLAUDE_PLUGIN_ROOT, Codex PLUGIN_ROOT; AIDLC_HARNESS_DIR targets
   //    the right harness tree.
-  const hooksDir = join(outDir, "hooks");
+  const hooksDir = join(payloadRoot, "hooks");
   mkdirSync(hooksDir, { recursive: true });
   for (const f of readdirSync(templateHooks)) cpSync(join(templateHooks, f), join(hooksDir, f));
   // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell parameter expansions
@@ -942,9 +1000,21 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
     const srcDir = join(pluginSrc, dir);
     if (!existsSync(srcDir)) continue;
     for (const file of walk(srcDir)) {
-      const outPath = join(outDir, dir, relative(srcDir, file));
+      const outPath = join(payloadRoot, dir, relative(srcDir, file));
       mkdirSync(dirname(outPath), { recursive: true });
-      writeFileSync(outPath, readFileSync(file));
+      let content = readFileSync(file);
+      if (dir === "agents" && file.endsWith("-agent.md")) {
+        content = Buffer.from(
+          absorbReviewerKnowledge(
+            content.toString("utf-8"),
+            basename(file, ".md"),
+            CORE_ROOT,
+            pluginSrc,
+          ),
+          "utf-8",
+        );
+      }
+      writeFileSync(outPath, content);
     }
   }
 }
@@ -1074,7 +1144,11 @@ if (argv[0] === "plugin" && argv[1] === "build") {
       // our own projections emit), so only a genuine AIDLC projection qualifies.
       const isPriorProjection = (() => {
         try {
-          const mf = join(resolvedOut, target.manifestDir, "plugin.json");
+          const mf = join(
+            pluginPayloadRoot(resolvedOut, target, `aidlc-${pluginName}`),
+            target.manifestDir,
+            "plugin.json",
+          );
           if (!existsSync(mf)) return false;
           const m = JSON.parse(readFileSync(mf, "utf-8"));
           return typeof m?.name === "string" && m.name.startsWith("aidlc-");
@@ -1083,7 +1157,7 @@ if (argv[0] === "plugin" && argv[1] === "build") {
       if (!isPriorProjection && !force) {
         console.error(
           `refusing to build into non-empty "${outDir}" — it is not a prior AIDLC plugin projection ` +
-          `(no ${target.manifestDir}/plugin.json with an aidlc- name). Pass --force to overwrite, or point at a fresh/empty dir.`
+          `(no generated ${target.manifestDir}/plugin.json with an aidlc- name). Pass --force to overwrite, or point at a fresh/empty dir.`
         );
         process.exit(1);
       }
