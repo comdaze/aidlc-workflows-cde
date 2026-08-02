@@ -33,6 +33,34 @@ CDE-specific work. This restores the policy the fork already had at
 Entries below are keyed by date and by the upstream version the fork was
 sitting on, not by a fork version number.
 
+## 2026-08-02 — on upstream 2.5.33
+
+**Removed the Kiro IDE gate-render floor.** It returned `{"decision":"block"}`
+from the `stop` adapter path to force a re-render when a turn parked at an
+approval gate or question batch whose options had never appeared in chat. On any
+IDE ≥1.0 it was already doing nothing — the v2 `Stop` trigger cannot block — so
+for current builds this changes no behaviour. **If you are on a pre-1.0 Kiro IDE,
+you lose the hard block**; the protocol rule it enforced is retained as guidance
+in `question-rendering.md`, and the conductor is now solely responsible for
+honouring it.
+
+It was deleted rather than migrated because the check is not expressible on a
+trigger that can block: "did this turn end with an unrendered gate?" is only
+answerable at end-of-turn, and `PreToolUse` fires too early while
+`UserPromptSubmit` fires after the user has already replied to something they
+could not see. Hard enforcement would need a redesign, and belongs upstream as a
+designed feature rather than a fork patch in the enforcement spine. Reasoning and
+the full cost accounting are in `docs/reference/20-fork-divergence.md` B1.
+
+Also: added `.gitlab-ci.yml`. The repo had no CI — the inherited
+`.github/workflows/ci.yml` is GitHub-only and does nothing here, so every guard
+ran only when someone remembered to run it locally. Wiring it up immediately
+caught two already-landed defects: 15 collapsed GitHub alert blocks across the
+READMEs and one reference doc, and a 16-entry deletion from `CHANGELOG.md` caused
+by resolving that file with `git checkout --theirs` during the 2.5.33 merge. Both
+are fixed. A scheduled `upstream-drift` job now reports pending upstream commits
+and the real conflict surface.
+
 ## 2026-08-01 — on upstream 2.5.33
 
 Adopted the frozen-version policy described above. `core/tools/aidlc-version.ts`,

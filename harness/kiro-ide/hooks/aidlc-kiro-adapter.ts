@@ -59,22 +59,17 @@
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  getField,
   hasOpenGate,
   hookDebug,
   humanActedSinceGate,
   humanPresenceGuardDisabled,
   isAutonomousMode,
-  parseCheckboxes,
-  readAllAuditShards,
   recordHookDrop,
   resolveProjectDirFromHook,
-  stageDir,
   stateFilePath,
-  stopHookDir,
 } from "../tools/aidlc-lib.ts";
 import { appendAuditEntry } from "../tools/aidlc-audit.ts";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const HOOKS_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -94,54 +89,11 @@ interface IdeHookContext {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
+
 // The two targets whose forward depends on the tool payload. Every other
 // target builds a fixed input (or reads only the filesystem), so it skips
 // payload acquisition entirely and keeps its zero-latency path.
 const PAYLOAD_TARGETS = new Set(["audit-and-sensors", "log-subagent"]);
-// Blank [Answer]: tags across the current stage's `*-questions.md` files —
-// the same "unanswered" predicate the core stop hook's tier-2 carve-out uses
-// (empty or underscores-only after the colon). Zero on any read error.
-function countBlankAnswers(projectDir: string, phase: string, slug: string): number {
-  try {
-    const dir = stageDir(projectDir, phase, slug);
-    if (!existsSync(dir)) return 0;
-    let blanks = 0;
-    for (const f of readdirSync(dir).filter((n) => n.endsWith("-questions.md"))) {
-      try {
-        blanks += readFileSync(join(dir, f), "utf-8").match(/\[Answer\]:[ \t]*_*[ \t]*$/gm)
-          ?.length ?? 0;
-      } catch {
-        // Unreadable questions file — skip it.
-      }
-    }
-    return blanks;
-  } catch {
-    return 0;
-  }
-}
-
-// True when the LATEST logged question-mode choice is a self-paced one. The
-// stage-protocol logs every mode choice to the audit shard as a block headed
-// `## Questions: <stage> — Mode choice` with the exact option label on the
-// `**User Input**:` line ("Guide me" / "I'll edit the file" / "Chat"). Both
-// self-paced labels park the turn legitimately without chat rendering. No
-// recorded choice (or any read error) → false: the mode-choice question
-// itself is a structured question that must render.
-function selfPacedQuestionMode(projectDir: string): boolean {
-  try {
-    const audit = readAllAuditShards(projectDir);
-    if (audit.length === 0) return false;
-    let latest = "";
-    for (const block of audit.replace(/\r\n/g, "\n").split(/\n---\n/)) {
-      if (!/^##+\s+Questions:.*Mode choice/im.test(block)) continue;
-      const m = block.match(/\*\*User Input\*\*:\s*"?([^"\n]*)"?/);
-      if (m) latest = m[1].trim();
-    }
-    return /edit the file|^chat$/i.test(latest);
-  } catch {
-    return false;
-  }
-}
 
 export async function run(
   target: string,
@@ -574,101 +526,6 @@ if (target === "session-start") {
     if (result.stdout) process.stdout.write(result.stdout);
   }
   return 0;
-}
-
-// --- stop: the gate-render floor (runs ONLY when the core hook ALLOWED) ---
-//
-// Kiro IDE delivers no transcript to the Stop hook (context is USER_PROMPT
-// only), so no hook can VERIFY that the question-rendering annex was honored —
-// and twice in the field the conductor wrote an approval gate to the questions
-// file, printed a bare "waiting at the gate" line with NO options in chat, and
-// parked. The user was asked to "reply with a number" they never saw.
-//
-// Deterministic floor: when the core stop hook allows the turn to end while an
-// approval gate is OPEN ([?] awaiting-approval), block ONCE per gate with an
-// on-task instruction to render the gate options in chat per the annex. A
-// signature marker (the sorted [?] slugs) under .aidlc-stop-hook/ makes it
-// one-shot: the re-stop after rendering passes straight through, and a fresh
-// gate (new slug set, or a revision cycle re-opening the gate) re-arms it. A
-// correctly-rendering conductor pays one brief restatement per gate — the cost
-// of having no transcript to check.
-//
-// Two trigger paths, one one-shot marker (namespaced signatures re-arm on
-// every transition):
-//   gate:  an approval gate is OPEN ([?] awaiting-approval).
-//   q:     the current stage is [-] in-progress with blank [Answer]: tags AND
-//          the user is NOT in a self-paced mode. The stage-protocol logs the
-//          mode choice to the audit shard ("Questions: ... Mode choice"); a
-//          latest choice of "I'll edit the file" or "Chat" parks legitimately
-//          without chat rendering, so those are exempt. "Guide me" — or no
-//          recorded choice yet (the mode-choice question itself must render) —
-//          gets the floor. Field case: "waiting for your last batch" with the
-//          batch never shown in chat.
-// Carve-outs mirror the presence floor: autonomous Construction, plus
-// AIDLC_GATE_RENDER_FLOOR=0 as the off-switch. Fail-open: any error forwards
-// the core allow unchanged.
-if (target === "stop" && !result.stdout.includes('"decision"')) {
-  try {
-    if (process.env.AIDLC_GATE_RENDER_FLOOR !== "0") {
-      const sp = stateFilePath(projectDir);
-      const content = existsSync(sp) ? readFileSync(sp, "utf-8") : null;
-      if (content !== null && !isAutonomousMode(content)) {
-        let signature = "";
-        let subject = "";
-        if (hasOpenGate(content)) {
-          const slugs = parseCheckboxes(content)
-            .filter((c) => c.state === "awaiting-approval")
-            .map((c) => c.slug)
-            .sort()
-            .join(",");
-          signature = `gate:${slugs}`;
-          subject = "An approval gate is open";
-        } else {
-          const slug = (content.match(/Current Stage\*{0,2}:?\s*`?([^\n`]*)`?/)?.[1] ?? "").trim();
-          const phase = (getField(content, "Lifecycle Phase") ?? "").trim().toLowerCase();
-          const row = parseCheckboxes(content).find((c) => c.slug === slug);
-          if (slug.length > 0 && phase.length > 0 && row?.state === "in-progress") {
-            const blanks = countBlankAnswers(projectDir, phase, slug);
-            if (blanks > 0 && !selfPacedQuestionMode(projectDir)) {
-              signature = `q:${slug}:${blanks}`;
-              subject = "A question batch is pending";
-            }
-          }
-        }
-        if (signature.length > 0) {
-          const markerPath = join(stopHookDir(projectDir), "gate-render-nudge.json");
-          let seen = "";
-          try {
-            seen = (JSON.parse(readFileSync(markerPath, "utf-8")) as { signature?: string })
-              .signature ?? "";
-          } catch {
-            // No marker yet (or unreadable) — this position has not been nudged.
-          }
-          if (signature !== seen) {
-            mkdirSync(stopHookDir(projectDir), { recursive: true });
-            writeFileSync(markerPath, `${JSON.stringify({ signature })}\n`, "utf-8");
-            process.stdout.write(
-              JSON.stringify({
-                decision: "block",
-                reason:
-                  `${subject}, and the user must be able to SEE it in chat. Before ` +
-                  "parking this turn, present it per .kiro/skills/aidlc/question-rendering.md: " +
-                  "the bolded header, the prompt, then ALL options as a numbered list " +
-                  "(mapped from the questions file's letters, ending with an 'Other' " +
-                  "escape), closing with 'Reply with a number (or just tell me).' Never " +
-                  "ask the user to answer with file letters, and never park on a bare " +
-                  "'waiting for you' line. If you already rendered it this turn, restate " +
-                  "it once briefly. Then stop and wait for the user's reply.",
-              }),
-            );
-            return 0;
-          }
-        }
-      }
-    }
-  } catch {
-    // Advisory floor — never let it change the core stop decision.
-  }
 }
 
 // stop (and any future passthrough target): forward stdout + exit code

@@ -67,24 +67,40 @@ files this fork diverged on, upstream made 341 edits, distributed like this:
 
 | Upstream edits (60d) | File | Fork's stake |
 | --- | --- | --- |
-| 81 | `README.md` | badge (**resolved**, A3) + the plugins section (A4) |
-| 72 | `CHANGELOG.md` | **resolved** — A3, no longer diverges |
-| 70 | `core/tools/aidlc-version.ts` | **resolved** — A3, no longer diverges |
-| 37 | `tests/unit/gen-coverage-registry.test.ts` | one ratchet line, exists only for B1 (A5) |
+| 81 | `README.md` | badge **resolved** (A3); the plugins section remains (A4) |
+| 72 | `CHANGELOG.md` | **resolved** (A3) — upstream's, plus one inert frozen block |
+| 70 | `core/tools/aidlc-version.ts` | **resolved** (A3) — no longer diverges |
+| 37 | `tests/unit/gen-coverage-registry.test.ts` | **resolved** — the ratchet line went with B1 |
 | 25 | `core/tools/aidlc-utility.ts` | one doctor string (A1) |
 | 11 | `AGENTS.md` | the plugins paragraph + the changelog policy (A4) |
-| 8 | `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` | 147 lines in the enforcement path (B1) |
+| 8 | `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` | **resolved** — B1 deleted, byte-identical again |
 | 8, 7, 7, 7 | `harness/*/onboarding.fills.ts` | one prereq bullet each (A1) |
-| 4 | `harness/kiro-ide/skills/aidlc/question-rendering.md` | B1 |
+| 4 | `harness/kiro-ide/skills/aidlc/question-rendering.md` | one 8-line rule (A5) |
 | 3 | `.gitignore` | A4 |
 | 1 | `core/knowledge/.../security-guide.md` | one word (A2) |
-| 0 | `tests/unit/t219-kiro-ide-gate-render-floor.test.ts` | B1, ours alone |
 
 The top three were **65% of the fork's entire exposure and none of them was a
 feature** — they were version bookkeeping the fork created for itself. A3 removed
-them. What remains is B1 (49 edits' worth, and the only high-severity one) and A1
-(54 edits' worth, one string repeated across five files). Both have exits: B1
-gets rewritten or deleted, A1 gets offered upstream.
+them; deleting B1 removed 45 more edits' worth, including the only high-severity
+row. Exposure is down from 341 to **150**, and what is left is only three things:
+A1/A2/A5 (**upstreamable**, 84 edits' worth, 9 changed lines total) and A4 (fork
+identity, unavoidable, but additive to resolve).
+
+**Source divergence is now 7 files, all one-liners or single bullets:**
+
+```
+core/knowledge/aidlc-devsecops-agent/security-guide.md   A2
+core/tools/aidlc-utility.ts                              A1
+harness/claude/onboarding.fills.ts                       A1
+harness/codex/onboarding.fills.ts                        A1
+harness/kiro/onboarding.fills.ts                         A1
+harness/kiro-ide/onboarding.fills.ts                     A1
+harness/kiro-ide/skills/aidlc/question-rendering.md      A5
+```
+
+`tests/` and `scripts/` are byte-identical to upstream. If A1, A2 and A5 land
+upstream, `core/` and `harness/` go to zero and the fork becomes what it should
+be: `plugins/` plus fork identity.
 
 ## 2. The inventory
 
@@ -182,54 +198,66 @@ grep -rnE '^> \[!(NOTE|IMPORTANT|WARNING|TIP|CAUTION)\] .' --include='*.md' . | 
 Anything it prints is a broken alert. This is the failure mode to expect from
 carrying a heavily-edited prose file: not a merge conflict, a silent reformat.
 
-### A5 — Coverage ratchet entry (1 file)
+### A5 — Chat-rendering rule in the question-rendering annex (1 file) — **upstream-bound**
 
 | | |
 | --- | --- |
-| File | `tests/unit/gen-coverage-registry.test.ts` — one line in `EXPECTED_NONE_TO_CLI` |
-| Class | **A — a consequence of B1, and it disappears with it.** |
-| Why | `tests/unit/t219-kiro-ide-gate-render-floor.test.ts` spawns the adapter under bun, so `mechanismsOf()` derives `cli` for it. That pin is a deliberate manual ratchet; an unregistered spawning test reds the suite. |
-| On conflict | Take upstream's array, re-insert our one line. Upstream appends to this array most releases, so expect this row to conflict often and resolve trivially. |
+| File | `harness/kiro-ide/skills/aidlc/question-rendering.md` — one 8-line bullet at the head of `Rules:` |
+| Class | **B — general, not CDE-specific.** The last survivor of B1 (below), and the part worth keeping. |
+| Upstream | **Offer it.** It is harness-neutral guidance derived from two field failures, it costs upstream nothing, and it removes this row. |
+| On conflict | Additive insertion into a list. Take upstream's file, re-insert the bullet. |
 
-### B1 — Kiro IDE gate-render floor (4 files) — **needs re-implementation, not upstreaming**
+States that writing a gate to the questions *file* is the audit record and not the
+presentation, so parking a turn on a bare "waiting for you" line without the
+numbered options in that same chat message is a protocol violation. Observed twice
+in the field: the user was asked to "reply with a number" they had never been
+shown.
+
+The rule is prose the conductor reads, and it stands on its own — nothing verifies
+it, because the IDE hands the Stop hook no transcript. That was exactly B1's
+premise, and B1's answer (a hook that blocks) turned out not to be available. The
+rule outlived the mechanism.
+
+### ~~B1 — Kiro IDE gate-render floor~~ — **DELETED 2026-08-01**
 
 | | |
 | --- | --- |
-| Files | `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` (+147) · `harness/kiro-ide/skills/aidlc/question-rendering.md` (+8) · `tests/unit/t219-kiro-ide-gate-render-floor.test.ts` (+230, new) · `docs/guide/harnesses/kiro-ide.md` |
+| Was | `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` (+145) · `harness/kiro-ide/skills/aidlc/question-rendering.md` (+8) · `tests/unit/t219-kiro-ide-gate-render-floor.test.ts` (+230) · `tests/unit/gen-coverage-registry.test.ts` (+3) · `docs/guide/harnesses/kiro-ide.md` — 386 lines |
 | Commits | `fa2d9b63` (2.5.8), `fdb56a7a` (2.5.9) |
-| Class | **B — should not be a fork divergence at all — but see the defect below.** |
+| Outcome | Removed. All five files are byte-identical to upstream again, except the annex bullet retained as A5. |
 
-The problem it addresses is real and general, not CDE-specific: the IDE gives the
-Stop hook no transcript, so nothing verifies that an approval gate's options were
-actually rendered in chat. Every Kiro IDE user of AI-DLC has this.
-
-**The mechanism, however, does not work on IDE 1.x.** The floor returns
-`{"decision":"block"}` from the `stop` adapter path, which was written against
-the pre-1.0 `agentStop` contract. The 2.5.30 merge brought in upstream's v2 hook
-descriptor, which states the case plainly:
+**Why it was deleted rather than rewritten.** The floor returned
+`{"decision":"block"}` from the `stop` adapter path, written against the pre-1.0
+`agentStop` contract. Upstream's v2 hook descriptor states the case plainly:
 
 > advisory-only: the IDE's Stop trigger cannot block; enforcement relies on the
 > conductor's own Stop protocol
 >
 > — `dist/kiro-ide/.kiro/hooks/aidlc-stop.json`
 
-So the floor is **inert** on IDE ≥1.0. Submitting it upstream as-is would be
-submitting a no-op, and that is why the prepared branch in §6 was abandoned.
+So it was inert on any IDE ≥1.0 — which is every current build — and had been
+since the fork shipped it.
 
-**The action is a rewrite, not a submission.** Either move the check to a trigger
-that can actually block — `PreToolUse` and `UserPromptSubmit` both honour
-`exit 2` on the v2 channel, which this fork verified directly (see
-`docs/reference/kiro-ide-hook-payload.md`) — or delete the floor and rely on the
-conductor's Stop protocol as upstream does. Until one of those happens, this row
-is dead weight that still costs a 147-line conflict in the enforcement path every
-release, and `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` is a file upstream
-edits actively (the 2.5.30 merge conflicted here again).
+Migrating it to a trigger that *can* block does not work either, and the reason is
+worth recording because it is easy to miss. `PreToolUse` and `UserPromptSubmit` do
+honour `exit 2` on the v2 channel (this fork verified that directly — see
+`docs/reference/kiro-ide-hook-payload.md`). But the floor's question is *"is this
+turn ending with an unrendered gate?"*, and that is only answerable at
+end-of-turn. At `PreToolUse` the turn has not ended; at `UserPromptSubmit` the
+user has already been shown — or not shown — the gate and has replied to
+something they could not see. The timing is inverted, so a migration is a
+redesign, not a move. If hard enforcement is genuinely wanted it belongs upstream
+as a designed feature (a marker written when the gate is recorded, checked on the
+*next* `UserPromptSubmit`), not as a fork patch in the enforcement spine.
 
-Note also that `tests/unit/t219-kiro-ide-gate-render-floor.test.ts` now collides
-with upstream's `tests/unit/t219-claude-project-dir-quoting.test.ts` in the same
-tier. Harmless — the repo already carries same-tier `t125` and `t205` duplicates
-— but it makes `bun test tests/unit/t219*` ambiguous. Renumber if the floor
-survives the rewrite.
+**What it cost while it existed.** 386 lines, 49 upstream edits of exposure across
+its files over 60 days, the only high-severity conflict in this table (145 lines
+in `aidlc-kiro-adapter.ts`, a file upstream edits actively — it conflicted in both
+the 2.5.30 and 2.5.33 syncs), a `gen-coverage-registry` ratchet line that was red
+on the fork from 2.5.8 until 2026-08-01, a `t219` filename collision with
+upstream's own `t219-claude-project-dir-quoting.test.ts`, and — via the core
+version bump it forced — the un-freezing of the version line that became 65% of
+the fork's total conflict surface. See §7.
 
 ## 3. `dist/` is generated — never merge it
 
@@ -319,42 +347,42 @@ comm -12 \
 The second command is the one that matters. Anything it prints and this document
 does not explain is an undocumented divergence — add a row.
 
-## 6. Prepared upstream submission (B1) — **withdrawn**
+## 6. How to submit a row upstream
 
-> [!WARNING]
-> **Do not submit this.** The branch described below was off `9f914544`, which the
-> 2.5.30 merge superseded, and more importantly the floor it carries is inert on
-> IDE ≥1.0 — see B1. It was **deleted 2026-08-01** (`upstream/kiro-ide-gate-render-floor`,
-> local-only, last at `44d89644`; recoverable from the reflog if ever needed, though
-> nothing on it is unique — the floor itself and its test are both on `main`, and
-> its one commit was purely a re-packaging for submission). The remainder of this
-> section is kept only as the recipe for hand-assembling *some future* submission
-> off a fork commit, since the mechanics (strip the version bump, strip the plugin
-> edits, regenerate `dist/`) apply to any B-class row.
+Upstreaming is the only action on this table that makes divergence go *down*.
+Everything else just manages it. **A1, A2 and A5 are the open candidates** — 9
+changed lines across 7 files, worth 84 upstream edits of exposure over 60 days.
 
-The two local commits are **not** cherry-pickable as-is: both also bump
-`core/tools/aidlc-version.ts` plus five `dist/*/tools/aidlc-version.ts` copies,
-edit `CHANGELOG.md` and `README.md` (fork-specific), and `fa2d9b63` additionally
-touches `plugins/poc-accelerator/tests/plugin.test.ts` — a plugin that does not
-exist upstream, for an unrelated biome lint fix.
+**Never cherry-pick a fork commit.** Fork commits are contaminated by design: the
+old ones bump `core/tools/aidlc-version.ts` plus five `dist/*/tools/aidlc-version.ts`
+copies, edit `CHANGELOG.md` and `README.md`, and some also touch `plugins/`, which
+does not exist upstream. Hand-assemble instead:
 
-Hand-assemble instead. Take exactly four files onto a branch off `github/v2`:
-
-```
-harness/kiro-ide/hooks/aidlc-kiro-adapter.ts
-harness/kiro-ide/skills/aidlc/question-rendering.md
-tests/unit/t219-kiro-ide-gate-render-floor.test.ts
-docs/guide/harnesses/kiro-ide.md
+```bash
+git switch -c upstream/<topic> github/v2      # branch off upstream tip, not the fork
+git checkout <fork-ref> -- <only the files that row owns>
+bun scripts/package.ts                        # regenerate dist/ from upstream + the change
+bun run check && bun tests/run-tests.ts --smoke --unit
 ```
 
-Then `bun scripts/package.ts` to regenerate `dist/kiro-ide/`, and leave the
-version bump and CHANGELOG entry to upstream's own release process. Drop
-everything else.
+Then drop everything else, and leave the version bump and the `CHANGELOG.md` entry
+to upstream's own release process — under A3 the fork has no version to bump
+anyway.
 
-Once a B row lands upstream, delete it from §2 and re-run §5. If B1 is resolved
-either way — rewritten and upstreamed, or deleted — the fork's `harness/`
-divergence falls to the four `onboarding.fills.ts` one-liners, and A5 goes with
-it.
+**Check upstream tip first, every time.** Upstream ships ~1.6 releases/day. At the
+2.5.33 sync a hand-written `t89` fixture fix was completed and then thrown away
+because upstream had shipped the identical five files and two assertions in the
+meantime. `git fetch` before you write anything.
+
+Once a row lands upstream, delete it from §2 and re-derive §1 with §5. If A1, A2
+and A5 all land, `core/` and `harness/` divergence goes to **zero** and the fork
+reduces to `plugins/` plus the A4 identity files — the shape §7 argues it should
+have had all along.
+
+**A note on `dist/` in a submission.** Regenerating is mandatory (upstream's own
+drift guard fails otherwise) but it inflates the diff. That is expected and
+correct: upstream commits `dist/` too, and `package.ts --check` is what proves the
+generated trees match the source you changed.
 
 ## 7. What the merges taught us
 
@@ -383,6 +411,14 @@ one). And it does not work on IDE ≥1.0.
 escapes `plugins/` is much more expensive than it looks*, because it can drag
 policy obligations behind it that outlive the change itself. Price that in before
 accepting a core edit, and prefer offering it upstream.
+
+B1 was deleted the same day (§2), keeping only the 8-line prose rule as A5. What
+survived is worth noticing: the *rule* was correct and general — chat rendering is
+mandatory before parking a turn, derived from two real field failures — and only
+the *enforcement mechanism* was unavailable. 386 lines of machinery reduced to 8
+lines of prose that say the same thing to the only reader who can act on it. When
+a hook cannot verify something, the honest form is an instruction, not a hook that
+looks like it verifies.
 
 **Fixing a red test can be the wrong move — check whether upstream already did.**
 `t89`'s 13 failures were a genuine upstream fixture gap, so the fix was written
