@@ -138,6 +138,21 @@ line. See §7.
 | Upstream | No. `Config` and `/build` are GitFarm/Brazil artefacts; `.refer` is our scratch directory; the plugins section is about plugins upstream does not ship. The Chinese READMEs are arguably offerable but would then need upstream maintenance. |
 | On conflict | Keep ours, additively. `README.md` and `AGENTS.md` are the two upstream also edits: take upstream's body and re-apply our section, the same shape as A1. `CHANGELOG.fork.md` can never conflict — nothing upstream has that path. |
 
+**Watch for formatter damage in this row.** At the 2026-08-01 sync, all 8 GitHub
+alert blocks in `README.md` were collapsed to a single line
+(`> [!NOTE] text…` instead of `> [!NOTE]` then `> text…`), which silently
+degrades them to plain blockquotes. Upstream had all 7 of its own correctly
+formed, so this was fork-side damage — plus 2 more in `README.zh-CN.md` and 2
+each in the `knowledge-plugin` READMEs, 14 in total. Fixed in that sync. The
+check is one line:
+
+```bash
+grep -rnE '^> \[!(NOTE|IMPORTANT|WARNING|TIP|CAUTION)\] .' --include='*.md' . | grep -v node_modules
+```
+
+Anything it prints is a broken alert. This is the failure mode to expect from
+carrying a heavily-edited prose file: not a merge conflict, a silent reformat.
+
 ### A5 — Coverage ratchet entry (1 file)
 
 | | |

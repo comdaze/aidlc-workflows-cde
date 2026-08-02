@@ -68,7 +68,8 @@ AIDLC_PLUGIN_ROOT="$PLUGIN_ROOT" AIDLC_PROJECT_DIR="<project>" \
   AIDLC_HARNESS_DIR=.kiro bun "$PLUGIN_ROOT/hooks/compose.ts"
 ```
 
-> [!IMPORTANT] 必须**先**装框架。当 `<project>/<harness-dir>/tools/aidlc-graph.ts`
+> [!IMPORTANT]
+> 必须**先**装框架。当 `<project>/<harness-dir>/tools/aidlc-graph.ts`
 > 不存在时，composer 直接返回——不报错，也不写健康记录——因为它要用**已安装引擎**的
 > schema 校验插件的每个 stage，才决定拷不拷。compose 是幂等的，顺序错了只需补上框架
 > 再跑一次。
@@ -112,7 +113,8 @@ scope（见下），以及——因为该 stage 被排在 inception 的**最后*
 是 Comprehensive、门最密。（只有 `bugfix` / `feature` / `mvp` / `security-patch` 声明了
 `runner: true`，所以没有 `/aidlc-enterprise` 快捷入口，用 `/aidlc --scope enterprise`。）
 
-> [!IMPORTANT] **活跃 workflow 的 scope 压过一切，`--scope` 覆盖不了。**
+> [!IMPORTANT]
+> **活跃 workflow 的 scope 压过一切，`--scope` 覆盖不了。**
 > scope 优先级是：活跃的 `aidlc-state.md` → `--scope` 标志 → `AWS_AIDLC_DEFAULT_SCOPE`
 > 环境变量 → `feature`。所以只要有一个 `poc` scope 的活跃 workflow，**任何**入口都会被
 > 拒——包括 `/knowledge-plugin-bootstrap` 和显式的 `--scope feature`：

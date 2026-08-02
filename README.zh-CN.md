@@ -2,7 +2,8 @@
 
 [English](README.md) | **中文**
 
-> [!WARNING] **GA Preview——积极开发中。** 接口、stage 定义、agent 阵容与安装模型仍在 演进，版本之间可能有破坏性变更。依赖它的场景请钉住已知可用的版本，并 审阅所有生成产出。已交付/进行中/规划中的内容见 [roadmap](docs/roadmap.md)。
+> [!WARNING]
+> **GA Preview——积极开发中。** 接口、stage 定义、agent 阵容与安装模型仍在 演进，版本之间可能有破坏性变更。依赖它的场景请钉住已知可用的版本，并 审阅所有生成产出。已交付/进行中/规划中的内容见 [roadmap](docs/roadmap.md)。
 
 **AI-DLC 方法论**（AI-Driven Development Life Cycle）的原生实现，一份源码 运行在多个 harness 上——Claude Code、Kiro IDE、Kiro CLI、Codex CLI。11 个 领域专家 agent 走 32 阶段工作流，每道审批门由你把关。
 
@@ -43,7 +44,8 @@
 
 **第 1 步——先装框架。** 按 [Pick your harness](README.md#pick-your-harness) 把 `dist/<harness>/` 拷进 `<project>/`。项目已有 AI-DLC 安装则跳过。
 
-> [!IMPORTANT] 框架是硬前置，而且顺序搞错会**静默失败**。当 `<project>/<harness-dir>/tools/aidlc-graph.ts` 不存在时，composer 直接返回——不报错，也不写健康记录——因为它要用**已安装引擎**自己的 schema 与 agent 名册校验插件的每个 stage，才决定拷不拷。compose 是幂等的，所以顺序错了只需补上框架再跑一次。
+> [!IMPORTANT]
+> 框架是硬前置，而且顺序搞错会**静默失败**。当 `<project>/<harness-dir>/tools/aidlc-graph.ts` 不存在时，composer 直接返回——不报错，也不写健康记录——因为它要用**已安装引擎**自己的 schema 与 agent 名册校验插件的每个 stage，才决定拷不拷。compose 是幂等的，所以顺序错了只需补上框架再跑一次。
 
 **第 2 步——compose 插件。** 无需预拷贝：composer 从 `AIDLC_PLUGIN_ROOT` 读取，只写进 `<project>/<harness-dir>/`。
 
