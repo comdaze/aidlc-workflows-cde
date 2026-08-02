@@ -1235,6 +1235,98 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
     }
   }
 
+  // 3b. Kiro IDE hook REGISTRATION — is the host actually told to run them?
+  //
+  // The probes above confirm the hook BODIES exist. Nothing confirmed the host
+  // is wired to invoke any of them, and that gap is not theoretical: Kiro IDE
+  // >= 1.0.1xx silently stopped executing the legacy `.kiro/hooks/*.kiro.hook`
+  // format. An install carrying only those files fires NOTHING — no audit rows,
+  // no sensor dispatch, no human-presence mint, no approval-gate block — while
+  // every check above still reports green, because the .ts files are all
+  // present. A dead hook layer has to be visible from the CLI, not only from the
+  // IDE's Agent Hooks panel.
+  //
+  // Kiro CLI shares this harness dir but wires hooks through agents/aidlc.json
+  // and ships no registration files at all, so the block below must not fire for
+  // it. An IDE install is identified by `steering/` (present only in the IDE
+  // tree) or by carrying registration files of either generation.
+  if (harness === ".kiro") {
+    const hooksDir = join(projectDir, harness, "hooks");
+    const hookEntries = existsSync(hooksDir) ? readdirSync(hooksDir) : [];
+    const v2Files = hookEntries.filter((f) => f.endsWith(".json"));
+    const legacyFiles = hookEntries.filter((f) => f.endsWith(".kiro.hook"));
+    const looksLikeIde =
+      existsSync(join(projectDir, harness, "steering")) ||
+      v2Files.length + legacyFiles.length > 0;
+
+    if (looksLikeIde) {
+      const counts =
+        `${v2Files.length} v2 \`.json\`` +
+        (legacyFiles.length > 0 ? `, ${legacyFiles.length} legacy \`.kiro.hook\`` : "");
+      results.push({
+        pass: v2Files.length > 0,
+        label: `Kiro IDE hook registration (${counts})`,
+        fix:
+          "the legacy `.kiro.hook` format is INERT on Kiro IDE >= 1.0.1xx, so this " +
+          "install's hooks never fire — copy the `.kiro/hooks/*.json` files from " +
+          "`dist/kiro-ide/.kiro/hooks/`",
+      });
+
+      // Every registered command must resolve on disk. A hook whose script is
+      // missing is registered-but-broken, which the panel cannot tell you.
+      const unresolved: string[] = [];
+      for (const file of v2Files) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(readFileSync(join(hooksDir, file), "utf-8"));
+        } catch {
+          unresolved.push(`${file} (unparseable)`);
+          continue;
+        }
+        const hooks = (parsed as { hooks?: unknown }).hooks;
+        if (!Array.isArray(hooks)) {
+          unresolved.push(`${file} (no \`hooks\` array)`);
+          continue;
+        }
+        for (const entry of hooks) {
+          const command = (entry as { action?: { command?: unknown } }).action?.command;
+          if (typeof command !== "string") continue;
+          // A registered command looks like
+          // `bun <harness>/hooks/aidlc-kiro-adapter.ts block`; the script is the
+          // first project-relative token, resolved against the project root,
+          // since that is the cwd the host runs the command in. (Spelled with a
+          // placeholder, not a literal harness dir: t153 forbids a hardcoded
+          // `bun .kiro/…` fragment anywhere in core, comments included.)
+          const script = command.split(/\s+/).find((t) => t.endsWith(".ts"));
+          if (script && !existsSync(join(projectDir, script))) {
+            unresolved.push(`${file} -> ${script}`);
+          }
+        }
+      }
+      results.push({
+        pass: unresolved.length === 0,
+        label:
+          unresolved.length === 0
+            ? "Kiro IDE hook commands: every registered script resolves"
+            : `Kiro IDE hook commands: ${unresolved.length} unresolved (${unresolved.join(", ")})`,
+        fix: "re-copy `dist/kiro-ide/.kiro/hooks/` — a registered hook whose script is missing fails silently",
+      });
+
+      // Both generations installed is the shipped default (the legacy files are
+      // there for pre-1.0 IDEs). Say so, because the IDE offers to "migrate"
+      // them and doing that duplicates hooks this install already registers.
+      if (v2Files.length > 0 && legacyFiles.length > 0) {
+        results.push({
+          pass: true,
+          label:
+            `Legacy hook files: ${legacyFiles.length} present alongside v2 (inert on IDE >= 1.0) — ` +
+            "do NOT use the IDE's \"Migrate legacy hooks\" button; it would duplicate " +
+            "already-registered hooks. Delete them if you are not on a pre-1.0 IDE",
+        });
+      }
+    }
+  }
+
   // 4. Harness wiring config present. Claude Code: settings.json (hooks +
   // permissions live there). Kiro CLI: the aidlc agent config (hooks +
   // permissions live there) plus settings/cli.json (activation). Codex CLI:

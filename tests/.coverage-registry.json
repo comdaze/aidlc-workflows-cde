@@ -5235,6 +5235,10 @@
           "mechanism": "cli"
         },
         {
+          "file": "tests/unit/t259-doctor-ide-hook-registration.test.ts",
+          "mechanism": "cli"
+        },
+        {
           "file": "tests/unit/t27.test.ts",
           "mechanism": "cli"
         },

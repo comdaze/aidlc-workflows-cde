@@ -33,6 +33,27 @@ CDE-specific work. This restores the policy the fork already had at
 Entries below are keyed by date and by the upstream version the fork was
 sitting on, not by a fork version number.
 
+## 2026-08-02 (doctor) — on upstream 2.5.33
+
+**`--doctor` now tells you when your Kiro IDE hook layer is dead.** It used to
+check only that the hook `.ts` bodies existed, never that the IDE was wired to run
+any of them — which is why this fork shipped an inert hook layer for months while
+`--doctor` stayed green. Three new rows on a Kiro IDE install:
+
+* **Hook registration** — fails if `.kiro/hooks/` has legacy `*.kiro.hook` files
+  but no v2 `*.json`. That combination fires nothing on Kiro IDE ≥ 1.0.1xx: no
+  audit rows, no sensor dispatch, no human-presence mint, no approval-gate block.
+* **Hook commands** — fails if a registered hook's script is missing from disk. A
+  registered-but-broken hook is invisible in the IDE's panel.
+* **Legacy files advisory** — when both generations are present (the shipped
+  default), says so, and warns **not** to use the IDE's "Migrate legacy hooks"
+  button: it would duplicate hooks this install already registers.
+
+Kiro CLI shares the `.kiro` directory but wires hooks through `agents/aidlc.json`
+and ships no registration files, so none of these rows appear for it.
+
+Submitted upstream — the gap is general, not CDE-specific.
+
 ## 2026-08-02 (latest) — on upstream 2.5.33
 
 **Plugin documentation moved out of `README.md` into a new [`PLUGINS.md`](PLUGINS.md).**
