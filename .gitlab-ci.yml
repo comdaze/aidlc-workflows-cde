@@ -24,6 +24,31 @@
 # image to clone, and the changelog guard shells out to `git show`.
 image: oven/bun:1.3.14-debian
 
+# WHEN A PIPELINE IS CREATED AT ALL.
+#
+# This block is load-bearing, not decoration. Every job below is gated to an MR
+# event, `main`, a schedule, or a manual run — so a plain push to a topic branch
+# with no open MR matches NOTHING. Without a `workflow:` block GitLab still
+# creates the pipeline, finds zero jobs, and marks it FAILED. The notification
+# email then says "Pipeline #N has failed!" and, giving the game away, "had 0
+# failed jobs" — nothing failed because nothing ran. That is a false red and it
+# mails the whole project on every push.
+#
+# `workflow:` moves the decision earlier: if no rule here matches, no pipeline is
+# created, so there is nothing to fail and no email.
+workflow:
+  rules:
+    # Never let a branch push and its MR pipeline both run — duplicate pipelines
+    # double the runner cost and double the notifications for one change.
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_COMMIT_BRANCH == "main"
+    # Anything else — a topic branch push with no MR — gets no pipeline.
+    - when: never
+
 variables:
   # Full history. The changelog guard diffs against the MR's base commit, and
   # upstream-drift needs enough history to find a merge base with github/v2.
