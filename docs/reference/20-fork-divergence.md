@@ -365,9 +365,21 @@ bun scripts/package.ts                        # regenerate dist/ from upstream +
 bun run check && bun tests/run-tests.ts --smoke --unit
 ```
 
-Then drop everything else, and leave the version bump and the `CHANGELOG.md` entry
-to upstream's own release process — under A3 the fork has no version to bump
-anyway.
+Then drop everything else — including anything the row does not own. A fork commit
+usually carries unrelated `plugins/` or fork-identity edits.
+
+> [!IMPORTANT]
+> **A submission DOES bump the version, even though the fork never does.** A3
+> freezes the version *for the fork*; it says nothing about upstream's rules.
+> Upstream's `CONTRIBUTING.md` PR checklist requires that a user-visible change
+> bump `core/tools/aidlc-version.ts`, move the README badge, and add a matching
+> `## [X.Y.Z] - YYYY-MM-DD` entry to `CHANGELOG.md` in the same commit — and their
+> `t68` enforces all three agreeing. Submitting without them fails their CI.
+>
+> Expect to re-bump on review: at ~1.6 releases/day, upstream will very likely
+> ship your patch number before merging. That is normal there and their own
+> `AGENTS.md` documents the rebase-and-re-bump resolution. Say so in the PR body
+> so a reviewer knows you will follow up.
 
 **Check upstream tip first, every time.** Upstream ships ~1.6 releases/day. At the
 2.5.33 sync a hand-written `t89` fixture fix was completed and then thrown away
