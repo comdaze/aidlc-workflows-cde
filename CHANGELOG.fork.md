@@ -1,8 +1,17 @@
 # Fork changelog
 
-This is the **CDE fork's** own changelog. `CHANGELOG.md` belongs to upstream
-`awslabs/aidlc-workflows` and is taken byte-for-byte on every sync — see the
-frozen-version policy in `docs/reference/20-fork-divergence.md` A3.
+This is the **CDE fork's** own changelog, and the only place fork release notes
+are added from 2026-08-01 onward. `CHANGELOG.md` belongs to upstream
+`awslabs/aidlc-workflows`: the fork takes upstream's entries as they are and adds
+none of its own — see the frozen-version policy in
+`docs/reference/20-fork-divergence.md` A3.
+
+One historical exception lives in `CHANGELOG.md` rather than here: the 16 entries
+`## [2.3.11]` through `## [2.3.26]`, published by the fork before this policy
+existed. They stay where they are — the block is inert, upstream only appends at
+the top of that file, and moving them would rewrite already-published history for
+no gain. Do not resolve `CHANGELOG.md` with `git checkout --theirs` or you will
+delete them.
 
 **Why a separate file.** The fork used to bump `core/tools/aidlc-version.ts`,
 add its own `## [N.N.N]` heading to `CHANGELOG.md`, and move the README badge.

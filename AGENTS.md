@@ -63,7 +63,9 @@ Before merging upstream, read `docs/reference/20-fork-divergence.md` §4 (proced
 
 ## Changelog Policy — this fork freezes the framework version
 
-IMPORTANT: **This fork does NOT bump `core/tools/aidlc-version.ts`, the README badge, or `CHANGELOG.md`.** All three are upstream `awslabs/aidlc-workflows` property and are taken byte-for-byte on every sync. Do not touch them outside a sync merge, and inside a sync merge always resolve them to upstream's side.
+IMPORTANT: **This fork does NOT bump `core/tools/aidlc-version.ts` or the README badge, and never adds a `CHANGELOG.md` entry.** Those are upstream `awslabs/aidlc-workflows` property. Do not touch them outside a sync merge; inside a sync merge, resolve `aidlc-version.ts` and the badge to upstream's side.
+
+`CHANGELOG.md` has one exception, and it is a trap: **never resolve it with `git checkout --theirs`.** The fork published 16 entries before this policy existed (`## [2.3.11]` through `## [2.3.26]`, sitting between upstream's `## [2.4.0]` and `## [2.3.10]`), which upstream never had. Take upstream's new entries at the top and leave that block alone. `scripts/ci-changelog-guard.ts` fails the build if you drop it.
 
 Where the fork's changes go instead:
 

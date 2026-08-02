@@ -104,8 +104,23 @@ Original upstream text, for recognition when re-applying:
 | --- | --- |
 | Files | `core/tools/aidlc-version.ts` · `CHANGELOG.md` · the `README.md` badge |
 | Class | **Was the single largest conflict surface in this table. Now zero.** |
-| Policy | **The fork does not bump any of the three.** All are taken byte-for-byte from upstream on every sync. Fork release notes live in `CHANGELOG.fork.md`; CDE behaviour lives in a plugin and bumps `plugins/<name>/.aidlc-plugin/plugin.json`. |
-| On conflict | Resolve all three to upstream's side, always. No judgement required. |
+| Policy | **The fork does not bump any of the three, and never adds a `CHANGELOG.md` entry.** Fork release notes live in `CHANGELOG.fork.md`; CDE behaviour lives in a plugin and bumps `plugins/<name>/.aidlc-plugin/plugin.json`. |
+| On conflict | `aidlc-version.ts` and the README badge: resolve to upstream's side, always, no judgement. `CHANGELOG.md`: take upstream's new entries at the top and **leave the pre-policy fork block alone** — see the trap below. |
+
+> [!IMPORTANT]
+> **`CHANGELOG.md` is upstream's *plus* one frozen fork block. Do not resolve it with `git checkout --theirs`.**
+> The fork published 16 entries of its own before this policy existed —
+> `## [2.3.11]` through `## [2.3.26]`, the GitFarm-era plugin work — and they sit
+> as a contiguous block between upstream's `## [2.4.0]` and `## [2.3.10]`.
+> Upstream never had those headings, so a wholesale `--theirs` silently deletes
+> 16 entries of fork history. That is exactly what happened at the 2.5.33 sync
+> and `scripts/ci-changelog-guard.ts` is what caught it.
+>
+> The block is inert: it never changes, and upstream only ever appends at the top
+> of the file, so it costs nothing to keep and produces no future conflict. The
+> only hunk that can conflict is the top of the file, and under this policy only
+> upstream writes there — so from here `CHANGELOG.md` should stop conflicting
+> altogether.
 
 This row used to read *"take upstream's number, then re-apply our patch level on
 top"*. That was the wrong instruction, and it was expensive. Measured over 60
