@@ -326,7 +326,7 @@ Anything that reproduces there is upstream's, not yours. As of the 2.5.30 merge
 | `integration/t92` (4) | **Environment.** `tsc` exceeds the 30s per-test timeout on this machine. Reproduces at `d0cd10a6`. |
 | `integration/t66` (2) | **Upstream defect.** Designer-export golden fixture drift. Reproduces at `d0cd10a6`. |
 | `unit/gen-coverage-registry` (1) | **Was ours; fixed.** The A5 ratchet entry was missing. Fixed in the 2.5.31 follow-up. |
-| `integration/t188` | **Flaky, ours.** `beforeEach/afterEach hook timed out` under load; passed clean in the 2.5.31 run. Re-run before believing it. |
+| `integration/t188`, `unit/t248` | **Flaky, environmental.** Both fail as `a beforeEach/afterEach hook timed out` under a loaded parallel run, and both pass standalone — `t248` was confirmed 32/32 both here and on an unmodified `github/v2` worktree. The failing entry is unnamed with no assertion diff, which is the signature: a timed-out hook, not a wrong result. **Re-run the single file before believing either.** Expect the CI `tests` job to go red on these occasionally; that is a retry, not a bug hunt. |
 
 ## 5. Re-deriving this table
 
