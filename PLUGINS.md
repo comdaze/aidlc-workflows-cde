@@ -81,6 +81,16 @@ bun <harness-dir>/tools/aidlc-utility.ts doctor
 bun <harness-dir>/tools/aidlc-utility.ts plugin-list
 ```
 
+> [!WARNING]
+> **Kiro IDE only — do not click "Migrate legacy hooks to v1".** After a framework
+> install the Agent Hooks panel shows 8 live hooks plus 9 struck-through `legacy`
+> ones and offers a Migrate button. The struck-through entries are inert by design
+> (they exist for pre-1.0 IDEs) and migrating them would create a second
+> registration for hooks that are already registered — doubled audit rows, doubled
+> sensor dispatch, two adapter processes per tool call. Delete them instead if you
+> are not on a pre-1.0 IDE: `rm <project>/.kiro/hooks/*.kiro.hook`. Full
+> explanation in the [Kiro IDE harness guide](docs/guide/harnesses/kiro-ide.md#after-installing-do-not-click-migrate-legacy-hooks).
+
 `doctor` reports the enabled plugins and per-plugin enabled-stage counts, and
 surfaces anything the composer dropped — a colliding file, a stage it refused, a
 failed recompile.

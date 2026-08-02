@@ -73,6 +73,43 @@ Open `your-project/` in Kiro IDE. The install ships:
 In the chat panel, run `/aidlc --doctor` to verify the setup, then
 `/aidlc <description>` to start a workflow.
 
+### After installing: do not click "Migrate legacy hooks"
+
+The install ships **both** hook generations — 8 v2 `.json` files and 9 legacy
+`.kiro.hook` files, the latter only for pre-1.0 IDEs. On a 1.x IDE the Agent
+Hooks panel therefore shows the 8 live hooks, then the 9 legacy ones struck
+through, and offers a banner:
+
+```text
+Migrate legacy hooks to v1   [Migrate]
+```
+
+> [!WARNING]
+> **Do not click it.** Migration converts the legacy files into the new format,
+> but the new-format files **already exist** — and both generations use the same
+> `name` values (`aidlc-block`, `aidlc-audit-logger`, …). You would end up with
+> two registrations per hook: doubled audit rows, doubled sensor dispatch,
+> doubled human-presence mint, and two adapter processes per tool call. Doubled
+> audit rows also skew `--doctor`'s orphan and forwarding-loop checks.
+>
+> It is also wrong for one hook specifically: legacy `aidlc-session-end` is
+> registered on `agentStop`, and the v2 schema has **no** session-end trigger.
+> Migration can only map it onto `Stop`, which would run session-teardown on
+> every agent stop instead of at session end. That is why no
+> `aidlc-session-end.json` is shipped.
+
+The struck-through entries are not a problem to fix — they are inert, and the 8
+live hooks above them are the whole functioning layer. If you are not on a
+pre-1.0 IDE you can delete them outright:
+
+```bash
+rm <project>/.kiro/hooks/*.kiro.hook
+```
+
+That clears the banner and the struck-through list with no loss of function.
+`/aidlc --doctor` reports which generations are present and flags the
+legacy-only case, which fires nothing at all on a 1.x IDE.
+
 ## Usage
 
 Identical to the Claude Code harness: `/aidlc <description>` starts a
