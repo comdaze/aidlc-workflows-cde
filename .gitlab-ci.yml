@@ -1,0 +1,155 @@
+# GitLab CI for the CDE fork.
+#
+# WHY THIS FILE EXISTS. The repo inherited .github/workflows/ci.yml from
+# upstream awslabs/aidlc-workflows. That file is GitHub-only — it keys off
+# `github.event.pull_request.base.sha` and the `pull_request` trigger — so on
+# GitLab it does nothing at all. Until this file landed, every guard in the
+# repo (dist byte-parity, typecheck, lint, smoke, unit, the changelog guard)
+# ran only when a human remembered to run it locally. That is how 14 GitHub
+# alert blocks in the READMEs silently degraded to plain blockquotes without
+# anything noticing.
+#
+# Kept deliberately close to the upstream workflow so the two do not drift:
+# same three jobs, same commands, same reasoning. The integration tier is
+# excluded for the same reason upstream excludes it — it drives the live Claude
+# Agent SDK via Bedrock and would either need CI credentials or silently
+# pass-by-skip, so a green run stays meaningful without it. See
+# docs/reference/09-testing.md for the tier map.
+#
+# The fourth job (upstream-drift) has no upstream counterpart: it is the
+# fork-specific one, and it runs on a schedule rather than per-MR. See its
+# comment.
+
+# Debian variant, not the distroless default: GitLab's runner needs git in the
+# image to clone, and the changelog guard shells out to `git show`.
+image: oven/bun:1.3.14-debian
+
+variables:
+  # Full history. The changelog guard diffs against the MR's base commit, and
+  # upstream-drift needs enough history to find a merge base with github/v2.
+  # GitLab shallow-clones by default, which would break both.
+  GIT_DEPTH: "0"
+
+stages:
+  - check
+  - test
+  - drift
+
+default:
+  before_script:
+    - command -v git >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq git; }
+    - bun install --frozen-lockfile
+  # Infrastructure flakes only. A failing assertion is not retried — that would
+  # turn a real intermittent bug into an invisible one.
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+# Run on merge requests into main, and on main itself after a merge.
+.mr_and_main: &mr_and_main
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# `bun run check` = package.ts --check (dist drift guard) && typecheck (all
+# three tsconfigs) && biome with --error-on-warnings. Fails on a hand-edited or
+# stale dist/, a type error, or a lint warning.
+contract-checks:
+  stage: check
+  <<: *mr_and_main
+  script:
+    - bun run check
+
+# smoke + unit are the deterministic, credential-free tiers (no AWS, no
+# Bedrock, no live Claude). The runner exits non-zero on any failed file.
+tests:
+  stage: test
+  <<: *mr_and_main
+  script:
+    - bun tests/run-tests.ts --smoke --unit --parallel 8
+
+# Fail if this MR removes any `## [x.y.z]` heading present on the base commit.
+#
+# This guard matters MORE on this fork than upstream, not less. Under the
+# frozen-version policy (docs/reference/20-fork-divergence.md A3) the fork never
+# adds a heading of its own and always resolves CHANGELOG.md to upstream's side
+# during a sync — so the only way this file can change here is a merge
+# resolution, and a botched one silently drops upstream entries. That is exactly
+# what this catches.
+#
+# CI_MERGE_REQUEST_DIFF_BASE_SHA is GitLab's equivalent of the frozen
+# pull_request.base.sha upstream uses: it is the merge base recorded when the MR
+# diff was computed, so it does not move as main accrues commits while the MR is
+# open. Using origin/main instead would falsely report newer entries as removed
+# on any re-run.
+changelog-guard:
+  stage: check
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - bun scripts/ci-changelog-guard.ts "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+
+# Upstream drift report — the fork-specific job, and the reason the weekly
+# cadence in docs/reference/20-fork-divergence.md is a mechanism rather than a
+# promise.
+#
+# Upstream runs 10-27 commits/week on v2 and roughly 1.6 releases/day, so the
+# question is never "did upstream move" but "how much will this sync cost". This
+# job answers that on a schedule by running the section 5 derivation: how many
+# commits are pending, and which files BOTH sides changed (the actual conflict
+# surface). Read the log, decide whether to spend the session.
+#
+# Advisory by construction: allow_failure means a drift report can never block a
+# merge, and being behind upstream is not a build error. Configure a weekly
+# schedule in Settings > CI/CD > Schedules on the default branch.
+upstream-drift:
+  stage: drift
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+      allow_failure: true
+  allow_failure: true
+  # No bun install: this job reads git and greps Markdown, it never runs the
+  # toolchain. Skipping it keeps the scheduled run cheap.
+  before_script:
+    - command -v git >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq git; }
+  # POSIX sh only, and no bare `test` as a statement: GitLab aborts a script on
+  # the first non-zero exit, so `test -s f && echo` would red the job precisely
+  # when the file is empty (or non-empty, depending which way you write it).
+  # Every conditional below is an explicit if/fi for that reason. Artifacts are
+  # written into the build directory, not /tmp — GitLab cannot collect paths
+  # outside it.
+  script:
+    - git remote add github https://github.com/awslabs/aidlc-workflows 2>/dev/null || true
+    - git fetch github v2 --quiet
+    - B=$(git merge-base HEAD github/v2)
+    - echo "Upstream commits pending: $(git rev-list --count ${B}..github/v2) (merge base ${B})"
+    - git log --oneline "${B}"..github/v2
+    - echo "--- Conflict surface (files BOTH sides changed) ---"
+    - git diff --name-only "${B}"..HEAD      -- core harness tests scripts AGENTS.md README.md CHANGELOG.md | sort > ours.txt
+    - git diff --name-only "${B}"..github/v2 -- core harness tests scripts AGENTS.md README.md CHANGELOG.md | sort > theirs.txt
+    - comm -12 ours.txt theirs.txt > surface.txt
+    - cat surface.txt
+    - |
+      if [ -s surface.txt ]; then
+        echo "Anything above without a row in docs/reference/20-fork-divergence.md section 2 is undocumented divergence — add a row."
+      else
+        echo "No conflict surface. This sync is a plain git merge plus a dist regenerate."
+      fi
+    # A silent reformat is the failure mode this fork actually hits, and it is
+    # not a merge conflict, so no other guard sees it. Cheap to check.
+    - echo "--- Collapsed GitHub alert blocks (must be empty) ---"
+    - |
+      if grep -rnE '^> \[!(NOTE|IMPORTANT|WARNING|TIP|CAUTION)\] .' --include='*.md' . | grep -v node_modules; then
+        echo "FAIL: the alert marker must sit alone on its line or it renders as a plain blockquote."
+        exit 1
+      fi
+    - echo "OK: no collapsed alerts."
+  artifacts:
+    when: always
+    paths:
+      - surface.txt
+    expire_in: 30 days

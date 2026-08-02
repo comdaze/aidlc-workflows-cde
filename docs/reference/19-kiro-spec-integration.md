@@ -197,7 +197,8 @@ Full capture for this round: [research/2026-07-31-kiro-spec-hook-probe.md](resea
 triggers fire per *execution* or only on a status *transition* (§2), still one
 observation.
 
-> [!IMPORTANT] **The path key differs between the two event families, and the
+> [!IMPORTANT]
+> **The path key differs between the two event families, and the
 > core hooks match neither.** Tool events carry `tool_input.path`; file events
 > (`PostFileCreate` / `PostFileSave`) carry a top-level `file_path`. Counted over
 > the captures: 46 × `path` and **0** × `file_path` on tool events, against 41 ×

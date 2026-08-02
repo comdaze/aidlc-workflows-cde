@@ -21,10 +21,24 @@ so re-derive rather than trust — the numbers below are a snapshot.
 releases/day (49 distinct versions in 30 days), so a week is ~14 commits — one
 sitting. A month is 60+ and nobody volunteers for it.
 
-**No CI.** `.github/workflows/ci.yml` is inherited from upstream and does nothing
-here; this repo is on GitLab and has no `.gitlab-ci.yml`. Every guard in §4 only
-runs when a human remembers to run it locally. Until that is fixed, the cadence
-is a promise rather than a mechanism.
+**CI.** `.gitlab-ci.yml` runs the guards on every MR into `main`: contract checks
+(`bun run check` — dist byte-parity, typecheck, lint), the smoke + unit tiers, and
+`scripts/ci-changelog-guard.ts` against `CI_MERGE_REQUEST_DIFF_BASE_SHA`. The
+inherited `.github/workflows/ci.yml` is kept for upstream parity but does nothing
+here — it keys off `github.event.pull_request.base.sha`.
+
+A fourth job, `upstream-drift`, has no upstream counterpart and runs on a
+**schedule** (configure it under Settings → CI/CD → Schedules on `main`). It is
+what makes the weekly cadence a mechanism rather than a promise: it fetches
+`github/v2`, prints how many commits are pending, runs the §5 derivation to print
+the actual conflict surface, and fails on any collapsed GitHub alert block (the
+A4 reformat trap). Advisory by construction — `allow_failure: true`, because being
+behind upstream is not a build error. Read the log, then decide whether to spend
+the session.
+
+Everything before 2026-08-01 ran only when a human remembered. That is how 15
+collapsed alert blocks and a 16-entry `CHANGELOG.md` deletion both got in without
+anything noticing.
 
 ## 1. The shape of the problem
 
