@@ -67,14 +67,14 @@ files this fork diverged on, upstream made 341 edits, distributed like this:
 
 | Upstream edits (60d) | File | Fork's stake |
 | --- | --- | --- |
-| 81 | `README.md` | badge **resolved** (A3); the plugins section remains (A4) |
+| 81 | `README.md` | badge **resolved** (A3); plugins section (A4) + install text (A1, in PR #701) |
 | 72 | `CHANGELOG.md` | **resolved** (A3) — upstream's, plus one inert frozen block |
 | 70 | `core/tools/aidlc-version.ts` | **resolved** (A3) — no longer diverges |
 | 37 | `tests/unit/gen-coverage-registry.test.ts` | **resolved** — the ratchet line went with B1 |
-| 25 | `core/tools/aidlc-utility.ts` | one doctor string (A1) |
+| 25 | `core/tools/aidlc-utility.ts` | one doctor string (A1, in PR #701) |
 | 11 | `AGENTS.md` | the plugins paragraph + the changelog policy (A4) |
 | 8 | `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` | **resolved** — B1 deleted, byte-identical again |
-| 8, 7, 7, 7 | `harness/*/onboarding.fills.ts` | one prereq bullet each (A1) |
+| 8, 7, 7, 7, — | `harness/*/onboarding.fills.ts` (5) | one prereq sentence each (A1, in PR #701) |
 | 4 | `harness/kiro-ide/skills/aidlc/question-rendering.md` | one 8-line rule (A5) |
 | 3 | `.gitignore` | A4 |
 | 1 | `core/knowledge/.../security-guide.md` | one word (A2) |
@@ -82,42 +82,79 @@ files this fork diverged on, upstream made 341 edits, distributed like this:
 The top three were **65% of the fork's entire exposure and none of them was a
 feature** — they were version bookkeeping the fork created for itself. A3 removed
 them; deleting B1 removed 45 more edits' worth, including the only high-severity
-row. Exposure is down from 341 to **150**, and what is left is only three things:
-A1/A2/A5 (**upstreamable**, 84 edits' worth, 9 changed lines total) and A4 (fork
-identity, unavoidable, but additive to resolve).
+row. Exposure is down from 341 to **150**.
 
-**Source divergence is now 7 files, all one-liners or single bullets:**
+What is left is only two kinds of thing:
 
-```
-core/knowledge/aidlc-devsecops-agent/security-guide.md   A2
-core/tools/aidlc-utility.ts                              A1
-harness/claude/onboarding.fills.ts                       A1
-harness/codex/onboarding.fills.ts                        A1
-harness/kiro/onboarding.fills.ts                         A1
-harness/kiro-ide/onboarding.fills.ts                     A1
-harness/kiro-ide/skills/aidlc/question-rendering.md      A5
-```
+- **A1, A2, A5 — upstreamable, and A1 is already submitted** as
+  [#701](https://github.com/awslabs/aidlc-workflows/pull/701). The fork's text is
+  byte-identical to that PR, so A1 self-resolves on merge.
+- **A4 — fork identity.** Unavoidable, but every hunk is additive.
 
-`tests/` and `scripts/` are byte-identical to upstream. If A1, A2 and A5 land
-upstream, `core/` and `harness/` go to zero and the fork becomes what it should
-be: `plugins/` plus fork identity.
+**Fork changes outside `plugins/` and `dist/`, measured against the merge base:**
+
+| Surface | Files | Rows |
+| --- | --- | --- |
+| `docs/` | 14 | A1 (7 files) + fork-authored chapters and research notes |
+| `harness/` | 6 | A1 (5 `onboarding.fills.ts`) + A5 |
+| `core/` | 2 | A1 (`aidlc-utility.ts`) + A2 |
+| root | 8 | A1 (`README.md` install text) + A4 |
+
+`tests/` and `scripts/` are byte-identical to upstream. **Note the measurement
+trap:** diff against `git merge-base HEAD github/v2`, not against `github/v2`. The
+latter also reports files where upstream is merely *ahead* — after the 2.5.33 sync
+that was four `tests/` files and `docs/reference/09-testing.md` from #668, none of
+which the fork has touched at all.
 
 ## 2. The inventory
 
-Twenty-three files outside `plugins/` and `dist/`, but only **six logical
-changes**. Resolve by change, not by file.
+Thirty files outside `plugins/` and `dist/`, but only **four live logical
+changes** (A1, A2, A4, A5 — A3 and B1 are resolved). Resolve by change, not by
+file.
 
-### A1 — Replace `curl | bash` with a package-manager install (5 files)
+### A1 — No piped shell scripts for `bun` / `uv` (13 files) — **submitted upstream**
 
 | | |
 | --- | --- |
-| Files | `core/tools/aidlc-utility.ts` (doctor fix text) · `harness/{claude,codex,kiro,kiro-ide}/onboarding.fills.ts` (prereq bullet) |
-| Class | **A — must diverge.** Internal policy: do not instruct users to pipe a network script into a shell. |
-| Upstream | Optional suggestion, not a blocker. Upstream may well want it; not worth holding a sync for. |
-| On conflict | Keep ours. The change is a self-contained string in each file; if upstream rewrites the surrounding text, re-apply the substitution rather than reverting their edit. |
+| Files | `core/tools/aidlc-utility.ts` (doctor fix hint) · `harness/{claude,codex,kiro,kiro-ide,opencode}/onboarding.fills.ts` · `README.md` · `docs/guide/01-getting-started.md` · `docs/guide/15-troubleshooting.md` · `docs/guide/harnesses/{kiro-cli,kiro-ide}.md` · `docs/reference/{06-hooks-and-tools,11-contributing,14-claude-features}.md` |
+| Class | **A — must diverge until the PR lands.** Internal policy: do not instruct users to pipe a network script into a shell. |
+| Upstream | **Submitted: [awslabs/aidlc-workflows#701](https://github.com/awslabs/aidlc-workflows/pull/701).** The fork's text is byte-identical to that PR, so **A1 disappears from this table the moment it merges** — no follow-up edit needed. |
+| On conflict | Keep ours. Each site is a self-contained sentence; if upstream rewrites the surrounding prose, re-apply the substitution rather than reverting their edit. |
 
-Original upstream text, for recognition when re-applying:
-`install via \`curl -fsSL https://bun.sh/install | bash\``.
+The canonical wording, so every site stays consistent:
+
+```
+bun        brew install bun   /  npm install -g bun     https://bun.com/docs/installation
+uv / uvx   brew install uv    /  pipx install uv        https://docs.astral.sh/uv/getting-started/installation/
+```
+
+`brew install bun` is the homebrew-core spelling. Earlier fork text used the older
+`oven-sh/bun/bun` tap form; both work, but only one matches upstream's PR, and
+matching is what closes the row.
+
+> [!IMPORTANT]
+> **Claude Code's own installer is deliberately left as a piped script.** Anthropic
+> documents the native installer as the recommended path and has *deprecated* npm
+> installation of Claude Code, so replacing it would push readers onto a deprecated
+> method for a tool this project does not own. The policy is applied to the two
+> prerequisites this project asks for — `bun` and `uv` — not to third-party tools
+> whose vendors own the guidance. `brew install --cask claude-code` exists and is
+> already mentioned in `docs/reference/11-contributing.md` if you want it.
+
+**This row was under-applied for months.** It was recorded as 5 files, but the
+policy was only ever satisfied in those 5 — `README.md`, `harness/opencode/`, both
+harness guides, and four reference/guide docs still told the reader to pipe a
+script into a shell. If a row states a *policy* rather than a patch, verify the
+policy holds repo-wide, not just in the files the original commit happened to
+touch:
+
+```bash
+grep -rnE 'bun\.sh/install|astral\.sh/uv/install|irm bun\.sh' \
+  --include='*.ts' --include='*.md' core harness docs README.md
+```
+
+Anything it prints is a gap. (It also matches the recognition snippet in this
+chapter, which is the one legitimate hit.)
 
 ### A2 — Inclusive-language fix in the security guide (1 file)
 
@@ -326,7 +363,7 @@ Anything that reproduces there is upstream's, not yours. As of the 2.5.30 merge
 | `integration/t92` (4) | **Environment.** `tsc` exceeds the 30s per-test timeout on this machine. Reproduces at `d0cd10a6`. |
 | `integration/t66` (2) | **Upstream defect.** Designer-export golden fixture drift. Reproduces at `d0cd10a6`. |
 | `unit/gen-coverage-registry` (1) | **Was ours; fixed.** The A5 ratchet entry was missing. Fixed in the 2.5.31 follow-up. |
-| `integration/t188`, `unit/t248` | **Flaky, environmental.** Both fail as `a beforeEach/afterEach hook timed out` under a loaded parallel run, and both pass standalone — `t248` was confirmed 32/32 both here and on an unmodified `github/v2` worktree. The failing entry is unnamed with no assertion diff, which is the signature: a timed-out hook, not a wrong result. **Re-run the single file before believing either.** Expect the CI `tests` job to go red on these occasionally; that is a retry, not a bug hunt. |
+| **Timeout flakes (a whole class, not a list)** | **Environmental.** Any test that spawns a subprocess — a tool, a hook, `run-tests` itself — can exceed its per-test or hook timeout when the tier runs `--parallel 8` on a loaded machine. Observed on `integration/t188`, `unit/t248`, `smoke/t05`, `unit/t150` in a single afternoon; every one passed standalone, and `t248` and `t05` were confirmed green on an unmodified `github/v2` worktree too. **Signature:** the message says `timed out after <n>ms` or `a beforeEach/afterEach hook timed out`, and there is **no assertion diff** — no `Expected`/`Received`. A real failure always prints one. **Re-run the single file before investigating.** Expect the CI `tests` job to go red on these occasionally; that is a retry, not a bug hunt. If it becomes frequent, lower `--parallel` rather than raising timeouts. |
 
 ## 5. Re-deriving this table
 
@@ -390,6 +427,17 @@ Once a row lands upstream, delete it from §2 and re-derive §1 with §5. If A1,
 and A5 all land, `core/` and `harness/` divergence goes to **zero** and the fork
 reduces to `plugins/` plus the A4 identity files — the shape §7 argues it should
 have had all along.
+
+**Open submissions.** A1 is [#701](https://github.com/awslabs/aidlc-workflows/pull/701).
+A2 (one word, inclusive language) and A5 (one 8-line rule) are still unsent and
+should go as separate PRs — they are unrelated concerns and bundling them would
+give a reviewer three reasons to hesitate instead of one to agree.
+
+**Make the fork's text byte-identical to the submission.** This is the step that
+actually closes a row. If the fork keeps its own phrasing while the PR carries
+different phrasing, the divergence survives the merge and you get to resolve it
+again by hand. A1 was brought into line with #701 before the PR was opened, so a
+merge erases the row with no follow-up edit.
 
 **A note on `dist/` in a submission.** Regenerating is mandatory (upstream's own
 drift guard fails otherwise) but it inflates the diff. That is expected and

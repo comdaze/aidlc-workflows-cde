@@ -33,6 +33,40 @@ CDE-specific work. This restores the policy the fork already had at
 Entries below are keyed by date and by the upstream version the fork was
 sitting on, not by a fork version number.
 
+## 2026-08-02 (later) — on upstream 2.5.33
+
+**Installing `bun` and `uv` no longer requires piping a network script into a
+shell, anywhere in the docs.** The fork's internal policy said this already, but
+it was only ever applied in 5 files — `README.md`, `harness/opencode/`, both
+harness guides, and four guide/reference chapters still told you to run
+`curl … | bash`. Now all 13 sites use a package manager:
+
+| Tool | Documented now |
+| --- | --- |
+| `bun` | `brew install bun` / `npm install -g bun` |
+| `uv` / `uvx` | `brew install uv` / `pipx install uv` |
+
+Each site links the vendor's installation guide for the other methods. Commands
+were verified against the Homebrew API: formula `bun` is in homebrew-core at
+1.3.14, which is the version this repo pins for CI. Note `brew install bun` is the
+homebrew-core spelling — earlier fork text used the older `oven-sh/bun/bun` tap
+form.
+
+**Claude Code's own installer is deliberately unchanged.** Anthropic documents the
+native installer as the recommended path and has deprecated npm installation of
+Claude Code, so replacing it would push you onto a deprecated method for a tool
+this project does not own.
+
+Two sentences that went stale with the change were also fixed: the README no
+longer tells you to choose between PowerShell and CMD blocks that no longer exist,
+and the PATH tip no longer blames "the bun installer" for writing to `~/.zshrc`
+when a package manager is now the documented path.
+
+Submitted upstream as
+[awslabs/aidlc-workflows#701](https://github.com/awslabs/aidlc-workflows/pull/701),
+with the fork's text made **byte-identical to the PR** — so if it merges, this
+divergence disappears on the next sync with no follow-up edit.
+
 ## 2026-08-02 — on upstream 2.5.33
 
 **Removed the Kiro IDE gate-render floor.** It returned `{"decision":"block"}`
