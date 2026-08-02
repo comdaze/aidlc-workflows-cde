@@ -108,7 +108,9 @@ This implementation declares its MCP servers in `.mcp.json` at the project root 
 The four AWS servers launch through `uvx`. Install `uv`/`uvx` once:
 
 ```bash
-curl -fsSL https://astral.sh/uv/install.sh | sh
+brew install uv                              # macOS / Linux with Homebrew
+pipx install uv                              # or any Python environment
+curl -fsSL https://astral.sh/uv/install.sh | sh   # or Astral's own installer
 ```
 
 `context7` is an HTTP server and needs no local install. To use it, export an API key:
@@ -253,7 +255,7 @@ Run the health check to confirm everything is in place:
 
 | Failure | Fix |
 |---------|-----|
-| `bun` not installed | Install via `curl -fsSL https://bun.sh/install \| bash`. On Windows: `npm install -g bun` or `powershell -c "irm bun.sh/install.ps1 \| iex"`. Ensure it is on PATH for non-interactive shells. |
+| `bun` not installed | Install via `brew install bun` or `npm install -g bun`, or with bun's own installer `curl -fsSL https://bun.sh/install \| bash`. On Windows: `npm install -g bun` or `powershell -c "irm bun.sh/install.ps1 \| iex"`. Ensure it is on PATH for non-interactive shells. |
 | Hook not present | Re-copy the `.claude/` directory from the distribution |
 | `settings.json` missing | Re-copy from the distribution: `cp dist/claude/.claude/settings.json .claude/settings.json` |
 | Workspace shell missing | Re-copy the workspace shell from `dist/claude/` into your project root |

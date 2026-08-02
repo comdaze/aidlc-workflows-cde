@@ -11,7 +11,7 @@ A native implementation of the **AI-DLC methodology** (AI-Driven Development Lif
 
 The methodology lives once, in a harness-neutral `core/`; each harness adds a thin surface that decides how it shows up on that harness. So you edit the methodology in one place, and every harness distribution is generated from it — no harness gets special treatment. (See [Repository layout](#repository-layout) for how the pieces fit together.)
 
-![version](https://img.shields.io/badge/version-2.5.33-blue)
+![version](https://img.shields.io/badge/version-2.5.34-blue)
 ![license](https://img.shields.io/badge/license-MIT--0-green)
 ![Kiro IDE](https://img.shields.io/badge/harness-Kiro%20IDE-orange)
 ![Kiro CLI](https://img.shields.io/badge/harness-Kiro%20CLI-orange)
@@ -73,6 +73,15 @@ This release works better with `Claude Opus 4.8`. We are sharpening it for previ
 ### Prerequisites (every harness)
 
 Every harness runs the same TypeScript hooks and CLI tools through **bun**, so install bun first — it's the one requirement they all share.
+
+From a package manager, on any platform:
+
+```bash
+brew install bun          # macOS / Linux with Homebrew
+npm install -g bun        # anywhere Node.js is already present
+```
+
+Or with bun's own installer:
 
 ```bash
 # macOS / Linux
@@ -170,8 +179,14 @@ The install ships `.kiro/settings/cli.json` with `chat.defaultAgent` set to `aid
 **1. Install Claude Code**
 
 ```bash
-# macOS / Linux (native install — recommended; auto-updates)
+# macOS / Linux (native install — Anthropic's recommended path; auto-updates)
 curl -fsSL https://claude.ai/install.sh | bash
+```
+
+```bash
+# macOS / Linux with Homebrew, if you'd rather not pipe a script into a shell
+# (does not auto-update — use `brew upgrade --cask claude-code`)
+brew install --cask claude-code
 ```
 
 ```powershell
