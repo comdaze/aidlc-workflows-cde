@@ -215,10 +215,40 @@ line. See §7.
 
 | | |
 | --- | --- |
-| Files | `README.md` (+177/−65: the plugins section, the install walkthrough, the 中文 link) · `README.zh-CN.md` (new) · `AGENTS.md` (the plugins paragraph + the A3 changelog policy) · `CHANGELOG.fork.md` (new, A3) · `.gitignore` (+`.refer`, +`/build`) · `Config` (BuilderHub package descriptor) |
+| Files | `README.md` (**+12 lines, 2 hunks**: the 中文 link and an 11-line pointer to `PLUGINS.md`) · `PLUGINS.md` (new) · `README.zh-CN.md` (new) · `AGENTS.md` (the plugins paragraph + the A3 changelog policy) · `CHANGELOG.fork.md` (new, A3) · `.gitignore` (+`.refer`, +`/build`) · `Config` (BuilderHub package descriptor) |
 | Class | **A — must diverge.** These describe *this* repository, not the framework. |
-| Upstream | No. `Config` and `/build` are GitFarm/Brazil artefacts; `.refer` is our scratch directory; the plugins section is about plugins upstream does not ship. The Chinese READMEs are arguably offerable but would then need upstream maintenance. |
-| On conflict | Keep ours, additively. `README.md` and `AGENTS.md` are the two upstream also edits: take upstream's body and re-apply our section, the same shape as A1. `CHANGELOG.fork.md` can never conflict — nothing upstream has that path. |
+| Upstream | No. `Config` and `/build` are GitFarm/Brazil artefacts; `.refer` is our scratch directory; the plugin docs are about plugins upstream does not ship. The Chinese READMEs are arguably offerable but would then need upstream maintenance. |
+| On conflict | Keep ours, additively. `README.md` and `AGENTS.md` are the two upstream also edits: take upstream's body and re-apply our two hunks. `PLUGINS.md`, `README.zh-CN.md` and `CHANGELOG.fork.md` can never conflict — upstream has no such paths. |
+
+**`README.md` was the fork's worst file and is now nearly clean.** It carried a
+101-line inline plugins section, which moved to `PLUGINS.md` (upstream has no such
+path, so it cannot conflict) leaving a short pointer. Divergence went from
+**+176/−62 across 20 hunks** to **+21/−9 across 3**, and one of those three is A1,
+which self-resolves when #701 merges. What remains after that is 12 additive lines.
+
+**The extraction also uncovered why this file kept conflicting: it had been
+destructively reformatted, and most of the "divergence" was damage, not content.**
+Measured against the merge base, upstream carried **5** collapsible `<details>`
+harness sections and **56** markdown links; the fork carried **0** and **40**. All
+8 GitHub alert blocks were collapsed onto one line, and stray blank lines had been
+inserted before closing code fences. So the fork was shipping a README with the
+harness install sections permanently expanded, 16 links gone, and every alert
+rendering as a plain blockquote.
+
+The rebuild starts from upstream's file and re-adds only the two genuine fork
+hunks, which restores all of it. Same treatment found two live bugs in
+`README.zh-CN.md`: a piped `bun` installer the A1 sweep had missed (that file was
+outside the grep scope), and a plugin-install URL of
+`github.com/comdaze/aidlc-workflows` — which stopped pointing at this repository
+the moment a real fork of upstream was created under that exact name.
+
+> [!TIP]
+> **Prefer a separate file over an inline section for anything upstream does not
+> have.** `PLUGINS.md`, `README.zh-CN.md`, `CHANGELOG.fork.md` all cost exactly zero
+> merge effort forever, because upstream has no file at those paths. Every line of
+> fork content living inside a file upstream also edits is a line you re-resolve on
+> a cadence — and, as this file proved, a surface where silent formatting damage can
+> hide among the legitimate diff.
 
 **Watch for formatter damage in this row.** At the 2026-08-01 sync, all 8 GitHub
 alert blocks in `README.md` were collapsed to a single line

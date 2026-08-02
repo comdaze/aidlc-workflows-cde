@@ -33,6 +33,29 @@ CDE-specific work. This restores the policy the fork already had at
 Entries below are keyed by date and by the upstream version the fork was
 sitting on, not by a fork version number.
 
+## 2026-08-02 (latest) — on upstream 2.5.33
+
+**Plugin documentation moved out of `README.md` into a new [`PLUGINS.md`](PLUGINS.md).**
+The plugin table, the chat-window install, the four-step manual install for every
+harness, and the per-plugin setup notes all live there now; `README.md` keeps a
+short pointer. Nothing was dropped — if you had bookmarked the README's plugin
+section, it is all in `PLUGINS.md`.
+
+**The README was also rebuilt from upstream's, which repaired damage you could
+see.** The fork's copy had lost all **5** collapsible `<details>` harness install
+sections (so every harness's install steps were permanently expanded), **16**
+markdown links, and had all 8 GitHub alert blocks collapsed onto one line so they
+rendered as plain blockquotes instead of coloured callouts. Restored.
+
+Two live bugs fixed in `README.zh-CN.md` while doing it:
+
+* It still told you to install bun with `curl -fsSL https://bun.sh/install | bash`
+  — the earlier sweep had missed this file. Now `brew install bun` /
+  `npm install -g bun`.
+* The plugin-install line pointed at `github.com/comdaze/aidlc-workflows`, which
+  **stopped resolving to this repository** when a fork of upstream was created
+  under that exact name. Corrected to `aidlc-workflows-cde`.
+
 ## 2026-08-02 (later) — on upstream 2.5.33
 
 **Installing `bun` and `uv` no longer requires piping a network script into a

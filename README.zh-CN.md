@@ -24,7 +24,7 @@
 在目标项目的 harness 聊天会话窗口中，点名你要的插件：
 
 ```text
-安装https://github.com/comdaze/aidlc-workflows的poc-accelerator插件到这个项目
+安装https://github.com/comdaze/aidlc-workflows-cde 的 poc-accelerator 插件到这个项目
 
 ```
 
@@ -113,11 +113,13 @@ compose 只负责装上；部分插件在真正干活前还需要配置或专用
 所有 harness 的钩子与 CLI 工具经 **bun** 运行：
 
 ```bash
-curl -fsSL https://bun.sh/install | bash   # macOS/Linux（或用 brew install oven-sh/bun/bun）
-
+brew install bun      # macOS / Linux，用 Homebrew
+npm install -g bun    # 任何已有 Node.js 的平台（包括 Windows）
 ```
 
-> bun 必须在**非交互 shell** 的 PATH 上（harness 用它跑钩子）——zsh 读 `~/.zshenv`、bash 读 `~/.bashrc`，而安装器写的是 `~/.zshrc`。若终端里 `which bun` 正常但 harness 找不到，把 PATH export 复制到对应文件。
+其他安装方式见 [bun 安装指南](https://bun.com/docs/installation)。
+
+> bun 必须在**非交互 shell** 的 PATH 上（harness 用它跑钩子）——zsh 读 `~/.zshenv`、bash 读 `~/.bashrc`，而安装器和包管理器通常把 PATH export 写在 `~/.zshrc`。若终端里 `which bun` 正常但 harness 找不到，把 PATH export 复制到对应文件。
 
 ## 为什么用 AI-DLC
 

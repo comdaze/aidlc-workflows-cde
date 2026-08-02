@@ -15,25 +15,10 @@ The methodology lives once, in a harness-neutral `core/`; each harness adds a th
 
 ![version](https://img.shields.io/badge/version-2.5.33-blue)
 ![license](https://img.shields.io/badge/license-MIT--0-green)
-
-
-
 ![Kiro IDE](https://img.shields.io/badge/harness-Kiro%20IDE-orange)
-
-
-
 ![Kiro CLI](https://img.shields.io/badge/harness-Kiro%20CLI-orange)
-
-
-
 ![Claude Code](https://img.shields.io/badge/harness-Claude%20Code-orange)
-
-
-
 ![Codex CLI](https://img.shields.io/badge/harness-Codex%20CLI-orange)
-
-
-
 ![opencode](https://img.shields.io/badge/harness-opencode-orange)
 
 > [!NOTE]
@@ -44,106 +29,18 @@ The methodology lives once, in a harness-neutral `core/`; each harness adds a th
 
 To learn more about AI-DLC, read this [blog post](https://aws.amazon.com/blogs/devops/ai-driven-development-life-cycle/) and the [Method Definition Paper](https://prod.d13rzhkk8cj2z0.amplifyapp.com/) it references.
 
-## Plugins — this fork's headline
+## Plugins
 
-This fork ships first-party **AIDLC plugins** on top of the framework. A plugin never edits `core/`: it brings its own stages, scopes, knowledge, and tools, and merges additive contributions into core stages. Plugins add; the install selects. Design: [`docs/reference/18-plugin-mechanism.md`](docs/reference/18-plugin-mechanism.md).
+This fork ships first-party **AIDLC plugins** on top of the framework: an
+eight-step customer PoC delivery flow (`poc-accelerator`), brownfield deep
+knowledge engineering (`knowledge-plugin`), and the plugin-mechanism reference
+implementation (`test-pro`). A plugin never edits `core/` -- it brings its own
+stages, scopes, knowledge and tools, and merges additive contributions into core
+stages. Plugins add; the install selects.
 
-| Plugin | What it adds | Details |
-| --- | --- | --- |
-| **`poc-accelerator`** | An eight-step, 3–5 working-day **customer PoC delivery flow** for CDE-certified SAs — CDK-first deployment, a three-tier cost analysis (pilot / production / over-production), a recorded handoff quality checklist, and team knowledge reuse wired into both ends of the flow. | [plugin README](plugins/poc-accelerator/README.md) |
-| **`knowledge-plugin`** | **Brownfield deep knowledge engineering** — anchored `.ai-ready/` domain knowledge behind a senior sign-off gate, translated into the `reverse-engineering` codekb, with gate rejections written back as KEM-lite learnings. | [plugin README](plugins/knowledge-plugin/README.md) |
-| **`test-pro`** | Comprehensive, traceable test coverage layered onto the workflow. Also the reference implementation of the plugin mechanism — copy its shape for your own plugin. | [plugin README](plugins/test-pro/README.md) |
-
-### Quick install from the chat window
-
-In the harness chat session for the target project, name the plugin you want:
-
-```text
-Install the poc-accelerator plugin from https://github.com/comdaze/aidlc-workflows into this project
-
-```
-
-For a reproducible/manual installation or another harness, use the generic steps below.
-
-### Manual install — any plugin, any harness
-
-Everything installs from this repository's **committed `dist/`**; no build needed. (Re-run `bun scripts/package.ts` only if you edited `core/` or `plugins/`.) `<repo>` is your clone of this repository, `<project>` is the target project, and `<plugin>` is one of the names in the table above. Take the remaining two placeholders from your harness row:
-
-| Harness | `<harness>` | `<harness-dir>` |
-| --- | --- | --- |
-| Kiro IDE | `kiro-ide` | `.kiro` |
-| Kiro CLI | `kiro` | `.kiro` |
-| Claude Code | `claude` | `.claude` |
-| Codex CLI | `codex` | `.codex` |
-| opencode | `opencode` | `.aidlc` |
-
-**Step 1 — install the framework first.** Copy `dist/<harness>/` into `<project>/` as listed in [Pick your harness](#pick-your-harness). Skip if the project already has an AI-DLC install.
-
-> [!IMPORTANT]
-> The framework is a hard prerequisite, and getting the order wrong fails **silently**. The composer returns immediately — no error, no health record — when `<project>/<harness-dir>/tools/aidlc-graph.ts` is missing, because it validates every plugin stage against the *installed* engine's schema and agent roster before copying anything. Compose is idempotent, so a mis-ordered attempt only needs a re-run once the framework is in place.
-
-**Step 2 — compose the plugin.** Nothing is pre-copied into the project: the composer reads from `AIDLC_PLUGIN_ROOT` and writes only into `<project>/<harness-dir>/`.
-
-```bash
-PLUGIN_ROOT="<repo>/dist/plugins/<plugin>/<harness>"
-AIDLC_PLUGIN_ROOT="$PLUGIN_ROOT" AIDLC_PROJECT_DIR="<project>" \
-  AIDLC_HARNESS_DIR=<harness-dir> bun "$PLUGIN_ROOT/hooks/compose.ts"
-
-```
-
-Claude Code and Codex CLI can instead install through their native plugin commands, which run the same composer from a `SessionStart` hook:
-
-```bash
-# Claude Code
-/plugin marketplace add <repo>/dist/plugins/<plugin>/claude
-/plugin install aidlc-<plugin>@aidlc-plugins
-
-# Codex CLI
-codex plugin marketplace add <repo>/dist/plugins/<plugin>/codex
-codex plugin add aidlc-<plugin>@aidlc-plugins    # approve the one-time hook trust
-
-```
-
-**Step 3 — verify.** All green means installed:
-
-```bash
-cd <project>
-bun <harness-dir>/tools/aidlc-utility.ts doctor
-bun <harness-dir>/tools/aidlc-utility.ts plugin-list
-
-```
-
-`doctor` reports the enabled plugins and per-plugin enabled-stage counts, and surfaces anything the composer dropped — a colliding file, a stage it refused, a failed recompile.
-
-**Step 4 — enable the plugin, if a selection already exists.** A shipped `harness.json` has no `plugins` key, which means *every installed plugin is enabled*, so a fresh install needs nothing here. Once a selection exists, composing does not auto-enable; name the full enabled set, with `aidlc` for core:
-
-```bash
-bun <harness-dir>/tools/aidlc-utility.ts select-plugins aidlc,<plugin>
-
-```
-
-A composed-but-disabled plugin still copies its own files (runtime-filtered, so inert) but does **not** merge its contributions into core stages. `doctor` shows an advisory drop naming this exact command.
-
-### Per-plugin setup
-
-Composing installs a plugin; some need configuration or a specific entry point before they do anything.
-
-**`poc-accelerator`** — MCP configuration is **required**. Create `<harness-dir>/settings/mcp.json` (Kiro), `.mcp.json` (Claude Code), or `~/.codex/config.toml` (Codex) from the Global or China example in `<harness-dir>/knowledge/aidlc-pipeline-deploy-agent/mcp-setup.md`. Regional availability checks, CDK validation, and the step-8 cost analysis all run through those servers. Then start the customer-delivery flow with either explicit entry:
-
-```text
-/poc-accelerator-cde Build a safe customer demo for <customer scenario>
-# or
-/aidlc --scope poc-accelerator-cde Build a safe customer demo for <customer scenario>
-
-```
-
-Do not use `/aidlc pocx` or bare `/aidlc poc`: `pocx` is not an alias, and core `poc` remains the separate throwaway feasibility-spike scope.
-
-**`knowledge-plugin`** — needs `python3` on PATH (the vendored engine is standard-library only) and targets **brownfield** repositories: its bootstrap stage runs only when the project has existing code and no current `.ai-ready/`, under the `enterprise`, `feature`, `mvp`, or `workshop` scopes. It has no entry point of its own — it activates inside the normal inception flow.
-
-> **First run, any plugin:** write the org rule baseline into `aidlc/spaces/default/memory/org.md` — deployment norms, security red lines, and (if your team maintains one) a `## Team Knowledge Repository` section naming an approved local checkout or repository URL.
-
-The rest of this README documents the underlying AI-DLC framework the plugins run on. bun is the one prerequisite — see [Quick Start](#quick-start).
+**See [PLUGINS.md](PLUGINS.md)** for what each one does and how to install it on
+any harness. The rest of this README documents the underlying AI-DLC framework the
+plugins run on.
 
 ## Why AI-DLC
 
@@ -151,18 +48,17 @@ Ad-hoc AI coding works until the project gets real. Then context drifts between 
 
 ## Key Features
 
-- **5 phases, 32 stages** — Initialization, Ideation, Inception, Construction, Operation
-- **14-agent roster** — 11 domain experts, 2 quality-gate reviewers, and the adaptive-workflows composer
-- **9 adaptive scopes** (enterprise through workshop) with auto-detection from freeform intent, plus an **adaptive composer** (`/aidlc compose`) that proposes a tailored stage plan from your task, a scan report, or the running workflow
-- **Customer-delivery PoC accelerator** — optional eight-step, CDK-first plugin for a customer demo, deployment evidence, and handoff without changing the throwaway core `poc` scope
-- **3 depth levels** (Minimal/Standard/Comprehensive) — control artifact detail per stage
-- **3 test strategy levels** (Minimal/Standard/Comprehensive) — independent of depth for flexible test coverage
-- **CLI utilities** — jump to any stage or phase, check status, change scope/depth/test strategy mid-workflow
-- **Approval gates at every stage** — you stay in control of all decisions
-- **Two-tier knowledge system** — methodology knowledge ships with the framework; team knowledge is user-managed
-- **Rules and a learning loop** — human corrections become persistent behavioral rules
-- **74-event audit trail** - structured logging for enterprise traceability
-- **Session resume** — continue from checkpoint, redo, jump to stage, or start fresh
+- **[5 phases, 32 stages](docs/guide/04-phases-and-stages.md)** — Initialization, Ideation, Inception, Construction, Operation
+- **[14-agent roster](docs/guide/06-agents.md)** — 11 domain experts, 2 quality-gate reviewers, and the adaptive-workflows composer
+- **[9 adaptive scopes](docs/guide/05-scopes-and-depth.md)** (enterprise through workshop) with auto-detection from freeform intent, plus an **[adaptive composer](docs/guide/05-scopes-and-depth.md#the-adaptive-composer)** (`/aidlc compose`) that proposes a tailored stage plan from your task, a scan report, or the running workflow
+- **[3 depth levels](docs/guide/05-scopes-and-depth.md#the-3-depth-levels)** (Minimal/Standard/Comprehensive) — control artifact detail per stage
+- **[3 test strategy levels](docs/guide/05-scopes-and-depth.md#the-3-test-strategy-levels)** (Minimal/Standard/Comprehensive) — independent of depth for flexible test coverage
+- **[CLI utilities](docs/guide/12-cli-commands.md)** — jump to any stage or phase, check status, change scope/depth/test strategy mid-workflow
+- **[Approval gates at every stage](docs/guide/07-interaction-modes.md)** — you stay in control of all decisions
+- **[Two-tier knowledge system](docs/guide/08-knowledge.md)** — methodology knowledge ships with the framework; team knowledge is user-managed
+- **[Rules and a learning loop](docs/guide/09-rules-and-the-learning-loop.md)** — human corrections become persistent behavioral rules
+- **[74-event audit trail](docs/guide/10-state-and-audit.md)** - structured logging for enterprise traceability
+- **[Session resume](docs/guide/11-session-management.md)** — continue from checkpoint, redo, jump to stage, or start fresh
 
 ## Methodology and implementation
 
@@ -185,7 +81,7 @@ The deterministic engine — state machine, audit log, and the referee that coor
 
 ## Recommended Model
 
-This release works better with `Claude Opus 4.8`. We are sharpening it for previous model versions.
+This release works better with `Claude Opus 4.8`. We are sharpening it for previous model versions. 
 
 ## Quick Start
 
@@ -205,10 +101,10 @@ npm install -g bun
 
 Other installation methods are in the [bun installation guide](https://bun.com/docs/installation).
 
-Everything runs on native Windows; WSL is not required. [Git for Windows](https://git-scm.com/downloads/win) is recommended so harnesses that use a Bash tool can find one.
+On Windows, use *either* PowerShell *or* CMD, not both — your prompt shows `PS C:\` in PowerShell and `C:\` (no `PS`) in CMD. Everything runs on native Windows; WSL is not required. [Git for Windows](https://git-scm.com/downloads/win) is recommended so harnesses that use a Bash tool can find one.
 
 > [!TIP]
-> bun has to be on the PATH that *non-interactive* shells see, since that's what a harness uses to run a hook or tool. Those shells read `~/.zshenv` (zsh) or `~/.bashrc` (bash), not `~/.zshrc`, which is where installers and package managers typically write their PATH export. So if `which bun` works in your terminal yet the harness can't find bun, copy the `BUN_INSTALL`/`PATH` export into `~/.zshenv` (or `~/.bashrc` for bash and Git Bash).
+> bun has to be on the PATH that *non-interactive* shells see, since that's what a harness uses to run a hook or tool. Those shells read `~/.zshenv` (zsh) or `~/.bashrc` (bash), not `~/.zshrc` — but the bun installer writes to `~/.zshrc`. So if `which bun` works in your terminal yet the harness can't find bun, copy the `BUN_INSTALL`/`PATH` export into `~/.zshenv` (or `~/.bashrc` for bash and Git Bash).
 
 Every harness runs on **AWS Bedrock**, so set Bedrock up before your first run — enable model access in your AWS account and make sure the harness can see working AWS credentials. Each harness section below has the specifics.
 
@@ -228,7 +124,8 @@ Run the `cp` commands in the sections below from this repository's root.
 
 With bun in place, pick your harness below and expand it — each section installs that CLI, sets up your project, and walks the first run end to end.
 
-**Kiro IDE**
+<details>
+<summary><b>Kiro IDE</b></summary>
 
 **1. Install Kiro IDE** and sign in.
 
@@ -239,7 +136,6 @@ mkdir -p your-project/.kiro your-project/aidlc
 cp -R dist/kiro-ide/.kiro/. your-project/.kiro/
 cp -R dist/kiro-ide/aidlc/. your-project/aidlc/     # the workspace shell — a sibling of .kiro/, not inside it
 cp dist/kiro-ide/AGENTS.md your-project/AGENTS.md   # merge if you already have one
-
 ```
 
 The `aidlc/` shell ships the pre-built `aidlc/spaces/default/memory/` method tree the engine reads; `/aidlc --doctor` fails its "workspace shell ready" check without it.
@@ -249,14 +145,16 @@ Open `your-project/` in Kiro IDE. The `/aidlc` command loads the shipped conduct
 > [!NOTE]
 > AI-DLC on Kiro works best with **Claude Opus 4.8**, which requires a **paid Kiro plan**. On weaker models the conductor may skip optional stage steps (reviewer pass, learnings ritual) or rush approval gates.
 
-**Kiro CLI**
+</details>
+
+<details>
+<summary><b>Kiro CLI</b></summary>
 
 **1. Install Kiro CLI** (≥ 2.6) and log in:
 
 ```bash
 kiro-cli --version   # confirm ≥ 2.6
 kiro-cli login
-
 ```
 
 **2. Set up your project**
@@ -267,36 +165,35 @@ cp -R dist/kiro/.kiro/. your-project/.kiro/
 cp -R dist/kiro/aidlc/. your-project/aidlc/    # the workspace shell — a sibling of .kiro/, not inside it
 cp dist/kiro/AGENTS.md your-project/AGENTS.md   # merge if you already have one
 cd your-project && kiro-cli chat
-
 ```
 
 The `aidlc/` shell ships the pre-built `aidlc/spaces/default/memory/` method tree the engine reads; `/aidlc --doctor` fails its "workspace shell ready" check without it.
 
-The install ships `.kiro/settings/cli.json` with `chat.defaultAgent` set to `aidlc`, so `/aidlc` is active by default. Inside the session, run `/aidlc --doctor` to verify, then `/aidlc <description>` to start. The Kiro CLI guide has the full prerequisites and harness differences.
+The install ships `.kiro/settings/cli.json` with `chat.defaultAgent` set to `aidlc`, so `/aidlc` is active by default. Inside the session, run `/aidlc --doctor` to verify, then `/aidlc <description>` to start. The [Kiro CLI guide](docs/guide/harnesses/kiro-cli.md) has the full prerequisites and harness differences.
 
 > [!NOTE]
 > AI-DLC on Kiro works best with **Claude Opus 4.8**, which requires a **paid Kiro plan**. On weaker models the conductor may skip optional stage steps (reviewer pass, learnings ritual) or rush approval gates.
 
-**Claude Code**
+</details>
+
+<details>
+<summary><b>Claude Code</b></summary>
 
 **1. Install Claude Code**
 
 ```bash
 # macOS / Linux (native install — recommended; auto-updates)
 curl -fsSL https://claude.ai/install.sh | bash
-
 ```
 
 ```powershell
 # Windows PowerShell
 irm https://claude.ai/install.ps1 | iex
-
 ```
 
 ```batch
 :: Windows Command Prompt (CMD)
 curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd
-
 ```
 
 (If `&&` reports `The token '&&' is not a valid statement separator`, you're in PowerShell — use the PowerShell block above.) Prefer Homebrew on macOS? `brew install --cask claude-code`. Verify with `claude --version`.
@@ -308,7 +205,6 @@ curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del in
 cp -r dist/claude/.claude/ your-project/.claude/
 cp -r dist/claude/aidlc/   your-project/aidlc/     # the workspace shell — a sibling of .claude/, not inside it
 cd your-project && claude
-
 ```
 
 The `aidlc/` shell ships the pre-built `aidlc/spaces/default/memory/` method tree the engine reads; `/aidlc --doctor` fails its "workspace shell ready" check without it.
@@ -318,12 +214,14 @@ Then, inside the Claude Code session:
 ```
 /aidlc --doctor                                          # verify the setup
 /aidlc Build a task management API with user authentication   # start a workflow
-
 ```
 
-The shipped `.claude/settings.json` runs on **AWS Bedrock** (`AWS_REGION=us-east-1`, Fable/Opus/Sonnet/Haiku pinned). Before your first run, enable Anthropic model access in your AWS account and have AWS credentials on your SDK credential chain — see Getting Started § AWS Bedrock Setup for the model-access form, IAM policy, credential options, and how to change the region. The full prerequisites table, PATH troubleshooting, and Bedrock configuration are in Getting Started.
+The shipped `.claude/settings.json` runs on **AWS Bedrock** (`AWS_REGION=us-east-1`, Fable/Opus/Sonnet/Haiku pinned). Before your first run, enable Anthropic model access in your AWS account and have AWS credentials on your SDK credential chain — see [Getting Started § AWS Bedrock Setup](docs/guide/01-getting-started.md#aws-bedrock-setup) for the model-access form, IAM policy, credential options, and how to change the region. The full prerequisites table, PATH troubleshooting, and Bedrock configuration are in [Getting Started](docs/guide/01-getting-started.md).
 
-**Codex CLI**
+</details>
+
+<details>
+<summary><b>Codex CLI</b></summary>
 
 **1. Install Codex CLI** (≥ 0.145.0 — earlier releases do not restore hook-provided workflow context immediately after a mid-turn compaction):
 
@@ -340,7 +238,6 @@ cp -r dist/codex/.codex/  your-project/.codex/
 cp -r dist/codex/.agents/ your-project/.agents/
 cp -r dist/codex/aidlc/   your-project/aidlc/      # the workspace shell — a sibling of .codex/, not inside it
 cp dist/codex/AGENTS.md   your-project/AGENTS.md   # or merge into yours
-
 ```
 
 The `aidlc/` shell ships the pre-built `aidlc/spaces/default/memory/` method tree the engine reads; `$aidlc --doctor` fails its "workspace shell ready" check without it.
@@ -351,15 +248,17 @@ After copying, apply the `.gitignore` entries from the shipped `AGENTS.md` befor
 cd your-project && bun .codex/tools/aidlc-utility.ts doctor
 ```
 
-Invoke the orchestrator with `$aidlc` (or `/skills` → aidlc) followed by a scope or description. The Codex guide covers the trust dialog, config merge, and sandbox/git notes in full.
+Invoke the orchestrator with `$aidlc` (or `/skills` → aidlc) followed by a scope or description. The [Codex guide](docs/guide/harnesses/codex-cli.md) covers the trust dialog, config merge, and sandbox/git notes in full.
 
-**opencode**
+</details>
+
+<details>
+<summary><b>opencode</b></summary>
 
 **1. Install opencode** (≥ 1.17):
 
 ```bash
 opencode --version   # confirm ≥ 1.17
-
 ```
 
 The shipped project `opencode.json` pins no session model — your global opencode configuration supplies it.
@@ -372,7 +271,6 @@ cp -r dist/opencode/.opencode/ your-project/.opencode/  # native shell: subagent
 cp -r dist/opencode/aidlc/     your-project/aidlc/      # the workspace shell — a sibling of .aidlc/, not inside it
 cp dist/opencode/opencode.json your-project/opencode.json  # or merge into yours (keep skills.paths + instructions + permissions)
 cp dist/opencode/AGENTS.md     your-project/AGENTS.md      # or merge into yours
-
 ```
 
 The engine deliberately lives in `.aidlc/`, NOT `.opencode/` — opencode auto-imports `.opencode/tools/*.ts` as custom tools, which would crash on the engine's CLI scripts. `opencode.json`'s `skills.paths` points opencode at `.aidlc/skills` for discovery.
@@ -383,17 +281,19 @@ After copying, apply the `.gitignore` entries from the shipped `AGENTS.md` befor
 cd your-project && bun .aidlc/tools/aidlc-utility.ts doctor
 ```
 
-Invoke the orchestrator with `/aidlc` followed by a scope or description. The opencode guide covers the split layout, the adapter plugin, and what differs on this harness in full.
+Invoke the orchestrator with `/aidlc` followed by a scope or description. The [opencode guide](docs/guide/harnesses/opencode.md) covers the split layout, the adapter plugin, and what differs on this harness in full.
+
+</details>
 
 ## Documentation
 
 Three guides, one per reader — pick by what you're trying to change:
 
-|  | For | Covers |
-| --- | --- | --- |
-| **User Guide** | Building software *with* AI-DLC | Getting started, workflows, scopes, agents, interaction modes, troubleshooting |
-| **Harness Engineer Guide** | Shaping *how* AI-DLC behaves | Stages, agents, scopes, rules, sensors, and team knowledge — configuration, not code |
-| **Developer Reference** | Changing AI-DLC *itself* | Architecture, orchestrator, stage protocol, hooks, state machine, testing, contributing |
+| | For | Covers |
+|---|---|---|
+| **[User Guide](docs/guide/00-introduction.md)** | Building software *with* AI-DLC | Getting started, workflows, scopes, agents, interaction modes, troubleshooting |
+| **[Harness Engineer Guide](docs/harness-engineering/00-overview.md)** | Shaping *how* AI-DLC behaves | Stages, agents, scopes, rules, sensors, and team knowledge — configuration, not code |
+| **[Developer Reference](docs/reference/00-overview.md)** | Changing AI-DLC *itself* | Architecture, orchestrator, stage protocol, hooks, state machine, testing, contributing |
 
 ## Repository layout
 
@@ -418,8 +318,7 @@ aidlc-claude/
 │   └── codex/                  #   manifest.ts · emit.ts (Codex-only emissions) · orchestrator · hooks adapter
 │
 ├── plugins/                    # optional, owned AIDLC plugins — new stages + the additive contribution seam
-│   ├── test-pro/               #   reference fixture: .aidlc-plugin/plugin.json · stages/ · contributions/ · sensors/ · tools/ · tests/
-│   └── poc-accelerator/        #   customer-delivery eight-step PoC scope + methodology knowledge
+│   └── test-pro/               #   reference fixture: .aidlc-plugin/plugin.json · stages/ · contributions/ · sensors/ · tools/ · tests/
 │
 ├── scripts/
 │   ├── package.ts              # THE build entry: copy core+harness per manifest → graph compile →
@@ -438,20 +337,20 @@ aidlc-claude/
 │  ─────────── SUPPORTING ───────────
 ├── tests/                      # all-TypeScript suite (t*.test.ts) — resolves dist via AIDLC_SRC
 └── docs/                       # guide/ · harness-engineering/ · reference/
-
 ```
 
 > `core/` is what AI-DLC **is**. `harness/` is how each harness **speaks**. `dist/` is what users **copy**. Only the first two are ever edited; `bun scripts/package.ts` regenerates the rest, and a hand-edit to `dist/` is a CI failure.
 
 ## Build / regenerate the harnesses
 
-Maintainers edit the hand-authored source in `core/` (or a `harness/<name>/` surface), then regenerate the committed `dist/<harness>/` trees — **never hand-edit **`dist/`, the drift guard fails CI.
+Maintainers edit the hand-authored source in `core/` (or a `harness/<name>/`
+surface), then regenerate the committed `dist/<harness>/` trees — **never
+hand-edit `dist/`**, the drift guard fails CI.
 
 ```bash
 bun scripts/package.ts            # regenerate every dist/<harness>/ from core/ + harness/
 bun scripts/package.ts <name>     # regenerate one harness (e.g. claude, kiro-ide, codex)
 bun scripts/package.ts --check    # byte-parity drift guard (run in CI)
-
 ```
 
 Release binary artifacts are built separately after the drift guard is clean:
@@ -459,12 +358,13 @@ Release binary artifacts are built separately after the drift guard is clean:
 ```bash
 bun scripts/build-binaries.ts                 # native binary + mandatory smoke gates
 bun scripts/build-binaries.ts --all-targets   # release matrix
-
 ```
 
-Each target is emitted under `build/binaries/<target>/` with the executable and a `runtime/<harness>/` copy of every generated harness distribution it may dispatch into.
+Each target is emitted under `build/binaries/<target>/` with the executable
+and a `runtime/<harness>/` copy of every generated harness distribution it may
+dispatch into.
 
-Adding a whole new harness? See Porting to a New Harness. The authoritative build reference is the Contributing Guide.
+Adding a whole new harness? See [Porting to a New Harness](docs/harness-engineering/09-porting-to-a-new-harness.md). The authoritative build reference is the [Contributing Guide](docs/reference/11-contributing.md#development-workflow).
 
 ## Testing
 
@@ -473,10 +373,9 @@ bun tests/run-tests.ts               # default: smoke + unit + integration
 bun tests/run-tests.ts --ci          # smoke + unit + integration
 bun tests/run-tests.ts --release     # + e2e (full acceptance)
 bash tests/run-tests.sh --ci         # POSIX compatibility wrapper
-
 ```
 
-See Testing Reference for the full strategy and test registry.
+See [Testing Reference](docs/reference/09-testing.md) for the full strategy and test registry.
 
 ## Troubleshooting
 
@@ -492,11 +391,10 @@ Most first-run trouble is one of these; each harness guide covers the rest.
 
 ## Contributing
 
-See Contributing Guide for prerequisites, workflow, and submission process.
+See [Contributing Guide](docs/reference/11-contributing.md) for prerequisites, workflow, and submission process.
 
 ## References
 
 - [AWS AI-DLC Blog Post](https://aws.amazon.com/blogs/devops/ai-driven-development-life-cycle/)
 - [AI-DLC Method Definition Paper](https://prod.d13rzhkk8cj2z0.amplifyapp.com/)
 - [AI-DLC Workflows 2.0 Specification](https://github.com/awslabs/aidlc-workflows/blob/v2/assets/AI-DLC-Workflows-2.0-Specification.pdf) (AWS Labs whitepaper)
-
