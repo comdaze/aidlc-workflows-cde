@@ -129,5 +129,11 @@ export type HarnessManifest = {
     manifestDir: string;
     /** "store" = host plugin store (Claude/Codex); "kiro" = folder-drop + .kiro.hook. */
     kind: "store" | "kiro";
+    /** Marketplace manifest dir relative to the projection root. Defaults to manifestDir. */
+    marketplaceDir?: string;
+    /** Parent dir for an embedded plugin payload. Omit for the legacy flat projection. */
+    pluginParentDir?: string;
+    /** Marketplace schema emitted for this harness. Defaults to the legacy host schema. */
+    marketplaceFormat?: "legacy" | "codex";
   };
 };

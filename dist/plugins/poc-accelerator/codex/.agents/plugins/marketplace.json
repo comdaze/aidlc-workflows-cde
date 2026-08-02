@@ -1,0 +1,20 @@
+{
+  "name": "aidlc-plugins",
+  "interface": {
+    "displayName": "AIDLC Plugins"
+  },
+  "plugins": [
+    {
+      "name": "aidlc-poc-accelerator",
+      "source": {
+        "source": "local",
+        "path": "./plugins/aidlc-poc-accelerator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

@@ -162,38 +162,63 @@ describe("t188 plugin compose — emit + compose the contribution seam", () => {
       expect(fileInventory(committed), `${harness.name}: committed inventory`).toEqual(
         fileInventory(built),
       );
+      const payloadRoot = harness.capabilities.plugin.pluginParentDir
+        ? join(built, harness.capabilities.plugin.pluginParentDir, `aidlc-${PLUGIN}`)
+        : built;
 
       const manifestFile = join(
-        built,
+        payloadRoot,
         harness.capabilities.plugin.manifestDir,
         "plugin.json",
       );
       const hostManifest = JSON.parse(readFileSync(manifestFile, "utf-8")) as {
         name?: string;
+        interface?: { displayName?: string; shortDescription?: string };
       };
       expect(hostManifest.name, harness.name).toBe(`aidlc-${PLUGIN}`);
-      expect(existsSync(join(built, "hooks", "compose.ts"))).toBe(true);
+      expect(existsSync(join(payloadRoot, "hooks", "compose.ts"))).toBe(true);
       const wiring = readFileSync(
-        join(built, harness.capabilities.plugin.wiringFile),
+        join(payloadRoot, harness.capabilities.plugin.wiringFile),
         "utf-8",
       );
       expect(wiring, `${harness.name}: harness dir wiring`).toContain(
         `AIDLC_HARNESS_DIR=${harness.manifest.harnessDir}`,
       );
-      expect(existsSync(join(built, "stages", "construction", "test-pro-integration.md"))).toBe(
+      expect(existsSync(join(payloadRoot, "stages", "construction", "test-pro-integration.md"))).toBe(
         true,
       );
-      expect(existsSync(join(built, "contributions", "construction", "build-and-test.md"))).toBe(
+      expect(existsSync(join(payloadRoot, "contributions", "construction", "build-and-test.md"))).toBe(
         true,
       );
       // #550 plugin content buckets: scopes, agents, and knowledge must project
       // into EVERY harness (stronger than the pre-matrix Claude-only guard).
-      expect(existsSync(join(built, "scopes", "test-pro-validation.md")), `${harness.name}: scope`).toBe(true);
-      expect(existsSync(join(built, "agents", "test-pro-metrics-agent.md")), `${harness.name}: agent`).toBe(true);
+      expect(existsSync(join(payloadRoot, "scopes", "test-pro-validation.md")), `${harness.name}: scope`).toBe(true);
+      expect(existsSync(join(payloadRoot, "agents", "test-pro-metrics-agent.md")), `${harness.name}: agent`).toBe(true);
       expect(
-        existsSync(join(built, "knowledge", "test-pro-metrics-agent", "methodology.md")),
+        existsSync(join(payloadRoot, "knowledge", "test-pro-metrics-agent", "methodology.md")),
         `${harness.name}: knowledge`,
       ).toBe(true);
+
+      const marketplace = JSON.parse(readFileSync(join(
+        built,
+        harness.capabilities.plugin.marketplaceDir,
+        "marketplace.json",
+      ), "utf-8"));
+      if (harness.capabilities.plugin.marketplaceFormat === "codex") {
+        expect(marketplace.interface.displayName).toBe("AIDLC Plugins");
+        expect(marketplace.plugins[0].source).toEqual({
+          source: "local",
+          path: `./plugins/aidlc-${PLUGIN}`,
+        });
+        expect(marketplace.plugins[0].policy).toEqual({
+          installation: "AVAILABLE",
+          authentication: "ON_INSTALL",
+        });
+        expect(marketplace.plugins[0].category).toBe("Developer Tools");
+        expect(hostManifest.interface?.displayName).toBe(`AIDLC ${PLUGIN}`);
+        expect(hostManifest.interface?.shortDescription).toBeTruthy();
+        expect(existsSync(join(payloadRoot, ".codex-plugin", "marketplace.json"))).toBe(false);
+      }
     }
   });
 

@@ -57,6 +57,17 @@ const manifest: HarnessManifest = {
   skipRunnerGen: true,
 
   emit,
+
+  // Current Codex marketplaces live at .agents/plugins/marketplace.json and
+  // resolve local plugin sources beneath the marketplace root. Keep the plugin
+  // manifest itself native at .codex-plugin/plugin.json inside that payload.
+  plugin: {
+    manifestDir: ".codex-plugin",
+    kind: "store",
+    marketplaceDir: ".agents/plugins",
+    pluginParentDir: "plugins",
+    marketplaceFormat: "codex",
+  },
 };
 
 export default manifest;

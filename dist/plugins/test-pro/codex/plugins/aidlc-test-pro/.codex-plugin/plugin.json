@@ -1,0 +1,21 @@
+{
+  "name": "aidlc-test-pro",
+  "version": "0.1.0",
+  "description": "Full-featured testing plugin — comprehensive, traceable test coverage: unit (branch + line coverage), functional, integration, regression, edge (boundary/±min·max), and API positive+negative. Reuses aidlc-quality-agent as the test lead and adds a metrics support persona.",
+  "author": {
+    "name": "AWS AIDLC"
+  },
+  "interface": {
+    "displayName": "AIDLC test-pro",
+    "shortDescription": "Full-featured testing plugin — comprehensive, traceable test coverage: unit (branch + line coverage), functional, integration, regression, edge (boundary/±min·max), and API positive+negative. Reuses aidlc-quality-agent as the test lead and adds a metrics support persona.",
+    "longDescription": "Full-featured testing plugin — comprehensive, traceable test coverage: unit (branch + line coverage), functional, integration, regression, edge (boundary/±min·max), and API positive+negative. Reuses aidlc-quality-agent as the test lead and adds a metrics support persona.",
+    "developerName": "AWS AIDLC",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use the test-pro AIDLC workflow."
+    ]
+  }
+}

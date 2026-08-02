@@ -257,10 +257,13 @@ projection remains deferred (doc 18 §8 Status).
 
 ## 5. Distribution + install
 
-The packager emits your plugin as **a real host plugin** (one projection target
-per harness: `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, plus a
-Kiro folder projection). You publish the output to a git repo with semver tags
-and a `marketplace.json`, and teams install through the host's native commands.
+The packager emits your plugin as **a real host plugin**. Claude receives its
+flat `.claude-plugin/plugin.json` projection, Kiro receives a folder projection,
+and Codex receives a repository marketplace with
+`.agents/plugins/marketplace.json` pointing to
+`plugins/aidlc-<name>/.codex-plugin/plugin.json`. Publish the emitted harness
+output to a git repo with semver tags; teams install it through the host's native
+commands.
 
 ### Claude / Codex (host store)
 
