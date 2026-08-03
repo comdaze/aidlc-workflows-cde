@@ -4,7 +4,7 @@ This is the **CDE fork's** own changelog, and the only place fork release notes
 are added from 2026-08-01 onward. `CHANGELOG.md` belongs to upstream
 `awslabs/aidlc-workflows`: the fork takes upstream's entries as they are and adds
 none of its own — see the frozen-version policy in
-`docs/reference/20-fork-divergence.md` A3.
+`docs/fork/divergence.md` A3.
 
 One historical exception lives in `CHANGELOG.md` rather than here: the 16 entries
 `## [2.3.11]` through `## [2.3.26]`, published by the fork before this policy
@@ -32,6 +32,29 @@ CDE-specific work. This restores the policy the fork already had at
 
 Entries below are keyed by date and by the upstream version the fork was
 sitting on, not by a fork version number.
+
+## 2026-08-03 (docs) — on upstream 2.5.33
+
+**Fork-authored documentation moved out of upstream's chapter numbering into
+[`docs/fork/`](docs/fork/README.md).** `docs/reference/19-kiro-spec-integration.md`
+and `docs/reference/20-fork-divergence.md` sat in a namespace upstream is still
+filling — their numbered chapters run 00–18 and climb — so the day upstream adds
+its own `19-*.md` the merge is an add/add conflict over a filename. New paths:
+
+* `docs/fork/divergence.md` (was `20-fork-divergence.md`)
+* `docs/fork/kiro-spec-integration.md` (was `19-kiro-spec-integration.md`)
+* `docs/fork/research/2026-07-31-kiro-spec-hook-probe.md`
+* `docs/fork/README.md` — new index
+
+The two index rows in `docs/reference/00-overview.md` are gone with them, so that
+file is byte-identical to upstream again. Nothing here is on the docs site's nav,
+because the nav lives in upstream's `zensical.toml`; that is the deliberate trade.
+
+Also recorded in `divergence.md` §2: **14 files of real divergence that no row
+explained**, found by running the §5 derivation — the Codex marketplace layout
+(the fork's first edits to `scripts/` and `tests/`), the hook-registration doctor
+block in `core/tools/aidlc-utility.ts`, and the `poc-accelerator` documentation
+living inside two upstream guide files. Listed, not yet classified.
 
 ## 2026-08-02 (doctor) — on upstream 2.5.33
 
@@ -128,7 +151,7 @@ answerable at end-of-turn, and `PreToolUse` fires too early while
 `UserPromptSubmit` fires after the user has already replied to something they
 could not see. Hard enforcement would need a redesign, and belongs upstream as a
 designed feature rather than a fork patch in the enforcement spine. Reasoning and
-the full cost accounting are in `docs/reference/20-fork-divergence.md` B1.
+the full cost accounting are in `docs/fork/divergence.md` B1.
 
 Also: added `.gitlab-ci.yml`. The repo had no CI — the inherited
 `.github/workflows/ci.yml` is GitHub-only and does nothing here, so every guard
@@ -187,4 +210,4 @@ and confirm `.kiro/hooks/` contains `aidlc-*.json` files, not only
   documents it as advisory-only. The code is retained but does nothing on a 1.x
   IDE; it needs re-implementing on a trigger that can genuinely block
   (`PreToolUse` and `UserPromptSubmit` can) or removing. Tracked as B1 in
-  `docs/reference/20-fork-divergence.md`.
+  `docs/fork/divergence.md`.

@@ -1,6 +1,6 @@
 # Kiro Spec hook probe — raw capture (2026-07-31)
 
-Evidence for [19-kiro-spec-integration.md](../19-kiro-spec-integration.md).
+Evidence for [kiro-spec-integration.md](../kiro-spec-integration.md).
 
 Curated from the probe log: trigger headers and payloads, with the large
 `tool_response` echoes of the probe's own shell commands elided — those were

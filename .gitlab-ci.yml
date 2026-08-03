@@ -80,7 +80,7 @@ tests:
 # Fail if this MR removes any `## [x.y.z]` heading present on the base commit.
 #
 # This guard matters MORE on this fork than upstream, not less. Under the
-# frozen-version policy (docs/reference/20-fork-divergence.md A3) the fork never
+# frozen-version policy (docs/fork/divergence.md A3) the fork never
 # adds a heading of its own and always resolves CHANGELOG.md to upstream's side
 # during a sync — so the only way this file can change here is a merge
 # resolution, and a botched one silently drops upstream entries. That is exactly
@@ -99,7 +99,7 @@ changelog-guard:
     - bun scripts/ci-changelog-guard.ts "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
 
 # Upstream drift report — the fork-specific job, and the reason the weekly
-# cadence in docs/reference/20-fork-divergence.md is a mechanism rather than a
+# cadence in docs/fork/divergence.md is a mechanism rather than a
 # promise.
 #
 # Upstream runs 10-27 commits/week on v2 and roughly 1.6 releases/day, so the
@@ -142,7 +142,7 @@ upstream-drift:
     - cat surface.txt
     - |
       if [ -s surface.txt ]; then
-        echo "Anything above without a row in docs/reference/20-fork-divergence.md section 2 is undocumented divergence — add a row."
+        echo "Anything above without a row in docs/fork/divergence.md section 2 is undocumented divergence — add a row."
       else
         echo "No conflict surface. This sync is a plain git merge plus a dist regenerate."
       fi

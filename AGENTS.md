@@ -57,9 +57,9 @@ This is a fork of `awslabs/aidlc-workflows` (branch `v2`). Every file changed ou
 
 IMPORTANT: Prefer a plugin. CDE-specific behaviour belongs in `plugins/<name>/`, which can never conflict with upstream. Editing `core/` or `harness/` is a last resort, not a shortcut.
 
-IMPORTANT: When a change outside `plugins/` is unavoidable, add a row to `docs/reference/20-fork-divergence.md` in the same commit — stating why it diverges and whether it is upstream-bound. That document is the checklist an upstream sync is driven from; an undocumented divergence is discovered at merge time, in the worst possible context.
+IMPORTANT: When a change outside `plugins/` is unavoidable, add a row to `docs/fork/divergence.md` in the same commit — stating why it diverges and whether it is upstream-bound. That document is the checklist an upstream sync is driven from; an undocumented divergence is discovered at merge time, in the worst possible context.
 
-Before merging upstream, read `docs/reference/20-fork-divergence.md` §4 (procedure) — in particular: never merge `dist/`, regenerate it; and after the merge, check plugin compose drops, because a renamed stage or moved anchor makes a contribution stop applying *silently* while tests stay green.
+Before merging upstream, read `docs/fork/divergence.md` §4 (procedure) — in particular: never merge `dist/`, regenerate it; and after the merge, check plugin compose drops, because a renamed stage or moved anchor makes a contribution stop applying *silently* while tests stay green.
 
 ## Changelog Policy — this fork freezes the framework version
 
@@ -71,7 +71,7 @@ Where the fork's changes go instead:
 
 - **CDE-specific behaviour** belongs in a plugin, and the plugin carries its own version in `plugins/<name>/.aidlc-plugin/plugin.json`. Bump that.
 - **Release notes for the fork** go in `CHANGELOG.fork.md`, keyed by date and by the upstream version the fork is sitting on. Nothing in the framework reads that file, so it can never conflict.
-- **Framework-level changes that genuinely cannot be a plugin** are a fork divergence: record a row in `docs/reference/20-fork-divergence.md` §2 on the way in, and prefer offering the change upstream over carrying it.
+- **Framework-level changes that genuinely cannot be a plugin** are a fork divergence: record a row in `docs/fork/divergence.md` §2 on the way in, and prefer offering the change upstream over carrying it.
 
 Why: upstream ships roughly 1.6 releases a day. When the fork maintained its own version line, those three files became its largest permanent conflict surface — 223 of the 341 upstream edits to files this fork diverges on, over 60 days — and the patch numbers collided outright twice (the fork's 2.5.8/2.5.9 against upstream's, then the fork's 2.5.31 against upstream's `cd209eb1`), each collision tripping t68's duplicate-heading guard. This restores the policy the fork already had at `80a96461`: *"Going forward plugin-only changes bump the plugin version only."*
 

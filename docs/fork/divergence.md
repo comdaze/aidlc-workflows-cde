@@ -48,7 +48,7 @@ upstream `9c9201b8`:
 | Surface | Files changed by us | Conflict risk |
 | --- | --- | --- |
 | `plugins/` | 59 | **None.** Ours entirely; upstream has no such directory. |
-| `docs/` | 8 | None in practice (new chapters + our own research notes). |
+| `docs/` | 8 | None in practice. Fork-authored chapters live under `docs/fork/`, a path upstream has none of — see A6. |
 | `dist/` | 256 | **Not a conflict** — generated. Never merge it; regenerate (§3). |
 | `core/` | 2 | Low. Both are small and policy-driven, not functional. See A1, A2. |
 | `harness/` | 6 | **One real risk**, the Kiro IDE adapter. See B1. |
@@ -95,12 +95,17 @@ What is left is only two kinds of thing:
 
 | Surface | Files | Rows |
 | --- | --- | --- |
-| `docs/` | 14 | A1 (7 files) + fork-authored chapters and research notes |
-| `harness/` | 6 | A1 (5 `onboarding.fills.ts`) + A5 |
-| `core/` | 2 | A1 (`aidlc-utility.ts`) + A2 |
-| root | 8 | A1 (`README.md` install text) + A4 |
+| `docs/` | 16 | A1 (7 files) + A6 (`docs/fork/`, 4 files) + 5 files no row explains — see §2's unclassified note |
+| `harness/` | 7 | A1 (5 `onboarding.fills.ts`) + A5 + `codex/manifest.ts` (unclassified) |
+| `core/` | 2 | A1 (`aidlc-utility.ts`) + A2 — but `aidlc-utility.ts` also carries +92 unclassified lines |
+| `tests/` | 5 | **all unclassified** |
+| `scripts/` | 2 | **all unclassified** |
+| root | 9 | A1 (`README.md` install text) + A4 |
 
-`tests/` and `scripts/` are byte-identical to upstream. **Note the measurement
+Re-derived 2026-08-03. `tests/` and `scripts/` **were** byte-identical to upstream
+and no longer are — the drift arrived without a row, which is the exact failure
+this document exists to prevent. See the unclassified note at the end of §2.
+**Note the measurement
 trap:** diff against `git merge-base HEAD github/v2`, not against `github/v2`. The
 latter also reports files where upstream is merely *ahead* — after the 2.5.33 sync
 that was four `tests/` files and `docs/reference/09-testing.md` from #668, none of
@@ -108,9 +113,9 @@ which the fork has touched at all.
 
 ## 2. The inventory
 
-Thirty files outside `plugins/` and `dist/`, but only **four live logical
-changes** (A1, A2, A4, A5 — A3 and B1 are resolved). Resolve by change, not by
-file.
+Forty-one files outside `plugins/` and `dist/` (re-derived 2026-08-03), but only
+**five live logical changes** (A1, A2, A4, A5, A6 — A3 and B1 are resolved) plus
+one cluster no row explains yet. Resolve by change, not by file.
 
 ### A1 — No piped shell scripts for `bun` / `uv` (13 files) — **submitted upstream**
 
@@ -285,6 +290,41 @@ it, because the IDE hands the Stop hook no transcript. That was exactly B1's
 premise, and B1's answer (a hook that blocks) turned out not to be available. The
 rule outlived the mechanism.
 
+### A6 — Fork-authored documentation lives in `docs/fork/` (4 files)
+
+| | |
+| --- | --- |
+| Files | `docs/fork/README.md` · `docs/fork/divergence.md` (this file) · `docs/fork/kiro-spec-integration.md` · `docs/fork/research/2026-07-31-kiro-spec-hook-probe.md` |
+| Class | **A — must diverge, and free.** Upstream has no `docs/fork/`, so no file here can ever conflict. |
+| Upstream | `divergence.md` and the index are about *this* repository and never go upstream. `kiro-spec-integration.md` is a measurement of Kiro's hook surface and **is** offerable — upstream has nothing on it (checked 2026-08-03: zero branches, PRs or open issues; their only statement is `README.md`'s "stay in Vibe mode, decline spec mode"). Offering it would move the file, not copy it. |
+| On conflict | Cannot conflict. |
+
+**These two chapters were `docs/reference/19-…` and `20-…` until 2026-08-03, and
+that was a conflict waiting on a calendar.** Upstream's numbered `docs/reference/`
+chapters run 00–18 and climb; the moment upstream adds its own `19-*.md` the merge
+is an add/add conflict over a filename, and the fork's chapter has to be renamed
+anyway. Sitting in upstream's numbering space also cost two rows in
+`docs/reference/00-overview.md` — a file upstream edits — so a doc upstream does
+not have was generating permanent resolution work in a file upstream does.
+
+> [!IMPORTANT]
+> **Do not index fork chapters from an upstream-owned file.** The move removed the
+> two `00-overview.md` rows, and that file is now byte-identical to upstream again.
+> Do not put them back, and do not add them to `zensical.toml`'s nav either —
+> both files belong to upstream and both are edited there. A nav entry for a
+> chapter upstream does not ship is a line you re-resolve on every sync, forever.
+> `docs/fork/README.md` is the index; `AGENTS.md` already points at this file, and
+> that pointer is an existing A4 hunk rather than a new surface.
+
+This is the A4 `PLUGINS.md` lesson applied to a directory: **anything upstream
+does not have belongs at a path upstream does not have.** `plugins/`,
+`CHANGELOG.fork.md`, `PLUGINS.md`, `README.zh-CN.md` and now `docs/fork/` all cost
+exactly zero merge effort forever, for the same reason.
+
+One consequence to accept: `docs/fork/` is outside the published site's nav, so
+these chapters do not appear on the docs site. That is the correct trade — the nav
+lives in an upstream file.
+
 ### ~~B1 — Kiro IDE gate-render floor~~ — **DELETED 2026-08-01**
 
 | | |
@@ -325,6 +365,25 @@ on the fork from 2.5.8 until 2026-08-01, a `t219` filename collision with
 upstream's own `t219-claude-project-dir-quoting.test.ts`, and — via the core
 version bump it forced — the un-freezing of the version line that became 65% of
 the fork's total conflict surface. See §7.
+
+### Unclassified — real divergence with no row above (found 2026-08-03)
+
+Running §5 against the merge base turns up 14 files that none of A1–A6 explains.
+They are listed, not judged: each needs a class, an upstream verdict and an
+on-conflict instruction, and none of that should be invented from a diff. **Until
+they have rows, §2 is not a complete checklist and a sync will hit these
+unprepared** — which is the failure mode the document exists to prevent.
+
+| Cluster | Files | What it is |
+| --- | --- | --- |
+| **U1 — Codex plugin-marketplace layout** | `scripts/package.ts` · `scripts/manifest-types.ts` · `harness/codex/manifest.ts` · `tests/harness/harness-matrix.ts` · `tests/integration/t188-plugin-compose.test.ts` · `docs/reference/18-plugin-mechanism.md` · `docs/harness-engineering/10-authoring-a-plugin.md` | Commit `20a9cf44`. Emits Codex's current repository-marketplace layout (`.agents/plugins/marketplace.json` → `./plugins/aidlc-<name>/`) instead of the flat `.codex-plugin/` projection. **Reads as harness-neutral and upstream-bound**, and it is the first fork change to touch `scripts/` and `tests/` — the two surfaces this document claimed were byte-identical. |
+| **U2 — Kiro IDE hook-registration doctor check** | `core/tools/aidlc-utility.ts` (+92, shares the file with A1's 2-line hint) · `tests/unit/t259-doctor-ide-hook-registration.test.ts` (new) · `tests/unit/gen-coverage-registry.test.ts` (ratchet) · `tests/.coverage-registry.json` (ratchet) | Makes `doctor` report a *dead* Kiro IDE hook layer rather than only checking that hook bodies exist — the gap that let the fork ship an inert IDE hook layer for months (§7, 2.5.30). **Also reads as upstream-bound**; it is a general defect in their doctor, not CDE behaviour. Note the shape: a `core/` edit plus a ratchet entry is exactly B1's cost profile (§7). `CHANGELOG.fork.md` says "Submitted upstream" for this, but **no such PR exists** — checked 2026-08-03, the only open fork PR is #701 (A1). Treat it as unsent. |
+| **U3 — `poc-accelerator` docs inside upstream guide files** | `docs/guide/05-scopes-and-depth.md` (+6) · `docs/guide/13-customization.md` (+50) | Documents a fork plugin inside two files upstream edits. **A4's own TIP argues against this shape** — the content belongs in `plugins/poc-accelerator/README.md` or `PLUGINS.md` with at most a pointer left behind, the same treatment `README.md` got. |
+| **U4 — Kiro hook-payload fork observation** | `docs/reference/kiro-ide-hook-payload.md` (+23) | The dated measurement note appended to upstream's chapter. §7 explains the *decision* (prefer upstream's prose, append a dated observation) but no row owns the file. Companion to A6's `kiro-spec-integration.md`, and offerable with it. |
+
+Two of these are the pattern §7 warns about: a change that could not be a plugin,
+taken as a core/scripts edit without pricing the sync cost. Both look
+upstream-bound, which is the cheap exit — §6 is the procedure.
 
 ## 3. `dist/` is generated — never merge it
 
