@@ -12,7 +12,7 @@ before trusting any of this on a newer Kiro build**, because every finding is a
 property of Kiro's hook surface, not of this repo, and it can change without
 notice. Prefer re-measuring to citing.
 
-> Companion: [`kiro-ide-hook-payload.md`](kiro-ide-hook-payload.md) documents the
+> Companion: [`kiro-ide-hook-payload.md`](../reference/kiro-ide-hook-payload.md) documents the
 > older `.kiro.hook` v1.0.0 / `USER_PROMPT` channel that `harness/kiro-ide/`
 > targets today. This chapter measures the **newer `.kiro/hooks/*.json` v2
 > channel**, which behaves differently. Both are accurate about their own

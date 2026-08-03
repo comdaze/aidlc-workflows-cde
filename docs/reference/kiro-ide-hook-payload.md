@@ -73,7 +73,7 @@ Result prose is identical on both channels (`toolResult` on 0.12,
    > file events.
    >
    > Method and full capture:
-   > [Kiro Spec integration boundary §4](19-kiro-spec-integration.md#4-the-consequence-that-matters-for-the-harness).
+   > [Kiro Spec integration boundary §4](../fork/kiro-spec-integration.md#4-the-consequence-that-matters-for-the-harness).
    > The exact IDE build was not recorded — re-measure before relying on it, and
    > treat it as a candidate to feed back upstream, not as an established
    > platform property.
