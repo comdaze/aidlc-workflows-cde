@@ -41,10 +41,21 @@ const EXPECTED_V2_REGISTRATIONS: Array<{
   { file: "aidlc-mint.json", trigger: "UserPromptSubmit", matcher: null, adapterTarget: "mint" },
   { file: "aidlc-block.json", trigger: "PreToolUse", matcher: null, adapterTarget: "block" },
   { file: "aidlc-audit-logger.json", trigger: "PostToolUse", matcher: "fs_write|str_replace|fs_append", adapterTarget: "audit-and-sensors" },
-  { file: "aidlc-runtime-compile.json", trigger: "PostToolUse", matcher: "execute_bash", adapterTarget: "runtime-compile" },
-  { file: "aidlc-sync-statusline.json", trigger: "PostToolUse", matcher: "execute_bash", adapterTarget: "state-sync" },
+  // ONE registration on the execute_bash matcher, not two. runtime-compile and
+  // state-sync are both payload-independent on the IDE, so two registrations
+  // meant two bun startups per shell command for no added information; the
+  // shell-post target fans out to both core hooks in one process. A future edit
+  // that re-splits them regresses that — see divergence A8.
+  { file: "aidlc-shell-post.json", trigger: "PostToolUse", matcher: "execute_bash", adapterTarget: "shell-post" },
   { file: "aidlc-log-subagent.json", trigger: "PostToolUse", matcher: "^(subagent_.+|invoke_sub_agent)$", adapterTarget: "log-subagent" },
   { file: "aidlc-stop.json", trigger: "Stop", matcher: null, adapterTarget: "stop" },
+];
+
+// The registrations aidlc-shell-post supersedes. They must NOT ship: an install
+// carrying both runs the same two core hooks twice per shell command.
+const SUPERSEDED_V2_FILES = [
+  "aidlc-runtime-compile.json",
+  "aidlc-sync-statusline.json",
 ];
 
 // Legacy .kiro.hook files that MUST be present (coexistence with pre-1.0 IDE).
@@ -114,6 +125,21 @@ describe("t245 Kiro IDE hook registrations (v2 schema contract)", () => {
 
       test("session-end has NO v2 registration (Stop is turn-scoped, not session-scoped)", () => {
         expect(existsSync(join(tree.dir, "aidlc-session-end.json"))).toBe(false);
+      });
+
+      test("the registrations superseded by aidlc-shell-post are not shipped", () => {
+        for (const f of SUPERSEDED_V2_FILES) {
+          expect(existsSync(join(tree.dir, f)), `${f} must not ship`).toBe(false);
+        }
+      });
+
+      test("exactly one v2 registration carries the execute_bash matcher", () => {
+        const onExecuteBash = EXPECTED_V2_REGISTRATIONS.filter(
+          (r) => r.matcher === "execute_bash",
+        );
+        expect(onExecuteBash.length).toBe(1);
+        const parsed = parseHookJson(tree.dir, onExecuteBash[0].file);
+        expect(parsed.hooks[0].matcher).toBe("execute_bash");
       });
 
       test("dispatch-rules has NO IDE registration (always-included steering is the delivery channel)", () => {

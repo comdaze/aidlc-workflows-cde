@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { accessSync, appendFileSync, constants as fsConstants, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { accessSync, appendFileSync, closeSync, constants as fsConstants, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -2108,6 +2108,233 @@ export function readAllAuditShards(projectDir: string, intent?: string, space?: 
     }
   }
   return parts.join("\n");
+}
+
+// --- Bounded audit tail (hot-path read) -------------------------------------
+//
+// readAllAuditShards() concatenates EVERY shard. That is correct for replay and
+// for parsers that need the full history, but two PostToolUse hooks run on every
+// single `execute_bash` and one of them (sync-statusline) only needs the LATEST
+// `STAGE_STARTED` slug. A real PoC run left a 276 KB / 8.7k-line audit — 72% of
+// it sensor bookkeeping — and re-read all of it per shell command.
+//
+// This reads the last `maxBytes` from the end of the newest shards instead, then
+// TRIMS BACK to the first `\n---\n` boundary so a block sliced in half is never
+// handed to a parser (a truncated block could carry `**Event**:` without its
+// `**Stage slug**:` and read as a slug-less event). Callers that find nothing in
+// the tail must fall back to the full read — a stage that emits thousands of
+// sensor rows can push its `STAGE_STARTED` out of the window.
+export const AUDIT_TAIL_BYTES = 64 * 1024;
+
+export function readAuditShardsTail(
+  projectDir: string,
+  maxBytes: number = AUDIT_TAIL_BYTES,
+  intent?: string,
+  space?: string,
+): string {
+  const shards = auditShards(projectDir, intent, space);
+  if (shards.length === 0) return "";
+  const parts: string[] = [];
+  let budget = maxBytes;
+  // Newest shard last in sorted order — walk backwards so the budget is spent
+  // on the most recent history, then restore forward order for the parsers.
+  for (let i = shards.length - 1; i >= 0 && budget > 0; i--) {
+    const path = shards[i];
+    try {
+      const size = statSync(path).size;
+      const take = Math.min(size, budget);
+      const start = size - take;
+      if (take === size) {
+        parts.unshift(readFileSync(path, "utf-8"));
+      } else {
+        const fd = openSync(path, "r");
+        try {
+          const buf = Buffer.allocUnsafe(take);
+          readSync(fd, buf, 0, take, start);
+          parts.unshift(buf.toString("utf-8"));
+        } finally {
+          closeSync(fd);
+        }
+      }
+      budget -= take;
+    } catch {
+      // a shard vanished between enumerate and read — skip it
+    }
+  }
+  const joined = parts.join("\n");
+  // Drop a leading partial block. When the window happens to start exactly on a
+  // boundary there is nothing to drop, and when no boundary exists at all the
+  // slice carries no complete block, so returning "" is the honest answer.
+  const firstBoundary = joined.indexOf("\n---\n");
+  if (firstBoundary === -1) return joined.startsWith("---\n") ? joined : "";
+  return joined.slice(firstBoundary + 1);
+}
+
+// --- Toolchain probe memo ---------------------------------------------------
+//
+// The linter and type-check sensors each probe their toolchain (`bunx eslint
+// --version`, `bunx tsc --version`) before doing any work. Unmemoized, that
+// probe is re-paid on EVERY fire: a real PoC run spent 9 minutes across 50
+// fires re-discovering that eslint was not installed, each probe costing ~11s
+// because `bunx` went to the registry and failed. This memoizes the answer per
+// anchor directory.
+//
+// Two invalidation paths, both required. A TTL bounds staleness in general; the
+// dependency-manifest fingerprint catches the case that actually matters — the
+// user installs the missing tool and expects the next fire to see it, not to
+// wait out the TTL. `bun add eslint` touches the lockfile and node_modules, so
+// the fingerprint moves.
+//
+// Fail-open throughout: an unreadable or unwritable cache means "probe again",
+// never "assume unavailable".
+export const TOOLCHAIN_PROBE_TTL_MS = 60 * 60 * 1000;
+
+const DEPENDENCY_MANIFESTS = [
+  "package.json",
+  "bun.lock",
+  "bun.lockb",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "node_modules",
+] as const;
+
+interface ToolchainProbeEntry {
+  available: boolean;
+  at: number;
+  anchor: string;
+}
+
+// The memo lives in the OS temp dir, keyed by a hash of the anchor path — NOT
+// inside the project and NOT in `.aidlc-sensors/`. Three reasons, and the second
+// one is a contract:
+//
+//   - `.aidlc-sensors/` is the sensor EVIDENCE dir. A passing fire must leave no
+//     trace there; t92 asserts exactly that ("a PASSED fire creates no
+//     .aidlc-sensors dir"), and a cache file would quietly break the invariant.
+//   - The anchor can be any package root the written file happens to sit under,
+//     including a fixture tree or a sibling repo. A cache is the framework's
+//     bookkeeping and has no business appearing in someone else's directory.
+//   - Nothing is lost by it being volatile: a cleared temp dir just means the
+//     next fire probes once.
+function toolchainProbePath(baseDir: string): string {
+  const key = createHash("sha256").update(resolvePath(baseDir)).digest("hex").slice(0, 16);
+  return join(tmpdir(), `aidlc-toolchain-probe-${key}.json`);
+}
+
+// mtime fingerprint of whatever dependency manifests exist next to baseDir.
+// Absent files contribute nothing, so an install that CREATES a lockfile also
+// moves the fingerprint.
+function dependencyFingerprint(baseDir: string): string {
+  const parts: string[] = [];
+  for (const name of DEPENDENCY_MANIFESTS) {
+    try {
+      parts.push(`${name}:${statSync(join(baseDir, name)).mtimeMs}`);
+    } catch {
+      // absent — contributes nothing
+    }
+  }
+  return parts.join("|");
+}
+
+function readToolchainProbeFile(baseDir: string): Record<string, ToolchainProbeEntry> {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(toolchainProbePath(baseDir), "utf-8"));
+    return isPlainObject(raw) ? (raw as Record<string, ToolchainProbeEntry>) : {};
+  } catch {
+    return {};
+  }
+}
+
+// null = no usable memo, probe for real.
+export function readToolchainProbe(
+  baseDir: string,
+  key: string,
+  ttlMs: number = TOOLCHAIN_PROBE_TTL_MS,
+): boolean | null {
+  const entry = readToolchainProbeFile(baseDir)[key];
+  if (!entry || typeof entry.available !== "boolean" || typeof entry.at !== "number") return null;
+  if (Date.now() - entry.at > ttlMs) return null;
+  if (entry.anchor !== dependencyFingerprint(baseDir)) return null;
+  return entry.available;
+}
+
+export function writeToolchainProbe(baseDir: string, key: string, available: boolean): void {
+  try {
+    const all = readToolchainProbeFile(baseDir);
+    all[key] = { available, at: Date.now(), anchor: dependencyFingerprint(baseDir) };
+    writeFileSync(toolchainProbePath(baseDir), `${JSON.stringify(all, null, 1)}\n`, "utf-8");
+  } catch {
+    // advisory — an unwritable memo just means the next fire probes again
+  }
+}
+
+// --- Sensor coalesce ledger -------------------------------------------------
+//
+// Records the last real fire per (stage, sensor) so the dispatcher can skip a
+// re-fire inside a manifest-declared `coalesce_seconds` window. Only a PASSED
+// fire is coalescible: after a FAILED one the next write is exactly the write
+// whose fix must be verified.
+//
+// `deferred > 0` is a DIRTY FLAG, not a discard. It names the newest output the
+// sensor has not yet seen, `aidlc-sensor flush` re-fires it on demand, and
+// `--doctor` surfaces anything still outstanding — so coalescing defers work
+// visibly instead of dropping a verification silently.
+export interface CoalesceEntry {
+  at: number;
+  outcome: "passed" | "failed";
+  deferred: number;
+  last_output_path?: string;
+}
+
+export function coalesceKey(stageSlug: string, sensorId: string): string {
+  return `${stageSlug}::${sensorId}`;
+}
+
+// A SIBLING of `.aidlc-sensors/`, deliberately not inside it. The evidence dir
+// has an invariant worth keeping: a PASSED fire leaves nothing there (t92 asserts
+// it), so a bookkeeping file that appears on every fire cannot live in it. The
+// record root's `.aidlc-*` prefix is already gitignored, so the ledger is
+// machine-local without a new ignore rule — correct for a cache whose loss just
+// means "fire next time".
+function coalesceLedgerPath(projectDir: string): string {
+  return join(docsRoot(projectDir), ".aidlc-coalesce.json");
+}
+
+export function readCoalesceLedger(projectDir: string): Record<string, CoalesceEntry> {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(coalesceLedgerPath(projectDir), "utf-8"));
+    return isPlainObject(raw) ? (raw as Record<string, CoalesceEntry>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function writeCoalesceLedger(
+  projectDir: string,
+  ledger: Record<string, CoalesceEntry>,
+): void {
+  try {
+    mkdirSync(docsRoot(projectDir), { recursive: true });
+    writeFileSync(coalesceLedgerPath(projectDir), `${JSON.stringify(ledger, null, 1)}\n`, "utf-8");
+  } catch {
+    // advisory — a lost ledger degrades to "never coalesce", the old behaviour
+  }
+}
+
+// Entries that owe a verification: a coalesced fire happened and no later real
+// fire cleared it. Read by `aidlc-sensor flush` and by `--doctor`.
+export function pendingCoalescedFires(
+  projectDir: string,
+): Array<{ stageSlug: string; sensorId: string; entry: CoalesceEntry }> {
+  const out: Array<{ stageSlug: string; sensorId: string; entry: CoalesceEntry }> = [];
+  for (const [key, entry] of Object.entries(readCoalesceLedger(projectDir))) {
+    if (!entry || typeof entry.deferred !== "number" || entry.deferred <= 0) continue;
+    const sep = key.indexOf("::");
+    if (sep <= 0) continue;
+    out.push({ stageSlug: key.slice(0, sep), sensorId: key.slice(sep + 2), entry });
+  }
+  return out.sort((a, b) => a.stageSlug.localeCompare(b.stageSlug) || a.sensorId.localeCompare(b.sensorId));
 }
 
 export function worktreePath(projectDir: string, boltSlug: string): string {

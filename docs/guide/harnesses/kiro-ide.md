@@ -75,9 +75,9 @@ In the chat panel, run `/aidlc --doctor` to verify the setup, then
 
 ### After installing: do not click "Migrate legacy hooks"
 
-The install ships **both** hook generations — 8 v2 `.json` files and 9 legacy
+The install ships **both** hook generations — 7 v2 `.json` files and 9 legacy
 `.kiro.hook` files, the latter only for pre-1.0 IDEs. On a 1.x IDE the Agent
-Hooks panel therefore shows the 8 live hooks, then the 9 legacy ones struck
+Hooks panel therefore shows the 7 live hooks, then the 9 legacy ones struck
 through, and offers a banner:
 
 ```text
@@ -97,6 +97,20 @@ Migrate legacy hooks to v1   [Migrate]
 > Migration can only map it onto `Stop`, which would run session-teardown on
 > every agent stop instead of at session end. That is why no
 > `aidlc-session-end.json` is shipped.
+
+### You can delete the legacy files (on IDE 1.x)
+
+The 9 `.kiro.hook` files are inert on IDE >= 1.0 — they fire nothing, and the
+only thing they cost you is the struck-through panel clutter and the migration
+banner above. They ship anyway because the framework cannot know which IDE
+generation an install will be opened with, and on a pre-1.0 build they are the
+*only* mechanism that executes.
+
+If you know you are on 1.x, `rm .kiro/hooks/*.kiro.hook` is safe and removes the
+banner risk entirely. Keep one thing in mind before you do: `aidlc-session-end`
+exists ONLY as a legacy file, so deleting it means no `SESSION_ENDED` row is
+recorded — which is already the case on 1.x, since that registration is inert
+there too. `/aidlc --doctor` reports which generation is live either way.
 
 The struck-through entries are not a problem to fix — they are inert, and the 8
 live hooks above them are the whole functioning layer. If you are not on a
@@ -152,8 +166,20 @@ touches neither channel and keeps its zero-latency path.
 | `aidlc-block` | `PreToolUse` | Hard-blocks tool calls while an approval gate is open and no human has acted since (human-presence floor) |
 | `aidlc-audit-logger` | `PostToolUse` (`fs_write\|str_replace\|fs_append`) | Logs artifact create/update, then fires applicable sensors (path from the tool result) |
 | `aidlc-log-subagent` | `PostToolUse` (`^(subagent_.+\|invoke_sub_agent)$`) | Records `SUBAGENT_COMPLETED` with the delegate's identity. The matcher is broad so any delegate name reaches the adapter; the adapter drops the auxiliary `subagent_response` shell |
-| `aidlc-runtime-compile` | `PostToolUse` (`execute_bash`) | Recompiles the runtime graph (gated on the audit tail) |
-| `aidlc-sync-statusline` | `PostToolUse` (`execute_bash`) | Forward-only sync of `Current Stage` from the latest `STAGE_STARTED` in the audit (the IDE surfaces no task payload to parse) |
+| `aidlc-shell-post` | `PostToolUse` (`execute_bash`) | Two core hooks in one process: recompiles the runtime graph (gated on the audit tail), then forward-only syncs `Current Stage` from the latest `STAGE_STARTED` in the audit (the IDE surfaces no task payload to parse) |
+
+`aidlc-shell-post` replaced two separate registrations, `aidlc-runtime-compile`
+and `aidlc-sync-statusline`, which shared the `execute_bash` matcher. Both are
+payload-independent on the IDE, so the split cost a second `bun` startup per
+shell command for nothing. The core hook files are unchanged and still run in
+that order; only the registration merged.
+
+If you upgrade an existing install by copying the tree over it, note that `cp`
+merges and never prunes: your old `aidlc-runtime-compile.json` and
+`aidlc-sync-statusline.json` stay behind and keep firing alongside the merged
+hook, so each shell command runs the same two hooks twice. Harmless (both are
+idempotent and advisory) but pure overhead — delete the two files.
+`/aidlc --doctor` reports the overlap under **Superseded hook registrations**.
 
 `aidlc-session-end` has **no v2 registration**: the IDE's `Stop` trigger fires
 at the end of every assistant turn, not at conversation close, so registering

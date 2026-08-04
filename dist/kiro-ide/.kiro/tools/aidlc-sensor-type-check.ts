@@ -37,7 +37,10 @@
 //   but cuts re-reporting noise — same un-introduced error doesn't spam
 //   SENSOR_FAILED on every Write.
 //
-// * Tool-unavailable detection: probe `bunx tsc --version` once at
+// * Tool-unavailable detection: probe `bunx tsc --version`, MEMOIZED per
+//   anchor dir via aidlc-lib's toolchain-probe cache (TTL + dependency-
+//   manifest fingerprint), because this sensor fires once per TS write and the
+//   answer is a property of the project, not of the file. Probed once at
 //   startup. `bunx <tool>` returns non-127 codes for several failure
 //   modes (network-fetch, package-resolution, registry timeout) so the
 //   dispatcher's `result.status === 127` won't catch them. On any
@@ -73,7 +76,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { sensorsDir } from "./aidlc-lib.ts";
+import { readToolchainProbe, sensorsDir, writeToolchainProbe } from "./aidlc-lib.ts";
 
 interface ParsedError {
 	file: string;
@@ -154,11 +157,22 @@ function findTsconfig(filePath: string): string | null {
 // timeout). The dispatcher's branch b (status === 127) won't catch
 // those — propagate by exiting 127 ourselves on any non-zero exit.
 function probeTscAvailable(cwd: string): void {
+	// Memoized for the same reason as the linter's probe: tsc availability is a
+	// property of the project, not of the written file, and this sensor fires
+	// once per TS write. Invalidates on a TTL and on the dependency-manifest
+	// fingerprint, so installing typescript is seen by the next fire.
+	const memo = readToolchainProbe(cwd, "available:tsc");
+	if (memo === true) return;
+	if (memo === false) {
+		process.stderr.write("tsc-unavailable\n");
+		process.exit(127);
+	}
 	const result = spawnSync("bunx", ["tsc", "--version"], {
 		encoding: "utf-8",
 		timeout: 30_000,
 		cwd,
 	});
+	writeToolchainProbe(cwd, "available:tsc", result.status === 0);
 	if (result.status !== 0) {
 		process.stderr.write("tsc-unavailable\n");
 		process.exit(127);

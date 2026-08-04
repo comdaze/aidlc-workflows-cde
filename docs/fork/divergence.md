@@ -114,8 +114,18 @@ which the fork has touched at all.
 ## 2. The inventory
 
 Forty-one files outside `plugins/` and `dist/` (re-derived 2026-08-03), but only
-**five live logical changes** (A1, A2, A4, A5, A6 — A3 and B1 are resolved) plus
-one cluster no row explains yet. Resolve by change, not by file.
+**eight live logical changes** (A1, A2, A4, A5, A6, A7, A8, A9 — A3 and B1 are
+resolved) plus one cluster no row explains yet. Resolve by change, not by file.
+
+> [!NOTE]
+> The file counts in §1 and §5's aggregate table were derived on 2026-08-03 and do
+> **not** include A7/A8/A9 (added 2026-08-04): +8 `core/` files, +3 `harness/`
+> files, +2 `scripts/` files, +5 `docs/` files. In particular, B1's
+> "byte-identical again" claim for `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts`
+> is **no longer true** — A8 re-opens that file. It is a 40-line addition rather
+> than B1's 145, and it is upstream-bound, but treat the adapter as a live conflict
+> surface again. A9 also puts `scripts/` on the map for the first time with a
+> classified row (the two files there were previously "all unclassified").
 
 ### A1 — No piped shell scripts for `bun` / `uv` (13 files) — **submitted upstream**
 
@@ -365,6 +375,128 @@ on the fork from 2.5.8 until 2026-08-01, a `t219` filename collision with
 upstream's own `t219-claude-project-dir-quoting.test.ts`, and — via the core
 version bump it forced — the un-freezing of the version line that became 65% of
 the fork's total conflict surface. See §7.
+
+### A7 — Sensor cost: probe memo + coalesce window (8 files) — **upstream-bound**
+
+| | |
+| --- | --- |
+| Files | `core/tools/{aidlc-lib,aidlc-sensor,aidlc-sensor-schema,aidlc-sensor-linter,aidlc-sensor-type-check,aidlc-utility}.ts` · `core/hooks/aidlc-sync-statusline.ts` · `core/sensors/aidlc-{linter,type-check}.md` · docs: `docs/harness-engineering/06-sensors.md` · `docs/reference/07-sensor-system.md` · `docs/guide/12-cli-commands.md` |
+| Class | **B — general, not CDE-specific.** Nothing here knows about CDE, PoCs or plugins; it is a cost bug in the sensor spine that any project with a whole-project toolchain hits. |
+| Upstream | **Offer it.** The measurement is the argument (below), and the design is additive: one optional manifest field, one new subcommand, one doctor row. Default behaviour with the field absent is byte-for-byte the old behaviour. |
+| On conflict | Keep ours, re-apply onto upstream's version. The pieces are independent — the probe memo, the coalesce ledger and the bounded audit tail can each be re-applied alone. |
+
+Measured on a real eight-step PoC run (`goldwind-edm-poc`, 870 audit events, 314
+sensor fires):
+
+| | fires | failures | median | total |
+| --- | --- | --- | --- | --- |
+| `linter` | 50 | 0 | 10.8 s | **542 s** |
+| `type-check` | 50 | 13 | 9.0 s | **406 s** |
+| the three document sensors | 214 | 12 | ~50 ms | 11 s |
+
+**98.9% of sensor wall-clock in two sensors, on 5 distinct files.** Three separate
+causes, three fixes:
+
+1. **The probe was re-paid per fire.** Every one of the 50 `linter` fires ended
+   `Note: tool-unavailable` after ~11 s: the project has no eslint, so `bunx
+   eslint@10` went to the registry and failed, 50 times, to re-derive the same
+   answer. Now: an on-disk config walk answers the no-config case with zero
+   subprocesses (measured 8.4 s → 0.044 s on that project's own file), and the
+   availability probe is memoized per anchor dir with a TTL plus a
+   dependency-manifest fingerprint so `bun add eslint` is still seen next fire.
+2. **Whole-project cost paid per write.** `tsc --project` checks everything and
+   the sensor then filters to the written file — correct semantics, but the tenth
+   edit costs what the first did. Now: optional `coalesce_seconds` (120 on both
+   code sensors) defers a repeat fire for the same stage, `aidlc-sensor flush`
+   lands the deferred work before a gate, `--doctor` reports what is outstanding,
+   and a fire after a FAILED one is never coalesced.
+3. **The audit hot path read everything.** `aidlc-sync-statusline` runs on every
+   `execute_bash` and needs only the latest `STAGE_STARTED`; it was reading the
+   whole trail, 276 KB by the end of that run. Now: a 64 KB bounded tail aligned
+   to a block boundary, falling back to the full read when the window holds no
+   `STAGE_STARTED`. Verified same-answer on the real trail.
+
+> [!IMPORTANT]
+> **Coalescing must never become silent skipping.** The three properties that keep
+> it deferral — no coalesce after a FAILED fire, a recorded `deferred` count with
+> the newest unseen path, and `flush` + a `--doctor` row to discharge it — are the
+> whole reason this is acceptable in a framework whose thesis is that verification
+> is not optional. If a future edit drops any of them, the feature becomes a way
+> to lose a check quietly. The stamp is also written *after* the terminal audit
+> row on purpose: a crash mid-fire must leave the pair fireable, not
+> falsely-verified.
+
+### A8 — Kiro IDE: one PostToolUse(execute_bash) hook, not two (3 files) — **upstream-bound**
+
+| | |
+| --- | --- |
+| Files | `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` (+~40) · `harness/kiro-ide/hooks/aidlc-shell-post.json` (new) · `harness/kiro-ide/manifest.ts` · `docs/guide/harnesses/kiro-ide.md`. Deletes `hooks/aidlc-{runtime-compile,sync-statusline}.json`. |
+| Class | **B — general, not CDE-specific.** |
+| Upstream | **Offer it** together with A7 — same run produced both findings. |
+| On conflict | Keep ours. If upstream has since edited either superseded `.json`, that edit is moot: re-apply the merge and carry their description text into `aidlc-shell-post.json`. |
+
+`aidlc-runtime-compile` and `aidlc-sync-statusline` were two registrations sharing
+the `execute_bash` matcher, and both are payload-independent on the IDE — so every
+shell command paid two `bun` startups to run two hooks that need nothing from the
+event. `aidlc-shell-post` runs both in one process via a `__shell_post__` fan-out
+in the adapter, mirroring the existing `__audit_and_sensors__` pattern. The core
+hook files are untouched and still run in the same order.
+
+Also in the adapter: failed writes are no longer recorded as hook drops. A
+permission denial or a `str_replace` whose anchor never matched has no artifact to
+audit, so declining is correct — but recording it made
+`.aidlc-hooks-health/kiro-adapter.drops` read like lost data (7 of 7 drops in the
+measured run were failures, not decay). Unknown wordings still record a drop,
+because an unrecognised *success* wording is exactly the decay the drop file
+exists to catch.
+
+> [!WARNING]
+> **Copying a tree over an install merges; it never prunes.** An install upgraded
+> in place keeps its old `aidlc-runtime-compile.json` / `aidlc-sync-statusline.json`
+> and runs the same two hooks twice per shell command. Harmless (idempotent,
+> advisory) but pure overhead — `--doctor` reports it under **Superseded hook
+> registrations**. The legacy `.kiro.hook` pair is deliberately left split: pre-1.0
+> IDE has no v2 reader.
+
+### A9 — Plugin parity across all five harnesses (4 files) — **upstream-bound**
+
+| | |
+| --- | --- |
+| Files | `scripts/plugin-hooks-template/compose.ts` · `scripts/package.ts` · `harness/opencode/skills/aidlc/SKILL.md` · `docs/reference/18-plugin-mechanism.md` |
+| Class | **B — general, not CDE-specific.** Two host-shape bugs in the plugin mechanism plus the sentinel drift they exposed; nothing here knows about CDE or PoCs. |
+| Upstream | **Offer it.** Small, independently applicable, and it makes upstream's own "validated across all four harness projections" claim true for five. |
+| On conflict | Keep ours; each of the three fixes is independent. The `compose.ts` hunk must stay in sync with `resolveSkillsPath` — if upstream changes that resolver, re-derive the probe rather than re-applying the patch verbatim. |
+
+Measured by composing `poc-accelerator` into a scratch install of each of the five
+harnesses and counting what landed. Before: two harnesses were silently degraded.
+
+- **Codex got no stage runners.** Compose probes `<harness-dir>/skills` to decide
+  whether to regenerate runners, but Codex discovers skills at
+  `<project>/.agents/skills/` and ships nothing under `.codex/skills/`. Every file
+  composed correctly and the orchestrator tables refreshed (that lookup already had
+  the `.agents` fallback) — but `runners=0`, so the plugin had no `/…` entry point,
+  and the only trace was an advisory drop. The probe now mirrors
+  `aidlc-runtime-paths.ts` `resolveSkillsPath`, which is what `aidlc-runner-gen`
+  writes through. Codex: 0 → 9 runners.
+- **opencode refreshed neither table.** Its authored `SKILL.md` carried an em dash
+  where the shared sentinel literal has a hyphen, and no stage-graph marker pair at
+  all. That broke the splice for plugins **and** for the framework's own
+  `aidlc-utility.ts scope-table` / `stage-table` — verified by running both against
+  an opencode install before and after.
+- **Kiro plugin auto-compose was a dead promise.** The emitter shipped only the
+  legacy `.kiro.hook` compose hook, which is inert on Kiro IDE ≥ 1.0.1xx. It now
+  emits the v2 `.json` alongside it (`SessionStart`), same coexistence the framework's
+  own Kiro tree uses. The supported Kiro path remains the explicit compose command.
+
+After: all five harnesses identical — 8 stages, 1 scope, 2 sensors, 9 runners,
+scope row + 8 stage rows in the orchestrator table, zero compose drops.
+
+> [!IMPORTANT]
+> **A one-character drift in a sentinel is a silently dead code path.** The
+> opencode em dash cost two table refreshes for as long as that file existed, and
+> nothing failed — no test, no doctor row, no drop. When porting to a sixth
+> harness, diff the `<!-- BEGIN: … -->` literals against `aidlc-utility.ts` rather
+> than eyeballing them.
 
 ### Unclassified — real divergence with no row above (found 2026-08-03)
 

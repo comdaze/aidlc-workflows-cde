@@ -21,6 +21,7 @@ import {
   latestStartedStageSlug,
   parseCheckboxes,
   readAllAuditShards,
+  readAuditShardsTail,
   readStateFile,
   resolveProjectDirFromHook,
   stateFilePath,
@@ -63,8 +64,15 @@ if (source === "ide-audit-sync") {
   const stateContent = readStateFile(projectDir);
   const status = (getField(stateContent, "Status") ?? "").trim();
   const current = (getField(stateContent, "Current Stage") ?? "").trim();
-  const audit = readAllAuditShards(projectDir);
-  const auditSlug = latestStartedStageSlug(audit);
+  // Hot path: on Kiro IDE this hook runs on EVERY execute_bash, and the only
+  // thing it needs is the latest STAGE_STARTED slug. Reading the whole audit for
+  // that got expensive as the trail grew — a measured PoC run ended at 276 KB /
+  // 8.7k lines, 72% of it sensor bookkeeping, re-read per shell command. Read a
+  // bounded tail first; fall back to the full history only when the window holds
+  // no STAGE_STARTED (a stage that emitted thousands of sensor rows can push its
+  // own start out of the window). Same answer, cheaper in the common case.
+  let auditSlug = latestStartedStageSlug(readAuditShardsTail(projectDir));
+  if (!auditSlug) auditSlug = latestStartedStageSlug(readAllAuditShards(projectDir));
   hookDebug(projectDir, "sync-statusline", "ide-audit-sync", { auditSlug, current, status });
 
   // (a) Only sync a live, running workflow. A completed/parked workflow (Status

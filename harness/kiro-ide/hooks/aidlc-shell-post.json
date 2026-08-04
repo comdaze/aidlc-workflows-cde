@@ -1,0 +1,12 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "aidlc-shell-post",
+      "trigger": "PostToolUse",
+      "matcher": "execute_bash",
+      "description": "Merged PostToolUse(execute_bash) hook: runtime graph compile THEN aidlc-state.md Current Stage sync, in one process. Supersedes the separate aidlc-runtime-compile and aidlc-sync-statusline registrations, which shared this matcher and so paid two bun startups per shell command for two payload-independent hooks. DELIBERATELY matched to execute_bash, not a task/spec tool: the IDE surfaces no task payload a sync could parse, so the state sync derives the stage from the audit tail (do not 'optimize' this to a task matcher). Cost: bounded — the sync reads a 64 KB audit tail rather than the whole trail, falling back to a full read only when the window holds no STAGE_STARTED. If an older install still carries aidlc-runtime-compile.json or aidlc-sync-statusline.json, delete them; --doctor reports the overlap.",
+      "action": { "type": "command", "command": "bun .kiro/hooks/aidlc-kiro-adapter.ts shell-post" }
+    }
+  ]
+}

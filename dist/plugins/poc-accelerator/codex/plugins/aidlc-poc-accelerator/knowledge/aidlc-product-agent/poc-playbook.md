@@ -20,10 +20,12 @@ and a clear extension path. It is not a production-readiness checklist.
 6. **Test validation (about 4h):** map each criterion to repeatable evidence.
 7. **CDK deployment (about 2h):** deploy and smoke test only through CDK.
 8. **Demo and handoff (about 2h):** obtain acceptance, document the
-   production-extension backlog, and deliver the cost analysis (pilot,
+   production-extension backlog, deliver the cost analysis (pilot,
    production, and 2x–10x over-production tiers with a per-service breakdown
    and explicit assumptions) so the customer sees the cost curve and their
-   options, not just a working demo.
+   options, not just a working demo — and deposit the sanitized knowledge
+   harvest back into the team knowledge repository. The deposit is mandatory
+   and does not depend on step 1 having found anything there.
 
 ## CDE alignment
 
@@ -82,9 +84,13 @@ replacement for the rules.
 - [ ] Knowledge promoted out of the record (rules, industry knowledge)
       follows the knowledge governance laws: customer-confirmed, sanitized,
       generalization-graded, dated, and technical claims carry verification
-      evidence — and the harvest is submitted to the team knowledge
-      repository per its contribution process (or the absence of a team
-      repository is noted).
+      evidence.
+- [ ] The harvest is deposited in the team knowledge repository through its
+      contribution process, and `poc-accelerator-team-knowledge-deposit.md`
+      records the probed git URL, the approved entry list, and the merge
+      request, pushed branch, or — when the push was refused — the prepared
+      patch with a named owner. "No team repository" is not an outcome: the
+      URL is asked for here if nothing upstream supplied it.
 
 ## Knowledge governance (sedimentation and reuse)
 
@@ -93,29 +99,47 @@ Knowledge harvested from a PoC serves four audiences — same-project members
 directory), the team (industry packs + plugin releases), and the organization
 (generalized methodology into the plugin).
 
-**The team knowledge repository closes the loop at both ends.** The first
-action of requirements capture is a mandatory team-knowledge preflight, not
-an optional reminder. First search the active space's local knowledge seats:
+**The team knowledge repository closes the loop at both ends, and each end
+stands on its own.** Step 1 reads from it; step 8 writes back to it. Neither
+is conditional on the other, and neither can be skipped — a PoC that skipped
+the read still owes the write, and a PoC that found nothing to import still
+has something to contribute. The repository is identified by a **git URL**,
+not a local directory: a checkout can be searched, but only a remote can be
+pushed to, and step 8 pushes.
+
+**The read end (step 1).** The first action of requirements capture is a
+mandatory team-knowledge preflight, not an optional reminder. First search the
+active space's local knowledge seats:
 `aidlc/spaces/<space>/knowledge/aidlc-shared/` and
 `aidlc/spaces/<space>/knowledge/aidlc-product-agent/`. Then read
-`aidlc/spaces/<space>/memory/{org,team,project}.md` for any approved Team
-Knowledge Repository location. Search its available local checkout for an
-industry pack matching the customer's domain; if it names only a remote URL,
-ask the user to approve reading or cloning it before claiming there is no pack.
-When no repository is configured, a source is blocked, or no pack matches, ask
-the user to provide an approved team-knowledge URL/local path **or explicitly
-skip team knowledge for this PoC**. Do not continue on silence. Record all
-sources, queries, matches, revision/date, import path, the user-provided
-location or explicit skip, and any blocked/absent source in the stage's
-team-knowledge preflight artifact — ending with the fenced `preflight:` yaml
-block the plugin's deterministic `poc-accelerator-team-knowledge-preflight`
-sensor verifies (a missing resolution, empty search record, or a skip without
-a named decider is reported as `SENSOR_FAILED`). Import an approved,
-sanitized pack into the active space before customer domain capture, then
-apply the freshness law. At PoC close, submit the promoted harvest back through
-the repository's contribution process (a merge request with the
-conservation-law checklist). Knowledge that stays in one project's seat helps
-no one else.
+`aidlc/spaces/<space>/memory/{org,team,project}.md` for an approved
+`## Team Knowledge Repository` git URL; when no layer carries one, ask the user
+for it as a required question — silence, "later", and a bare local path are not
+answers. Probe the URL read-only (`git ls-remote --heads <url>`) before
+trusting it; a failed probe is re-asked, not recorded as resolved. Then search
+it for an industry pack matching the customer's domain, using the approved
+local checkout when one exists and asking approval to clone otherwise. Record
+the URL and how it was resolved, the probe, all sources and queries, matches,
+revision/date, and the import path in the team-knowledge preflight artifact —
+ending with the fenced `preflight:` yaml block the plugin's deterministic
+`poc-accelerator-team-knowledge-preflight` sensor verifies (a missing
+resolution, a non-git or absent URL, an unrecorded probe, or an empty search
+record is reported as `SENSOR_FAILED`). Import an approved, sanitized pack into
+the active space before customer domain capture, then apply the freshness law.
+Register the confirmed URL in `project.md` so later stages and later runs
+inherit it.
+
+**The write end (step 8).** At PoC close, submit the promoted harvest back
+through the repository's contribution process: a branch, one purposeful commit,
+and a merge request carrying the conservation-law checklist. Step 8 resolves
+the URL itself — preflight artifact, then memory layers, then a required
+question — so a run that never executed the preflight still deposits. Get a
+named approver for what leaves the engagement, never push to the default
+branch, and when write access is refused, prepare the patch and name the owner
+who will land it rather than dropping the deposit. The
+`poc-accelerator-team-knowledge-deposit` sensor verifies the fenced `deposit:`
+record the same deterministic way. Knowledge that stays in one project's seat
+helps no one else.
 
 Three conservation laws govern every promotion out of the workflow record:
 

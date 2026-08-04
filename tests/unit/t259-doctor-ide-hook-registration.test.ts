@@ -83,6 +83,7 @@ function runDoctor(): string {
 const REGISTRATION = /Kiro IDE hook registration/;
 const COMMANDS = /Kiro IDE hook commands/;
 const LEGACY_ADVISORY = /Legacy hook files:/;
+const SUPERSEDED = /Superseded hook registrations:/;
 
 /** The report line carrying `needle`, with its leading ✓/✗ marker. */
 function row(out: string, needle: RegExp): string {
@@ -95,8 +96,37 @@ describe("t259 doctor — Kiro IDE hook registration", () => {
     const out = runDoctor();
     const r = row(out, REGISTRATION);
     expect(r).toContain("✓");
-    expect(r).toMatch(/8 v2/);
+    // 7 v2 since aidlc-shell-post merged the two execute_bash registrations
+    // (divergence A8); 9 legacy, which stay split for pre-1.0 IDEs.
+    expect(r).toMatch(/7 v2/);
     expect(r).toMatch(/9 legacy/);
+  });
+
+  // The merge only pays off if the superseded pair is gone. An install that
+  // kept them runs the same two core hooks twice per shell command, so doctor
+  // has to say so rather than reporting a clean bill.
+  test("1b: a leftover superseded registration is reported", () => {
+    restoreShipped();
+    expect(row(runDoctor(), SUPERSEDED)).toBe("");
+    writeFileSync(
+      join(hooksDir, "aidlc-runtime-compile.json"),
+      JSON.stringify({
+        version: "v1",
+        hooks: [
+          {
+            name: "aidlc-runtime-compile",
+            trigger: "PostToolUse",
+            matcher: "execute_bash",
+            action: { type: "command", command: "bun hooks/aidlc-kiro-adapter.ts runtime-compile" },
+          },
+        ],
+      }),
+      "utf-8",
+    );
+    const r = row(runDoctor(), SUPERSEDED);
+    expect(r).toMatch(/aidlc-runtime-compile\.json/);
+    expect(r).toMatch(/twice/);
+    rmSync(join(hooksDir, "aidlc-runtime-compile.json"), { force: true });
   });
 
   test("2: as shipped -> every registered command resolves", () => {

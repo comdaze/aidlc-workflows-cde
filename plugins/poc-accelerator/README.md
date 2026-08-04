@@ -17,7 +17,7 @@ a throwaway feasibility spike.
 5. Feature expansion — only validated core behavior
 6. Test validation — repeatable unit/integration evidence
 7. CDK deployment — deployed stack and smoke-test evidence
-8. Demo and handoff — demo package, extension advice, a three-tier cost analysis (pilot / production / over-production with per-service breakdown), and a value-metrics register
+8. Demo and handoff — demo package, extension advice, a three-tier cost analysis (pilot / production / over-production with per-service breakdown), a value-metrics register, and the mandatory knowledge deposit back into the team knowledge repository
 
 The plugin uses only existing AIDLC personas: product, architect, developer,
 quality, and pipeline/deploy. It has no new agent implementation and does not
@@ -83,24 +83,38 @@ feasibility-spike scope. The plugin declares no shortcut keywords so the
 customer-delivery flow is never selected by ambiguous inference.
 
 > **First-run tip:** write the org rule baseline into
-> `aidlc/spaces/default/memory/org.md` — deployment norms, security red
-> lines, and (if your team maintains one) a `## Team Knowledge Repository`
-> section naming an approved local checkout or repository URL. Step 1 always
-> searches the active space's local knowledge first, then searches that source
-> for a matching industry pack. If no source is configured, access is blocked,
-> or no pack matches, Step 1 explicitly asks you to provide an approved team
-> knowledge URL/local path or to skip team knowledge for this PoC. It never
-> treats silence as a skip — the plugin ships a deterministic TypeScript
-> sensor (`poc-accelerator-team-knowledge-preflight`, advisory like every
-> framework sensor) that checks the preflight artifact records a pack import,
-> your provided source, or an explicit skip with a named decider.
+> `aidlc/spaces/default/memory/org.md` — deployment norms, security red lines,
+> and a `## Team Knowledge Repository` section naming your team knowledge
+> repository's **git URL**. That repository is a required input, and the URL
+> has to be a git remote rather than a local directory, because the flow uses
+> it at both ends:
+>
+> - **Step 1 reads from it.** It searches the active space's local knowledge
+>   first, then probes the URL (`git ls-remote`) and searches it for a matching
+>   industry pack. If no memory layer carries a URL, Step 1 asks you for one as
+>   a required question — silence, "later", and a bare local path are not
+>   answers, and there is no skip path.
+> - **Step 8 writes back to it.** The sanitized, customer-approved harvest is
+>   deposited through the repository's contribution process (branch + merge
+>   request). This is mandatory and **independent of Step 1**: it resolves the
+>   URL itself — preflight artifact, then memory layers, then asking you — so a
+>   run that never read team knowledge still contributes what it learned.
+>
+> Both ends carry a deterministic TypeScript sensor (advisory, like every
+> framework sensor): `poc-accelerator-team-knowledge-preflight` checks the
+> preflight artifact records a probed git URL and a real resolution, and
+> `poc-accelerator-team-knowledge-deposit` checks the deposit artifact records
+> the approved entry list plus a merge request, a pushed branch, or — when the
+> push was refused — a prepared patch with a named owner.
 
 ### Other harnesses
 
-Claude Code and Codex install through their native plugin commands; MCP
-configuration goes to `.mcp.json` (Claude Code) or `~/.codex/config.toml`
-(Codex). See the [plugin mechanism](../../docs/reference/18-plugin-mechanism.md)
-for details.
+The plugin ships a projection for **all five** harnesses — Claude Code, Codex,
+Kiro CLI, Kiro IDE, opencode — and composes identically on each: 8 stages, the
+`poc-accelerator-cde` scope, 8 stage runners + the scope runner, both sensors, and
+the orchestrator's scope/stage tables refreshed. Claude Code, Codex, and opencode
+install through their hosts' native plugin commands; both Kiro harnesses use the
+explicit compose command in the five-step install above.
 
 ```bash
 # Claude Code
@@ -110,7 +124,28 @@ for details.
 # Codex CLI
 codex plugin marketplace add <repo>/dist/plugins/poc-accelerator/codex
 codex plugin add aidlc-poc-accelerator@aidlc-plugins  # approve the one-time hook trust
+
+# opencode — the projection is a host plugin with a SessionStart compose hook;
+# if your opencode build has no marketplace command, compose explicitly:
+PLUGIN_ROOT="<repo>/dist/plugins/poc-accelerator/opencode"
+AIDLC_PLUGIN_ROOT="$PLUGIN_ROOT" AIDLC_PROJECT_DIR="<project>" \
+  AIDLC_HARNESS_DIR=.aidlc bun "$PLUGIN_ROOT/hooks/compose.ts"
 ```
+
+MCP configuration is required on every harness and the location differs:
+`.mcp.json` (Claude Code), `~/.codex/config.toml` (Codex),
+`.kiro/settings/mcp.json` (Kiro), or the top-level `mcp` key in `opencode.json`
+(opencode). The plugin's `mcp-setup.md` knowledge file carries all four, including
+opencode's one-array `command` shape. See the
+[plugin mechanism](../../docs/reference/18-plugin-mechanism.md) for install detail.
+
+> [!NOTE]
+> **The two Kiro harnesses do not auto-compose.** The plugin ships both hook
+> generations (`aidlc-plugin-compose.json` for Kiro IDE ≥ 1.0.1xx and the legacy
+> `.kiro.hook` for pre-1.0 builds), but they only fire if you install those files
+> under the project's `.kiro/hooks/`. Kiro CLI wires hooks through
+> `agents/aidlc.json` and ignores dropped hook files entirely. On both, run the
+> explicit compose command — it is the supported path and it is idempotent.
 
 ## Guardrails
 
@@ -123,6 +158,11 @@ codex plugin add aidlc-poc-accelerator@aidlc-plugins  # approve the one-time hoo
   fabricate business values or connect to those systems without approval.
 - Cost figures in the handoff projection are estimates with cited pricing
   sources and inline assumptions — never quotes or commitments.
+- The team knowledge repository git URL is required at both ends of the flow,
+  and the step-8 deposit needs a named approver for what leaves the customer
+  engagement. Nothing customer-confidential is deposited, and the branch goes
+  through the repository's review process — never straight to its default
+  branch.
 
 ## Upstream upgrades
 

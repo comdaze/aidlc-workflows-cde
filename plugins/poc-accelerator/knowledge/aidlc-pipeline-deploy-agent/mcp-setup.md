@@ -26,6 +26,38 @@ the MCP configuration location of the harness you are running on:
 | Kiro IDE / Kiro CLI | `.kiro/settings/mcp.json` (workspace) | The JSON examples below, as-is |
 | Claude Code | `.mcp.json` (project root) | The same `mcpServers` JSON block |
 | Codex CLI | `~/.codex/config.toml` `[mcp_servers.<name>]` | Translate each server's command/args/env to TOML |
+| opencode | `opencode.json` / `opencode.jsonc` (project root), top-level `mcp` key | Per-server `type` plus a single `command` ARRAY — see the translation below |
+
+**opencode translation.** opencode ships no MCP servers of its own and keys them
+under `mcp` rather than `mcpServers`, with three shape differences from the JSON
+below: each entry declares `type` (`"local"` or `"remote"`), a local server's
+`command` and `args` collapse into ONE array, and `env` is named `environment`.
+The same entry from the Global block becomes:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "aws-mcp-remote": {
+      "type": "remote",
+      "url": "https://mcp.aws.amazon.com",
+      "enabled": true
+    },
+    "awslabs.aws-iac-mcp-server": {
+      "type": "local",
+      "command": ["uvx", "awslabs.aws-iac-mcp-server@latest"],
+      "environment": { "FASTMCP_LOG_LEVEL": "ERROR" },
+      "enabled": true
+    }
+  }
+}
+```
+
+Merge that `mcp` key into the `opencode.json` the AIDLC install already
+placed at the project root — do not replace the file, it also carries the
+`skills`, `instructions`, and `permission` keys the engine needs. Shape per
+[opencode's MCP documentation](https://opencode.ai/docs/mcp-servers); verify
+against your opencode version before a customer engagement.
 
 The examples below use the Kiro JSON shape as canonical; the server set,
 package names, and environment variables are identical on every harness. The

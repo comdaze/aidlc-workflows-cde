@@ -92,6 +92,7 @@ import {
   scopesDir,
   harnessDataPath,
   pluginsEnabled,
+  pendingCoalescedFires,
   selectionAwareDefaultScope,
   resolveDefaultScope,
   scalarField,
@@ -1323,6 +1324,27 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
             "do NOT use the IDE's \"Migrate legacy hooks\" button; it would duplicate " +
             "already-registered hooks. Delete them if you are not on a pre-1.0 IDE",
         });
+      }
+
+      // Superseded v2 registrations left behind by an in-place upgrade. Copying a
+      // fresh tree over an install MERGES — it never prunes — so a project
+      // installed before the two PostToolUse(execute_bash) hooks were merged into
+      // aidlc-shell-post keeps its old pair, and every shell command then pays
+      // THREE hook processes instead of one, running the same two core hooks
+      // twice. Harmless (all three are idempotent and advisory) but pure
+      // overhead, and invisible from the panel.
+      const SUPERSEDED_BY_SHELL_POST = ["aidlc-runtime-compile.json", "aidlc-sync-statusline.json"];
+      if (v2Files.includes("aidlc-shell-post.json")) {
+        const stale = SUPERSEDED_BY_SHELL_POST.filter((f) => v2Files.includes(f));
+        if (stale.length > 0) {
+          results.push({
+            pass: true,
+            label:
+              `Superseded hook registrations: ${stale.join(", ")} still registered alongside ` +
+              "aidlc-shell-post.json, so each shell command runs the same two hooks twice",
+            fix: `delete ${stale.join(" and ")} from the hooks dir — aidlc-shell-post.json does both in one process`,
+          });
+        }
       }
     }
   }
@@ -2779,6 +2801,39 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
     results.push({
       pass: false,
       label: "Paired sensor coverage: check failed",
+      fix: errorMessage(e),
+    });
+  }
+
+  // Deferred sensor fires (advisory) — a sensor carrying `coalesce_seconds`
+  // skips a re-fire inside its window and records the debt in the coalesce
+  // ledger instead. That is deferral, not dismissal, so it has to be visible:
+  // this row names every (stage, sensor) pair still owing a verification and
+  // the newest output it has not seen. Empty ledger → a quiet pass.
+  //
+  // Read-only by construction (readCoalesceLedger fails open to {}), so it stays
+  // safe on a pristine checkout with no record tree.
+  try {
+    const pending = pendingCoalescedFires(projectDir);
+    if (pending.length === 0) {
+      results.push({ pass: true, label: "Deferred sensor fires: none outstanding" });
+    } else {
+      const detail = pending
+        .map(
+          (p) =>
+            `${p.stageSlug} → ${p.sensorId} (${p.entry.deferred} deferred${p.entry.last_output_path ? `, newest: ${p.entry.last_output_path}` : ""})`
+        )
+        .join("; ");
+      results.push({
+        pass: true,
+        label: `Deferred sensor fires: ${pending.length} pair(s) awaiting a re-fire — ${detail}`,
+        fix: "Run `aidlc-sensor flush` (optionally --stage <slug>) before the stage's approval gate.",
+      });
+    }
+  } catch (e) {
+    results.push({
+      pass: false,
+      label: "Deferred sensor fires: check failed",
       fix: errorMessage(e),
     });
   }

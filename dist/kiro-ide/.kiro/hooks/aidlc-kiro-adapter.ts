@@ -248,6 +248,33 @@ function extractWrittenPath(toolResult: string): string {
   return "";
 }
 
+// A write that FAILED has no path to extract and nothing to audit — declining it
+// is the correct outcome, not decay. Recording those as hook drops made the
+// health file read like lost data: a real run collected 7 drops, every one of
+// them a permission denial or a `str_replace` that never applied. Classify the
+// known failure wordings so `--doctor` keeps surfacing genuine
+// unrecognised-success prose (the decay this harness exists to catch) without
+// the noise.
+//
+// Deliberately narrow: only Kiro's own failure prefixes. Anything else still
+// records a drop, because an unknown wording might be a SUCCESSFUL write whose
+// path we failed to parse — and that one must stay loud.
+const WRITE_FAILURE_PREFIXES = [
+  // "Tool call denied by user's permissions. Rule: deny …" — trimmed to the
+  // stable head so a possessive/wording drift does not reopen the noise.
+  "Tool call denied",
+  "Caught an error while replacing string",
+  "Failed to",
+  "Error:",
+  "InvalidToolUse:",
+  "The provided path",
+] as const;
+
+function isFailedWriteResult(toolResult: string): boolean {
+  const s = toolResult.trim();
+  return WRITE_FAILURE_PREFIXES.some((p) => s.startsWith(p));
+}
+
 // Map the IDE tool name to the canonical name the core hooks match on. Write
 // creates a (possibly new) file; str_replace/fs_append always target an
 // existing file → Edit (forces ARTIFACT_UPDATED in the core audit-logger).
@@ -339,10 +366,21 @@ function buildForward(): Forward {
       const rawPath = extractWrittenPath(ide.toolResult ?? "");
       if (!rawPath) {
         // A write-class tool ran but its toolResult wording did not match any
-        // known pattern → the write is dropped from audit + sensors. Record a
-        // visible drop (finding 4) so `--doctor` can surface the decay instead
-        // of it being an invisible no-op — the exact failure class this harness
-        // exists to eliminate.
+        // known pattern. Two very different reasons for that:
+        //
+        //   - The write FAILED (permission denial, a str_replace whose anchor
+        //     did not match). There is no artifact and nothing to audit, so
+        //     declining is correct — log it at debug level and move on.
+        //   - The write SUCCEEDED and the IDE's success wording changed. That is
+        //     real decay: the artifact exists but no audit row or sensor fire
+        //     covers it. Record a visible drop so `--doctor` surfaces it.
+        if (isFailedWriteResult(ide.toolResult ?? "")) {
+          hookDebug(projectDir, "kiro-adapter", "audit-and-sensors: write failed, nothing to audit", {
+            tool: ide.toolName ?? "?",
+            result: (ide.toolResult ?? "").slice(0, 120),
+          });
+          return null;
+        }
         recordHookDrop(
           projectDir,
           "kiro-adapter",
@@ -372,6 +410,22 @@ function buildForward(): Forward {
       // MEMORY_EMPTY emit is not in the transition regex (no recursion).
       return {
         hook: "aidlc-runtime-compile.ts",
+        input: {
+          hook_event_name: "PostToolUse",
+          tool_name: "Bash",
+          tool_input: { command: "", source: "ide-audit-sync" },
+        },
+      };
+    }
+
+    case "shell-post": {
+      // The merged PostToolUse(execute_bash) target: runtime-compile +
+      // state-sync in ONE process. Both are payload-independent on the IDE (see
+      // the two cases below, kept for direct invocation and for an install that
+      // still carries the older split registrations), so nothing needs deriving
+      // here — the fan-out happens at the forward site.
+      return {
+        hook: "__shell_post__",
         input: {
           hook_event_name: "PostToolUse",
           tool_name: "Bash",
@@ -509,6 +563,26 @@ if (fwd.hook === "__audit_and_sensors__") {
   // (mirrors the Claude settings.json registration). Both advisory: exit 0.
   runCore("aidlc-audit-logger.ts", fwd.input);
   runCore("aidlc-sensor-fire.ts", fwd.input);
+  return 0;
+}
+
+if (fwd.hook === "__shell_post__") {
+  // Two core hooks ride the same execute_bash event. They used to be TWO
+  // registered hooks with the same `execute_bash` matcher, which meant two bun
+  // processes per shell command — pure duplicated startup, since both are
+  // payload-independent on the IDE. One registration, one process, both hooks
+  // in order: runtime-compile (graph freshness) then state-sync (Current Stage
+  // reconciliation, which reads the audit tail). Both advisory: exit 0.
+  runCore("aidlc-runtime-compile.ts", {
+    hook_event_name: "PostToolUse",
+    tool_name: "Bash",
+    tool_input: { command: "", source: "ide-audit-sync" },
+  });
+  runCore("aidlc-sync-statusline.ts", {
+    hook_event_name: "PostToolUse",
+    tool_name: "TaskUpdate",
+    tool_input: { source: "ide-audit-sync" },
+  });
   return 0;
 }
 

@@ -100,6 +100,46 @@ timeout_seconds: 5                           # optional
 | `input_schema` | optional | object | Advisory today; future LLM dispatch will use it as a templating contract. |
 | `output_schema` | optional | object | Advisory today; future LLM dispatch will use it as a parsing contract. |
 | `timeout_seconds` | optional | int | Per-fire wall-clock cap. |
+| `coalesce_seconds` | optional | int | Re-fire window. A fire whose (stage, sensor) pair already PASSED inside it is deferred instead of run. Absent or non-positive → never coalesce (the historical behaviour). See [Coalescing](#coalescing) below. |
+
+---
+
+## Coalescing
+
+Sensors fire per matching write. For a sensor that reads the written file that
+is exactly right. For one whose unit of work is the whole project it is not:
+`linter` resolves eslint from the nearest package root, `type-check` runs
+`tsc --project` over the entire tsconfig scope and only then filters the
+diagnostics to the written file. Both pay the same price for the tenth edit of a
+file as for the first, and a measured PoC run paid it 100 times across 5 files —
+about 19 minutes of blocking wall-clock, 98.9% of that run's total sensor time.
+
+`coalesce_seconds: N` opens a window per (stage, sensor) pair:
+
+1. **Decision, pre-lock.** The dispatcher checks the coalesce ledger
+   (`<record>/.aidlc-sensors/.coalesce.json`) *before* acquiring the audit lock
+   and before emitting `SENSOR_FIRED`, so a coalesced fire leaves no half-open
+   pair in the audit. It prints `{"coalesced":true,…}` on stdout and exits 0.
+2. **Only after a PASS.** An entry whose recorded outcome is `failed` is never
+   coalesced — the write following a failure is the fix, and the fix must be
+   verified.
+3. **Deferred, not dropped.** The ledger entry carries a `deferred` count and
+   `last_output_path`, the newest output the sensor has not seen.
+4. **Landed on demand.** `aidlc-sensor flush [--stage <slug>]` re-fires every
+   pair that owes a verification, bypassing the window, and clears the ledger
+   entries it lands. An entry whose recorded path has since vanished is reported
+   and dropped. Stages that bind a coalescing sensor call `flush` before their
+   approval gate.
+5. **Visible meanwhile.** `--doctor` emits a **Deferred sensor fires** row
+   naming every outstanding pair and its newest unseen output.
+
+The stamp is written *after* the terminal audit row, so a crash mid-fire leaves
+the pair un-stamped and therefore still fireable — never falsely marked as
+recently verified.
+
+Both shipped code sensors use `coalesce_seconds: 120`. The document-shape
+sensors deliberately do not: they cost tens of milliseconds, so deferring one
+would delay a review signal for no gain.
 
 ---
 

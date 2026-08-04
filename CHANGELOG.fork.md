@@ -33,6 +33,131 @@ CDE-specific work. This restores the policy the fork already had at
 Entries below are keyed by date and by the upstream version the fork was
 sitting on, not by a fork version number.
 
+## 2026-08-04 (plugin harness parity) — on upstream 2.5.33
+
+**A plugin now composes identically on all five harnesses.** Composing
+`poc-accelerator` into a scratch install of each and counting what landed showed
+two of them silently degraded — every file present, but a missing entry point on
+one and no orchestrator tables on another, with nothing failing to say so. All
+three fixes are general, not CDE-specific: see `docs/fork/divergence.md` A9.
+
+* **Codex had no stage runners.** Compose probes `<harness-dir>/skills` to decide
+  whether to regenerate runners, but Codex discovers skills at
+  `<project>/.agents/skills/` and ships nothing under `.codex/skills/`. Every stage,
+  scope and sensor composed correctly and the orchestrator tables refreshed — but
+  **runners=0**, so the plugin's stages had no `/…` entry point, and the only trace
+  was an advisory drop. The probe now mirrors `resolveSkillsPath`, which is what
+  `aidlc-runner-gen` writes through. Codex: **0 → 9 runners**.
+* **opencode refreshed neither the scope grid nor the stage graph.** Its authored
+  `SKILL.md` had an **em dash** where the shared sentinel literal has a hyphen, and
+  no stage-graph marker pair at all. That broke the splice for plugins *and* for the
+  framework's own `aidlc-utility.ts scope-table` / `stage-table` — both now work on
+  opencode, verified before and after against a real install.
+* **Kiro plugin auto-compose was a promise the modern IDE could not keep.** The
+  emitter shipped only the legacy `.kiro.hook` compose hook, inert on Kiro IDE
+  ≥ 1.0.1xx. It now emits a v2 `aidlc-plugin-compose.json` (`SessionStart`)
+  alongside it, the same coexistence the framework's own Kiro tree uses. The
+  supported Kiro path is still the explicit compose command — now documented as
+  such in the plugin README instead of implied.
+* **`poc-accelerator` 0.23.1 (docs only):** the plugin's MCP knowledge gained the
+  **opencode** row it never had — `mcp` key in `opencode.json`, `type` per server,
+  `command` and `args` collapsed into one array, `env` renamed `environment` — plus
+  a worked translation of the Global example. Both READMEs and `PLUGINS.md` now
+  state the five-harness support explicitly, with the opencode install path and the
+  Kiro no-auto-compose note.
+
+After: all five harnesses identical — 8 stages, 1 scope, 2 sensors, 9 runners,
+scope row + 8 stage rows in the orchestrator table, **zero compose drops**.
+
+## 2026-08-04 (sensor cost + hook overhead) — on upstream 2.5.33
+
+**A real eight-step PoC run spent 16 minutes of measured wall-clock inside two
+sensors, and 9 of those minutes discovering the same thing 50 times.** The run's
+own audit is the evidence: 870 events, 314 sensor fires, 98.9% of sensor time in
+`linter` + `type-check`, both firing on just 5 distinct files. Everything below
+follows from that measurement. Nothing is CDE-specific, so all of it is
+upstream-bound — see `docs/fork/divergence.md` A7 and A8.
+
+* **The toolchain probe is no longer re-paid per fire.** Every one of the 50
+  `linter` fires ended `Note: tool-unavailable` after ~11 s, because the project
+  has no eslint and `bunx eslint@10` went to the registry each time. The sensor
+  now answers the no-config case from the filesystem before spawning anything
+  (measured **8.4 s → 0.044 s** on that project's own file) and memoizes the
+  availability probe per anchor dir, invalidated by a TTL *and* a
+  dependency-manifest fingerprint so installing the tool is seen on the next fire.
+  `type-check`'s `tsc --version` probe is memoized the same way.
+* **New optional manifest field `coalesce_seconds`, set to 120 on both code
+  sensors.** A repeat fire for the same (stage, sensor) pair inside the window is
+  deferred instead of re-running the whole-project toolchain. Deferral, not
+  dismissal: a fire after a FAILED one is never coalesced, the skip is counted in
+  a coalesce ledger with the newest unseen output, **`aidlc-sensor flush
+  [--stage <slug>]`** re-fires everything outstanding, and `--doctor` reports it
+  under **Deferred sensor fires**. With the field absent, behaviour is unchanged.
+* **The audit hot path reads a bounded tail.** `aidlc-sync-statusline` runs on
+  every `execute_bash` and needs only the latest `STAGE_STARTED`; it was reading
+  the entire trail, 276 KB by the end of that run. Now a 64 KB tail aligned to a
+  block boundary, with a full-read fallback when the window holds no
+  `STAGE_STARTED`. Same answer, verified against the real trail.
+* **Kiro IDE ships one `PostToolUse(execute_bash)` hook instead of two.**
+  `aidlc-runtime-compile` and `aidlc-sync-statusline` shared that matcher and are
+  both payload-independent on the IDE, so each shell command paid two `bun`
+  startups for nothing. The new `aidlc-shell-post` registration runs both core
+  hooks in one process. **Upgrade note:** copying the tree over an existing
+  install merges rather than prunes, so delete your old
+  `aidlc-runtime-compile.json` and `aidlc-sync-statusline.json` — otherwise both
+  fire alongside the merged hook and the two hooks run twice per shell command.
+  `--doctor` reports the overlap under **Superseded hook registrations**.
+* **Failed writes no longer look like lost data.** The Kiro adapter recorded a
+  hook drop whenever it could not extract a path from a write's tool result — but
+  7 of 7 drops in the measured run were permission denials and `str_replace`
+  misses, i.e. writes that never happened. Those are now debug-level. An
+  unrecognised wording still records a drop, because an unknown *success* wording
+  is the decay the drop file exists to catch.
+* **`poc-accelerator` 0.23.0: `linter` unbound from steps 4 and 5.** It wraps
+  eslint only, so on a PoC whose application code is Python it fired 50 times for
+  zero findings. Those stages now run the repo's own linter as part of an explicit
+  pre-gate verification step (which also calls `aidlc-sensor flush`), and
+  `type-check` stays bound for the CDK. A JS/TS-only PoC can add `linter` back to
+  the stage's `sensors:` list.
+
+## 2026-08-03 (poc-accelerator 0.22.0) — on upstream 2.5.33
+
+**The PoC flow's team-knowledge loop is now mandatory at both ends, and the two
+ends are independent.** A full run surfaced the hole: skip the team knowledge
+repository at step 1 and step 8 never mentions knowledge again, so the
+engagement's harvest quietly died inside the workflow record. Reading and
+depositing are now separate obligations — neither is conditional on the other,
+and neither has a skip path.
+
+* **Step 1 requires the repository's git URL.** The `skipped-by-user`
+  resolution is gone; the resolutions are now `pack-imported` and
+  `no-pack-match`. The URL is resolved from the `## Team Knowledge Repository`
+  section of `org.md` / `team.md` / `project.md`, or asked for as a required
+  question, then probed read-only with `git ls-remote --heads`. A bare local
+  path is rejected — a checkout can be searched, but only a remote can be
+  pushed to. The confirmed URL is registered in `project.md` so later stages
+  and later runs inherit it.
+* **Step 8 always deposits, and resolves the URL itself.** New sub-step 5
+  produces `poc-accelerator-team-knowledge-deposit.md`: resolve the URL
+  (preflight artifact → memory layers → ask), probe it, assemble the harvest
+  under the conservation laws, get a **named** sanitization approver, then
+  branch + commit + merge request through the repository's own contribution
+  process. When the push is refused, the deposit is not dropped — the patch is
+  written into the record with the owner who will land it and the blocking
+  reason. The step's remaining sub-steps shifted to 6/7/8.
+* **A second deterministic sensor closes the loop.**
+  `poc-accelerator-team-knowledge-deposit` (advisory, like every framework
+  sensor) checks the fenced `deposit:` block: git-remote URL shape, probe
+  recorded as `git-ls-remote-ok`, a non-empty entry list, a named approver, and
+  the fields each outcome requires. It never reads the preflight record — that
+  independence is the point. The existing preflight sensor gained the same
+  URL-shape and probe checks and lost the skip branch.
+
+Upgrade note: an in-flight PoC that already wrote a preflight artifact with
+`resolution: skipped-by-user` will now report `SENSOR_FAILED` on rewrite. Add
+the repository's git URL and re-run the preflight — or leave the old artifact
+alone and let step 8 resolve the URL, which it does regardless.
+
 ## 2026-08-03 (docs) — on upstream 2.5.33
 
 **Fork-authored documentation moved out of upstream's chapter numbering into
