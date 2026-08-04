@@ -20,23 +20,23 @@
     "render-surface": "tui"
   },
   "counts": {
-    "total": 482,
+    "total": 492,
     "enumeratedByClass": {
-      "function": 249,
+      "function": 258,
       "audit": 74,
       "scope": 9,
       "stage": 32,
       "hook": 14,
-      "subcommand": 97,
+      "subcommand": 98,
       "render-surface": 7
     },
     "coveredByClass": {
-      "function": 104,
+      "function": 107,
       "audit": 33,
       "scope": 9,
       "stage": 9,
       "hook": 14,
-      "subcommand": 84,
+      "subcommand": 85,
       "render-surface": 7
     }
   },
@@ -946,6 +946,13 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:AUDIT_TAIL_BYTES",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:auditBlockField",
       "minMechanism": "none",
       "coveredBy": [],
@@ -1148,6 +1155,18 @@
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:coalesceKey",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t263-sensor-coalesce.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -2295,6 +2314,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:pendingCoalescedFires",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t263-sensor-coalesce.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:PER_UNIT_FOR_EACH",
       "minMechanism": "none",
       "coveredBy": [],
@@ -2375,6 +2406,25 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:readAuditShardsTail",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:readCoalesceLedger",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t263-sensor-coalesce.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:readCurrentSessionId",
       "minMechanism": "none",
       "coveredBy": [],
@@ -2402,6 +2452,13 @@
     {
       "unitClass": "function",
       "unitId": "function:readStateFile",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:readToolchainProbe",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
@@ -3017,6 +3074,13 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:TOOLCHAIN_PROBE_TTL_MS",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:toPosix",
       "minMechanism": "none",
       "coveredBy": [],
@@ -3236,6 +3300,13 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:writeCoalesceLedger",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:writeCurrentSessionId",
       "minMechanism": "none",
       "coveredBy": [],
@@ -3263,6 +3334,13 @@
     {
       "unitClass": "function",
       "unitId": "function:writeStateFile",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:writeToolchainProbe",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
@@ -4724,6 +4802,18 @@
       "coveredBy": [
         {
           "file": "tests/integration/t92.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-sensor flush",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t263-sensor-coalesce.test.ts",
           "mechanism": "cli"
         }
       ],

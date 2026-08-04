@@ -70,14 +70,22 @@ const manifest: HarnessManifest = {
     { src: "hooks/aidlc-mint.json", dst: "hooks/aidlc-mint.json" },
     { src: "hooks/aidlc-block.json", dst: "hooks/aidlc-block.json" },
     { src: "hooks/aidlc-log-subagent.json", dst: "hooks/aidlc-log-subagent.json" },
-    { src: "hooks/aidlc-runtime-compile.json", dst: "hooks/aidlc-runtime-compile.json" },
+    // ONE PostToolUse(execute_bash) registration, not two. aidlc-runtime-compile
+    // and aidlc-sync-statusline shared that matcher, so every shell command paid
+    // two bun startups for two payload-independent hooks; aidlc-shell-post runs
+    // both in one process. The superseded aidlc-runtime-compile.json /
+    // aidlc-sync-statusline.json are no longer shipped — an install upgraded by
+    // copying this tree still carries its old copies (cp merges, it does not
+    // prune), so --doctor reports the overlap and asks for them to be deleted.
+    // The legacy .kiro.hook pair below is untouched: pre-1.0 IDE has no v2
+    // reader, so it keeps the split registration.
+    { src: "hooks/aidlc-shell-post.json", dst: "hooks/aidlc-shell-post.json" },
     // No v2 session-end registration: the IDE's Stop trigger fires at the end
     // of every assistant turn (not at conversation close), so a v2 registration
     // would append a spurious SESSION_ENDED between prompts. session-end stays
     // legacy-only (below) until the IDE exposes a genuine session-end event.
     { src: "hooks/aidlc-session-start.json", dst: "hooks/aidlc-session-start.json" },
     { src: "hooks/aidlc-stop.json", dst: "hooks/aidlc-stop.json" },
-    { src: "hooks/aidlc-sync-statusline.json", dst: "hooks/aidlc-sync-statusline.json" },
     // Legacy .kiro.hook files (pre-1.0 IDE format): retained for coexistence
     // with IDE builds <1.0. On 1.x+ these are inert (struck-through, never fire);
     // on pre-1.0 they are the only mechanism that executes. Safe to ship both:

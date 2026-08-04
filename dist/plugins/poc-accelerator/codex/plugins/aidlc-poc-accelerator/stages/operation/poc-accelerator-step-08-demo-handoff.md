@@ -16,6 +16,7 @@ produces:
   - poc-accelerator-extension-recommendations
   - poc-accelerator-cost-projection
   - poc-accelerator-value-metrics-register
+  - poc-accelerator-team-knowledge-deposit
 consumes:
   - artifact: poc-accelerator-step-07-deployment-log
     required: true
@@ -25,15 +26,18 @@ consumes:
     required: true
   - artifact: poc-accelerator-feature-review
     required: true
+  - artifact: poc-accelerator-team-knowledge-preflight
+    required: false
 requires_stage:
   - poc-accelerator-step-07-deployment
 sensors:
   - required-sections
   - upstream-coverage
+  - poc-accelerator-team-knowledge-deposit
 scopes:
   - poc-accelerator-cde
-inputs: Deployed PoC evidence, architecture diagram, implementation review, and customer acceptance criteria
-outputs: poc-accelerator-demo-package.md, poc-accelerator-extension-recommendations.md, poc-accelerator-cost-projection.md, poc-accelerator-value-metrics-register.md (under this stage's record dir, engine-resolved)
+inputs: Deployed PoC evidence, architecture diagram, implementation review, customer acceptance criteria, and the team knowledge repository git URL (required — from the step-01 preflight, space memory, or asked here)
+outputs: poc-accelerator-demo-package.md, poc-accelerator-extension-recommendations.md, poc-accelerator-cost-projection.md, poc-accelerator-value-metrics-register.md, poc-accelerator-team-knowledge-deposit.md (under this stage's record dir, engine-resolved)
 ---
 
 # PoC Demo and Handoff
@@ -116,7 +120,92 @@ without an approved connector and data owner. The estimated-MRR row may cite
 the PoC running cost from `poc-accelerator-cost-projection.md` as its basis,
 clearly labeled as an estimate.
 
-### Step 5: Verify the Handoff Quality Checklist
+### Step 5: Deposit the Knowledge Harvest into the Team Knowledge Repository
+
+This step is **mandatory and independent of step 1**. It runs whether or not
+the requirements-capture preflight ran, and it resolves the repository URL on
+its own — a PoC that never read team knowledge still owes the team what it
+learned. There is no skip path and no "nothing to deposit" outcome: a PoC that
+produced verified technical claims, domain calibrations, and cost evidence has
+a harvest by definition.
+
+1. **Resolve the repository URL**, in this order:
+   - `poc-accelerator-team-knowledge-preflight.md`, when this run produced one.
+   - `## Team Knowledge Repository` in `aidlc/spaces/<space>/memory/org.md`,
+     `team.md`, or `project.md`.
+   - Otherwise ask this required question: **provide the team knowledge
+     repository's git URL** (`https://host/team/knowledge.git`,
+     `ssh://git@host/team/knowledge.git`, or `git@host:team/knowledge.git`).
+     A bare local path is not an answer — the harvest has to be pushed. Do not
+     take credentials from files or chat history; use the ambient git
+     credential helper or SSH agent.
+
+   Probe it read-only before writing anything: `git ls-remote --heads <url>`.
+   A failed probe is re-asked, never recorded as done. When step 01 did not
+   register the URL, register the confirmed one in
+   `aidlc/spaces/<space>/memory/project.md` so the next engagement inherits it.
+
+2. **Assemble the harvest** from the stage `memory.md` files, the domain
+   knowledge capture, the ADRs, and the test evidence. Apply the playbook's
+   conservation laws to every entry: customer-confirmed, sanitized, classified
+   **knows** or **judges**, graded industry-generic vs. needs-recalibration,
+   dated, and — for any technical claim such as a service's regional
+   availability or an endpoint's behavior — citing the evidence that proved it.
+   Nothing customer-confidential leaves the engagement: no account
+   identifiers, endpoints, credentials, customer names under NDA, or unmasked
+   sample data.
+
+3. **Get sanitization approval.** Present the exact entry list and ask the
+   customer contact or named data owner to approve what leaves the engagement,
+   then record the approver by name. The approval covers *content*; it is not
+   a vote on whether to deposit.
+
+4. **Submit through the repository's own contribution process.** Clone or
+   fetch into a scratch directory, branch
+   (`knowledge/<yyyy-mm-dd>-<domain-slug>`), make one purposeful commit, push
+   the branch, and open the merge/pull request. Never commit to the default
+   branch, never force-push, never commit credentials — the framework's git
+   safety line applies to the team repository exactly as it does to the
+   customer's.
+
+5. **When the push is refused** (no write access, protected namespace, no
+   network), the deposit is not dropped: write the patch
+   (`git format-patch`) into this stage's record dir, name the owner who will
+   land it, and record the blocking reason. That is an owned, recorded handoff
+   — the one thing it is not is a skip.
+
+6. Create `poc-accelerator-team-knowledge-deposit.md` with the resolved URL and
+   how it was resolved, the probe result, the branch and review URL (or the
+   patch path and its owner), the approved entry list with grades, and the
+   named approver. End it with the machine-readable record the
+   `poc-accelerator-team-knowledge-deposit` sensor verifies — one fenced `yaml`
+   block whose first line is `deposit:`:
+
+   ```yaml
+   deposit:
+     resolution: merge-request-opened | branch-pushed | patch-prepared
+     repo_url: <git URL of the team knowledge repository>
+     repo_url_source: preflight-artifact | memory-layer | user-provided
+     repo_probe: git-ls-remote-ok
+     probed_at: <YYYY-MM-DD>
+     sanitization_approved_by: <named approver>
+     entries:
+       - <entry title> (knows|judges, industry-generic|needs-recalibration)
+     branch: <pushed branch>            # required unless patch-prepared
+     review_url: <MR/PR URL>            # required for merge-request-opened
+     owner: <who lands it>              # required for branch-pushed, patch-prepared
+     patch_path: <path to the patch>    # required for patch-prepared
+     blocked_reason: <why the push was refused>  # required for patch-prepared
+   ```
+
+   The sensor fails the write when `resolution` is missing or not one of the
+   three values, when `repo_url` is absent or is not a git remote URL, when the
+   probe is not recorded as `git-ls-remote-ok`, when `entries` is empty, when
+   `sanitization_approved_by` is absent, or when the fields required by the
+   chosen resolution are missing — so a handoff that quietly kept the harvest
+   in the record is surfaced deterministically.
+
+### Step 6: Verify the Handoff Quality Checklist
 
 Work through the handoff quality checklist in the PoC playbook item by item
 and record the checked list (with evidence pointers) in
@@ -124,24 +213,31 @@ and record the checked list (with evidence pointers) in
 presented at the gate as an explicit, owner-assigned exception — never
 silently skipped.
 
-### Step 6: Customer Acceptance Gate
+### Step 7: Customer Acceptance Gate
 
 Ask only:
 
-- **Accept handoff** — record the demo result, extension path, cost projection, and owner.
+- **Accept handoff** — record the demo result, extension path, cost projection, knowledge deposit, and owner.
 - **Request changes** — return to the relevant approved PoC stage with a bounded request.
 
-### Step 7: Update State
+### Step 8: Update State
 
 Mark `poc-accelerator-step-08-demo-handoff` complete in `<record>/aidlc-state.md`.
 
 ## Sensors
 
 The Markdown sensors ensure handoff artifacts cite the deployed evidence,
-architecture, and implementation review.
+architecture, and implementation review. The plugin's
+`poc-accelerator-team-knowledge-deposit` sensor (a deterministic TypeScript
+check, advisory like every framework sensor) verifies the deposit artifact's
+fenced `deposit:` block records a probed git repository URL, a non-empty
+approved entry list, and one of the three submission outcomes with its
+required fields.
 
 ## Learn
 
 Maintain timestamped interpretations, deviations, tradeoffs, and open questions
 in `<record>/<phase>/<stage>/memory.md`. Customer-specific knowledge belongs in
-project space memory only after approval.
+project space memory only after approval; the generalized, sanitized harvest
+goes to the team knowledge repository in Step 5 — that submission is what makes
+the next engagement start ahead of this one.

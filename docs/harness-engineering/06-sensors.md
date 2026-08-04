@@ -133,6 +133,7 @@ short — five required fields and a handful of optional ones:
 | `description` | yes | one-line human description |
 | `category` | no | free-form label (the shipped manifests use `document-shape`, `code-quality`) |
 | `matches` | no | a glob narrowing which file writes the sensor fires on |
+| `coalesce_seconds` | no | a re-fire window; a second fire for the same stage inside it is deferred rather than run (see below) |
 
 The `command:` is a **prefix**, not the full argv. The dispatcher appends the
 runtime context at fire time — always `--stage <slug>`, then the file flag that
@@ -144,6 +145,29 @@ The exact invocation the dispatcher assembles is documented in the
 For the complete schema — `input_schema`, `output_schema`, `timeout_seconds`,
 and the forward-compat policy for unknown keys — see
 [Sensor Manifest Schema](../reference/07-sensor-system.md#sensor-manifest-schema).
+
+**When a sensor's cost is the project, add `coalesce_seconds`.** Most sensors
+read one file and finish in tens of milliseconds. Two do not: `linter` and
+`type-check` run a toolchain over the whole package or tsconfig scope and then
+filter the diagnostics down to the written file. Firing per write means the tenth
+edit of one file costs exactly as much as the first — a measured PoC run spent
+about 19 minutes on 100 such fires across 5 files.
+
+`coalesce_seconds: N` caps that. If the same (stage, sensor) pair already PASSED
+within N seconds, the dispatcher skips the spawn, increments a `deferred` counter
+in the coalesce ledger (`.aidlc-sensors/.coalesce.json`), and records the newest
+output the sensor has not seen. Three properties keep that honest:
+
+- A fire after a **FAILED** one is never coalesced. The next write is the fix,
+  and the fix gets checked.
+- The skip is **recorded, not dropped**. `aidlc-sensor flush [--stage <slug>]`
+  re-fires every pair that owes a verification, bypassing the window — run it
+  before a stage's approval gate.
+- `--doctor` reports anything still outstanding under **Deferred sensor fires**,
+  so the debt is visible without reading the ledger.
+
+Leave it off for cheap document-shape sensors: they are already fast, and every
+fire they skip is a review signal delayed for no gain.
 
 **2. Bind it by adding the id to a stage's `sensors:` list.** A manifest sitting
 in the directory does nothing until a stage imports it. Open the stage you want

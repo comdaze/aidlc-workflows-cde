@@ -2,11 +2,13 @@
 // team-knowledge preflight gate (poc-accelerator plugin).
 //
 // Reads poc-accelerator-team-knowledge-preflight.md (written by step 01) and
-// verifies its fenced `yaml` preflight block records a machine-readable
-// resolution: a matched pack import, a user-provided source, or an explicit
-// user skip with a named decider and reason. ADVISORY (no blocking severity
-// in the framework yet). Needs only the --output-path the dispatcher always
-// passes. Shipped to the harness tools dir via the plugin's contributes.tools.
+// verifies its fenced `yaml` preflight block records a probed team-knowledge
+// git repository URL plus a machine-readable resolution: a matched pack
+// import, or a search that found no match. There is no skip resolution — the
+// repository is a required input, and step 08 pushes the PoC's knowledge
+// harvest back to the same URL. ADVISORY (no blocking severity in the
+// framework yet). Needs only the --output-path the dispatcher always passes.
+// Shipped to the harness tools dir via the plugin's contributes.tools.
 import { existsSync, readFileSync } from "node:fs";
 
 // Self-contained — no import of the framework's aidlc-lib (a plugin tool ships
@@ -14,8 +16,11 @@ import { existsSync, readFileSync } from "node:fs";
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 const ARTIFACT_FILENAME = "poc-accelerator-team-knowledge-preflight.md";
-const RESOLUTIONS = ["pack-imported", "user-source-provided", "skipped-by-user"] as const;
+const RESOLUTIONS = ["pack-imported", "no-pack-match"] as const;
 type Resolution = (typeof RESOLUTIONS)[number];
+const URL_SOURCES = ["memory-layer", "user-provided"] as const;
+const PROBE_OK = "git-ls-remote-ok";
+const GIT_SCHEMES = ["https", "http", "ssh", "git", "file"];
 
 interface Result {
   pass: boolean;
@@ -82,6 +87,30 @@ function blockList(block: string, key: string): string[] {
     .filter((v) => v !== "");
 }
 
+// Git remote shape, offline. Accepts what git accepts as a fetch/push URL:
+// a supported scheme with a host and a path (`https://host/team/kb.git`,
+// `ssh://git@host/team/kb`, `git://host/kb`, `file:///abs/path`) or the
+// scp-like default clone form (`git@host:team/kb.git`). Rejects a bare local
+// directory and a bare host — step 08 has to push a branch to this URL, so
+// "somewhere on my laptop" is not a team knowledge repository.
+function isGitRemoteUrl(url: string): boolean {
+  if (url === "" || /\s/.test(url)) return false;
+  const scheme = url.match(/^([a-z][a-z0-9+.-]*):\/\/(.*)$/i);
+  if (scheme) {
+    const proto = (scheme[1] ?? "").toLowerCase();
+    const rest = scheme[2] ?? "";
+    if (!GIT_SCHEMES.includes(proto)) return false;
+    // file:// carries no host — an absolute path is the whole locator.
+    if (proto === "file") return rest.startsWith("/") && rest.length > 1;
+    const slash = rest.indexOf("/");
+    return slash > 0 && rest.slice(slash + 1).trim() !== "";
+  }
+  // scp-like `[user@]host:path`. The 2-char host floor rejects a Windows
+  // drive letter (`C:/repos/kb`), which is a local directory, not a remote.
+  const scp = url.match(/^(?:[^@:/\s]+@)?[^@:/\s]{2,}:(.+)$/);
+  return scp !== null && (scp[1] ?? "").trim() !== "";
+}
+
 function checkPreflight(content: string): Result {
   const findings: string[] = [];
   const block = extractPreflightBlock(content);
@@ -99,8 +128,29 @@ function checkPreflight(content: string): Result {
   const resolution = blockScalar(block, "resolution");
   if (!RESOLUTIONS.includes(resolution as Resolution)) {
     findings.push(
-      `resolution "${resolution || "(absent)"}" is not one of: ${RESOLUTIONS.join(", ")} — silence is not a skip`,
+      `resolution "${resolution || "(absent)"}" is not one of: ${RESOLUTIONS.join(", ")} — the team knowledge repository is required, so there is no skip resolution`,
     );
+  }
+
+  const repoUrl = blockScalar(block, "repo_url");
+  if (repoUrl === "") {
+    findings.push("repo_url is absent — record the team knowledge repository's git URL");
+  } else if (!isGitRemoteUrl(repoUrl)) {
+    findings.push(
+      `repo_url "${repoUrl}" is not a git remote URL — expected https://, http://, ssh://, git://, file:///abs/path, or git@host:team/repo.git`,
+    );
+  }
+
+  const probe = blockScalar(block, "repo_probe");
+  if (probe !== PROBE_OK) {
+    findings.push(
+      `repo_probe "${probe || "(absent)"}" is not "${PROBE_OK}" — a failed or unrecorded \`git ls-remote\` is not a resolution`,
+    );
+  }
+
+  const urlSource = blockScalar(block, "repo_url_source");
+  if (urlSource !== "" && !URL_SOURCES.includes(urlSource as (typeof URL_SOURCES)[number])) {
+    findings.push(`repo_url_source "${urlSource}" is not one of: ${URL_SOURCES.join(", ")}`);
   }
 
   if (blockList(block, "sources_searched").length === 0) {
@@ -112,13 +162,10 @@ function checkPreflight(content: string): Result {
   if (resolution === "pack-imported") {
     if (blockScalar(block, "pack") === "") findings.push("pack-imported requires a non-empty pack:");
     if (blockScalar(block, "import_path") === "") findings.push("pack-imported requires a non-empty import_path:");
-  } else if (resolution === "user-source-provided") {
-    if (blockScalar(block, "source") === "") {
-      findings.push("user-source-provided requires a non-empty source: (the approved URL or local path)");
+  } else if (resolution === "no-pack-match") {
+    if (blockList(block, "search_terms").length === 0) {
+      findings.push("no-pack-match requires a non-empty search_terms: list — an unmatched search is still an auditable claim");
     }
-  } else if (resolution === "skipped-by-user") {
-    if (blockScalar(block, "decided_by") === "") findings.push("skipped-by-user requires a non-empty decided_by:");
-    if (blockScalar(block, "reason") === "") findings.push("skipped-by-user requires a non-empty reason:");
   }
 
   return {

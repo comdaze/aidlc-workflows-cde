@@ -408,7 +408,7 @@ flowchart TB
     F[Feature Summary<br/>Feature Review]
     T[Test Plan<br/>Test Results / LLM Eval]
     P[Deployment Log<br/>Smoke Test<br/>Stack Inventory]
-    H[Demo Package<br/>扩展建议<br/>成本预测<br/>价值指标]
+    H[Demo Package<br/>扩展建议<br/>成本预测<br/>价值指标<br/>团队知识沉淀]
 
     R --> D --> E --> W --> F --> T --> P --> H
 ```
@@ -424,33 +424,38 @@ flowchart TB
 | 收尾 | 可丢弃 spike | Demo package、交接清单、成本和价值指标 |
 | 生产声明 | 不适用 | 明确不静默宣称 production-ready |
 
-## 11. PoC Step 1 的团队知识预检
+## 11. PoC 团队知识库闭环：Step 1 读，Step 8 写
 
-PoC 插件最重要的知识护栏位于第一步：不能因为没有找到团队知识就静默继续。
+PoC 插件最重要的知识护栏是一个闭环，两端都不可跳过，且**互不依赖**：
+步骤 1 从团队知识库读，步骤 8 往团队知识库写。团队知识库由一个 **git URL**
+标识——本地检出可以用来搜索，但只有远端能被推送，而步骤 8 必须推送。
+
+### 读端（Step 1 预检）
 
 ```mermaid
 sequenceDiagram
     participant S1 as Requirements Capture
     participant Local as Active Space Knowledge
-    participant Org as org.md Team Knowledge Repository
+    participant Mem as memory org/team/project.md
     participant Human as Human
+    participant Repo as Team Knowledge Repo (git)
     participant Artifact as preflight artifact
     participant Sensor as team-knowledge-preflight sensor
 
     S1->>Local: 搜索本地已安装知识包
-    S1->>Org: 读取批准的本地路径或仓库 URL
-    alt 找到匹配知识包
-      S1->>Artifact: resolution = pack-imported
-      S1->>Artifact: pack + import_path + sources_searched
-    else 用户提供批准来源
-      S1->>Human: 请求 URL 或本地路径
-      Human-->>S1: 提供来源
-      S1->>Artifact: resolution = user-source-provided
-    else 用户明确跳过
-      S1->>Human: 要求具名 skip 决策与原因
-      Human-->>S1: decided_by + reason
-      S1->>Artifact: resolution = skipped-by-user
+    S1->>Mem: 读取 ## Team Knowledge Repository 的 git URL
+    alt memory 层没有 URL
+      S1->>Human: 必答问题：给出团队知识库 git URL
+      Human-->>S1: git URL（裸本地路径不算答案）
     end
+    S1->>Repo: git ls-remote --heads <url>（只读探测）
+    Repo-->>S1: ok / 失败则重新索取
+    alt 找到匹配行业知识包
+      S1->>Artifact: resolution = pack-imported + pack + import_path
+    else 检索后无匹配
+      S1->>Artifact: resolution = no-pack-match + search_terms
+    end
+    S1->>Mem: 把确认的 URL 登记进 project.md
     S1->>Sensor: 写产物触发验证
     Sensor->>Artifact: 校验 YAML preflight block
     Sensor-->>S1: pass / findings
@@ -458,18 +463,66 @@ sequenceDiagram
 
 Sensor 强制验证：
 
-- `resolution` 只能是 `pack-imported`、`user-source-provided`、`skipped-by-user`。
+- `resolution` 只能是 `pack-imported` 或 `no-pack-match`；**没有跳过取值**。
+- `repo_url` 必须存在且符合 git 远端形态（`https://`、`http://`、`ssh://`、
+  `git://`、`file:///abs/path`、或 `git@host:team/repo.git`）；裸本地目录被拒。
+- `repo_probe` 必须是 `git-ls-remote-ok`——探测失败不是一种结论，而是重新索取。
 - `sources_searched` 不得为空。
 - 导入知识包必须记录 `pack` 和 `import_path`。
-- 用户来源必须记录 `source`。
-- 跳过必须记录 `decided_by` 和 `reason`。
-- “没有记录”不等于“用户同意跳过”。
+- 无匹配必须记录非空 `search_terms`——"没找到"也是可审计的声明。
+
+### 写端（Step 8 沉淀）
+
+```mermaid
+sequenceDiagram
+    participant S8 as Demo and Handoff
+    participant Pre as preflight artifact（若本次有）
+    participant Mem as memory org/team/project.md
+    participant Human as Human
+    participant Repo as Team Knowledge Repo (git)
+    participant Artifact as deposit artifact
+    participant Sensor as team-knowledge-deposit sensor
+
+    S8->>Pre: 解析 repo_url（第一顺位）
+    S8->>Mem: 否则读 ## Team Knowledge Repository
+    alt 两处都没有
+      S8->>Human: 必答问题：给出团队知识库 git URL
+      Human-->>S8: git URL
+    end
+    S8->>Repo: git ls-remote --heads <url>（只读探测）
+    S8->>Human: 脱敏批准：哪些条目可以离开本次交付
+    Human-->>S8: 具名批准人
+    alt 推送成功
+      S8->>Repo: 分支 + 一次提交 + merge request
+      S8->>Artifact: resolution = merge-request-opened / branch-pushed
+    else 无写权限
+      S8->>Artifact: resolution = patch-prepared + patch_path + owner + blocked_reason
+    end
+    S8->>Sensor: 写产物触发验证
+    Sensor->>Artifact: 校验 YAML deposit block
+    Sensor-->>S8: pass / findings
+```
+
+Sensor 强制验证：
+
+- `resolution` 只能是 `merge-request-opened`、`branch-pushed`、`patch-prepared`；
+  **没有跳过取值，也没有"无内容可沉淀"**。
+- `repo_url` 与 `repo_probe` 同读端一致（git 远端形态 + 探测通过）。
+- `entries` 不得为空；每条带 knows/judges 分类与泛化等级。
+- `sanitization_approved_by` 必须具名。
+- `merge-request-opened` 需 `branch` + `review_url`；`branch-pushed` 需
+  `branch` + `owner`；`patch-prepared` 需 `patch_path` + `owner` +
+  `blocked_reason`——推送被拒是一次具名的移交，不是跳过。
+- 该 sensor 从不读预检产物：沉淀的义务与步骤 1 是否执行无关。
 
 对应文件：
 
 - `plugins/poc-accelerator/stages/inception/poc-accelerator-step-01-requirements-capture.md`
+- `plugins/poc-accelerator/stages/operation/poc-accelerator-step-08-demo-handoff.md`
 - `plugins/poc-accelerator/sensors/aidlc-poc-accelerator-team-knowledge-preflight.md`
+- `plugins/poc-accelerator/sensors/aidlc-poc-accelerator-team-knowledge-deposit.md`
 - `plugins/poc-accelerator/tools/aidlc-sensor-poc-accelerator-team-knowledge-preflight.ts`
+- `plugins/poc-accelerator/tools/aidlc-sensor-poc-accelerator-team-knowledge-deposit.ts`
 
 ## 12. PoC Accelerator 与核心记忆系统怎样协同
 
@@ -481,6 +534,7 @@ flowchart TB
     Learn[Learnings Ritual]
     ProjectRule[project.md]
     TeamRule[team.md]
+    TeamRepo[团队知识库 git 远端]
     PocArtifacts[PoC 交付产物]
     Audit[Audit + Sensor Evidence]
     NextIntent[下一次客户需求]
@@ -491,9 +545,11 @@ flowchart TB
     StageMem --> Learn
     Learn -->|本项目适用| ProjectRule
     Learn -->|团队通用| TeamRule
+    Learn -->|Step 8 强制沉淀<br/>脱敏 + 具名批准| TeamRepo
     PocArtifacts --> Audit
     ProjectRule --> NextIntent
     TeamRule --> NextIntent
+    TeamRepo -->|Step 1 预检检索| NextIntent
     NextIntent --> POC
 ```
 

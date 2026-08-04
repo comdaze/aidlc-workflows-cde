@@ -25,7 +25,6 @@ consumes:
 requires_stage:
   - poc-accelerator-step-03-environment-readiness
 sensors:
-  - linter
   - type-check
   - required-sections
   - upstream-coverage
@@ -76,21 +75,46 @@ instead of being written in a handoff-day sprint. Create
 `poc-accelerator-skeleton-review.md` with what was demonstrated, customer
 feedback, and the decision to continue, change direction, or stop.
 
-### Step 4: SA and Customer Demo Gate
+### Step 4: Close the Verification Loop Before the Gate
+
+The PoC's own toolchain is the authority on this workspace's code, not a
+per-write sensor: run the project's real quality command once here — the
+configured formatter/linter (`ruff`, `eslint`, whatever the repo actually
+declares), the type checker, and the test command — and record the result in
+the demo evidence. Then land any deferred sensor work:
+
+```bash
+bun {{HARNESS_DIR}}/tools/aidlc-sensor.ts flush --stage poc-accelerator-step-04-walking-skeleton
+```
+
+`type-check` carries a coalesce window, so several edits inside it produce one
+real fire plus a recorded debt; flush turns that debt into a verification before
+the customer sees the slice. A failing check is fixed or carried to the gate as
+a named, owned exception — never left silent.
+
+### Step 5: SA and Customer Demo Gate
 
 Ask only:
 
 - **Approve skeleton** — use the demonstrated path as the base for expansion.
 - **Request changes** — revise the slice or solution design before expanding.
 
-### Step 5: Update State
+### Step 6: Update State
 
 Mark `poc-accelerator-step-04-walking-skeleton` complete in `<record>/aidlc-state.md`.
 
 ## Sensors
 
-Linter and type-check sensors validate workspace code. Markdown sensors validate
-the demo evidence and its traceability to the design and acceptance criteria.
+The `type-check` sensor validates workspace TypeScript (CDK included) and
+coalesces repeat fires inside its window — Step 4's flush is what closes the
+window before the gate. Markdown sensors validate the demo evidence and its
+traceability to the design and acceptance criteria.
+
+The stock `linter` sensor is deliberately NOT bound here. It wraps eslint only,
+so on a PoC whose application code is Python (or any non-JS stack) it can never
+produce a finding — a measured run fired it 50 times for zero findings. Step 4
+runs the repo's actual linter instead. A JS/TS-only PoC that wants the sensor
+back adds `linter` to this stage's `sensors:` list.
 
 ## Learn
 

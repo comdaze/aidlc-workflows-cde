@@ -46,14 +46,18 @@ import {
 	templateEligibleArtifacts,
 } from "./aidlc-graph.ts";
 import {
+	coalesceKey,
 	codekbDir,
 	errorMessage,
 	isoTimestamp,
 	isPlainObject,
+	pendingCoalescedFires,
+	readCoalesceLedger,
 	recordDir,
 	resolveProjectDir,
 	sensorsDir,
 	withAuditLock,
+	writeCoalesceLedger,
 } from "./aidlc-lib.ts";
 import {
 	compiledExecutable,
@@ -225,7 +229,120 @@ function handleDescribe(args: string[]): void {
 	if (m.timeout_seconds !== undefined) {
 		console.log(`timeout_seconds: ${m.timeout_seconds}`);
 	}
+	if (m.coalesce_seconds !== undefined) {
+		console.log(`coalesce_seconds: ${m.coalesce_seconds}`);
+	}
 	console.log(`path: ${sensor.path}`);
+}
+
+// --- Coalescing ---
+//
+// A sensor whose cost is the WHOLE PROJECT (linter, type-check run the
+// toolchain over the tsconfig/package scope and then filter the diagnostics
+// down to the written file) pays the same price for the tenth edit of one file
+// as for the first. A measured PoC run fired those two 100 times across 5
+// files: ~19 minutes of blocking wall-clock for 5 files' worth of information.
+//
+// `coalesce_seconds` in the manifest opens a window: if this (stage, sensor)
+// pair already PASSED inside it, skip the spawn. Two properties make that safe
+// to call deferral rather than dropping:
+//
+//   1. Only a PASSED fire is coalescible. After a FAILED one the very next
+//      write is the fix, and the fix must be verified — checkCoalesce refuses.
+//   2. The skip is RECORDED, not silent: `deferred` counts the skipped fires
+//      and `last_output_path` names the newest unverified output. `aidlc-sensor
+//      flush` re-fires them and `--doctor` reports anything outstanding, so the
+//      debt is visible to both the agent and the human.
+//
+// Decided BEFORE the audit lock and before SENSOR_FIRED, so a coalesced fire
+// leaves no half-open pair in the audit.
+function checkCoalesce(
+	projectDir: string,
+	sensor: SensorFile,
+	stageSlug: string,
+	outputPath: string,
+): boolean {
+	const window = sensor.manifest.coalesce_seconds;
+	if (window === undefined || window <= 0) return false;
+	const ledger = readCoalesceLedger(projectDir);
+	const key = coalesceKey(stageSlug, sensor.id);
+	const prev = ledger[key];
+	if (prev?.outcome !== "passed") return false;
+	if (Date.now() - prev.at >= window * 1000) return false;
+	ledger[key] = {
+		...prev,
+		deferred: (prev.deferred ?? 0) + 1,
+		last_output_path: relativizePath(outputPath, projectDir),
+	};
+	writeCoalesceLedger(projectDir, ledger);
+	return true;
+}
+
+// Clear the pair's debt and stamp the fire that actually ran.
+function recordCoalesceFire(
+	projectDir: string,
+	sensor: SensorFile,
+	stageSlug: string,
+	outcome: FireOutcome,
+): void {
+	if (sensor.manifest.coalesce_seconds === undefined) return;
+	const ledger = readCoalesceLedger(projectDir);
+	ledger[coalesceKey(stageSlug, sensor.id)] = {
+		at: Date.now(),
+		outcome: outcome.kind === "failed" ? "failed" : "passed",
+		deferred: 0,
+	};
+	writeCoalesceLedger(projectDir, ledger);
+}
+
+// --- Subcommand: flush ---
+//
+// Re-fire every (stage, sensor) pair that owes a verification, bypassing the
+// coalesce window. The completion counterpart to coalescing: run it before a
+// stage's approval gate and the deferred checks all land. `--stage` narrows to
+// one stage. Exits 0 with a one-line report per pair; a pair whose recorded
+// output path has since vanished is reported and dropped from the ledger.
+function handleFlush(args: string[]): void {
+	const flags = parseFlags(args);
+	const projectDir = resolveProjectDir();
+	const pending = pendingCoalescedFires(projectDir).filter(
+		(p) => !flags.stage || p.stageSlug === flags.stage,
+	);
+	if (pending.length === 0) {
+		console.log("no deferred sensor fires");
+		return;
+	}
+	// Always read-modify-write the ledger around each spawn. The re-fire runs in
+	// its OWN process and stamps the pair itself, so holding a snapshot across
+	// the spawn and writing it afterwards would clobber that fresh stamp and
+	// leave the pair looking never-verified.
+	const dropEntry = (stageSlug: string, sensorId: string): void => {
+		const current = readCoalesceLedger(projectDir);
+		delete current[coalesceKey(stageSlug, sensorId)];
+		writeCoalesceLedger(projectDir, current);
+	};
+
+	for (const { stageSlug, sensorId, entry } of pending) {
+		const rel = entry.last_output_path ?? "";
+		const abs = rel === "" ? "" : pathResolve(projectDir, rel);
+		if (abs === "" || !existsSync(abs)) {
+			dropEntry(stageSlug, sensorId);
+			console.log(`${stageSlug}\t${sensorId}\tskipped: recorded output path is gone (${rel || "none"})`);
+			continue;
+		}
+		// Clear the debt BEFORE the spawn so the re-fire is not itself coalesced
+		// against the stamp that created it.
+		dropEntry(stageSlug, sensorId);
+		const result = spawnSync(
+			process.execPath,
+			[fileURLToPath(import.meta.url), "fire", sensorId, "--stage", stageSlug, "--output-path", abs],
+			{ cwd: projectDir, encoding: "utf-8" },
+		);
+		const status = result.status ?? -1;
+		console.log(
+			`${stageSlug}\t${sensorId}\tre-fired on ${rel} (${entry.deferred} deferred)${status === 0 ? "" : `\tdispatcher exit ${status}`}`,
+		);
+	}
 }
 
 // --- upstream-coverage consume filtering ---
@@ -380,12 +497,30 @@ function handleFire(args: string[]): void {
 		);
 	}
 
+	// Resolve the project dir once — used by the coalesce check below, the
+	// consume filter in step 2 and the detail-file path in step 3.
+	const projectDir = resolveProjectDir();
+
+	// --- 1d-bis. Coalesce window (pre-lock, pre-FIRED) ---
+	// A manifest-declared window suppresses a re-fire whose pair already PASSED
+	// inside it. Checked here so no audit row is opened for a fire that will not
+	// happen, and the deferral is recorded in the ledger for `flush`/`--doctor`.
+	if (checkCoalesce(projectDir, sensor, stageSlug, outputPath)) {
+		const window = sensor.manifest.coalesce_seconds;
+		process.stdout.write(
+			`${JSON.stringify({
+				coalesced: true,
+				sensor: id,
+				stage: stageSlug,
+				window_seconds: window,
+				hint: "run `aidlc-sensor flush` before the stage gate to land the deferred fire",
+			})}\n`,
+		);
+		process.exit(0);
+	}
+
 	// --- 1e. Generate Fire id (8 hex chars) ---
 	const fireId = generateFireId();
-
-	// Resolve the project dir once — used by the consume filter in step 2 and
-	// the detail-file path in step 3.
-	const projectDir = resolveProjectDir();
 
 	// --- 2. Compute extra args for the per-sensor script ---
 	// Markdown sensors take --output-path; code sensors take --file-path.
@@ -549,6 +684,11 @@ function handleFire(args: string[]): void {
 	withAuditLock(projectDir, () => {
 		emitTerminal(ctx, finalOutcome, projectDir);
 	});
+
+	// --- 8b. Stamp the coalesce ledger (no-op unless the manifest opts in) ---
+	// After the terminal row so a crash mid-fire leaves the pair un-stamped and
+	// therefore still fireable, never falsely marked as recently verified.
+	recordCoalesceFire(projectDir, sensor, stageSlug, finalOutcome);
 
 	// --- 9. Process exit 0 ---
 	process.exit(0);
@@ -886,6 +1026,8 @@ Subcommands:
   describe <id>                     Print manifest fields
   fire <id> --stage <slug>          Fire a sensor against an output;
        --output-path <path>           emits SENSOR_FIRED + paired terminal row
+  flush [--stage <slug>]            Re-fire sensors whose fires were coalesced,
+                                      bypassing their coalesce_seconds window
 
   --help, -h                        Show this message`);
 }
@@ -900,7 +1042,7 @@ export function main(argv: string[]): void {
 	}
 	if (cmd === undefined) {
 		process.stderr.write(
-			"Usage: aidlc-sensor <subcommand>. Valid: describe, fire, list. Run with --help for detail.\n",
+			"Usage: aidlc-sensor <subcommand>. Valid: describe, fire, flush, list. Run with --help for detail.\n",
 		);
 		process.exit(1);
 	}
@@ -914,9 +1056,12 @@ export function main(argv: string[]): void {
 		case "fire":
 			handleFire(args);
 			return;
+		case "flush":
+			handleFlush(args);
+			return;
 		default:
 			process.stderr.write(
-				`aidlc-sensor: unknown subcommand: ${cmd}. Valid: describe, fire, list.\n`,
+				`aidlc-sensor: unknown subcommand: ${cmd}. Valid: describe, fire, flush, list.\n`,
 			);
 			process.exit(1);
 	}

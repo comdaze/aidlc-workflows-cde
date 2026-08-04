@@ -113,12 +113,16 @@ advisory drop naming this exact command.
 Composing installs a plugin; some need configuration or a specific entry point
 before they do anything.
 
-**`poc-accelerator`** — MCP configuration is **required**. Create
-`<harness-dir>/settings/mcp.json` (Kiro), `.mcp.json` (Claude Code), or
-`~/.codex/config.toml` (Codex) from the Global or China example in
-`<harness-dir>/knowledge/aidlc-pipeline-deploy-agent/mcp-setup.md`. Regional
-availability checks, CDK validation, and the step-8 cost analysis all run through
-those servers. Then start the customer-delivery flow with either explicit entry:
+**`poc-accelerator`** — works on all five harnesses (Claude Code, Codex, Kiro CLI,
+Kiro IDE, opencode); MCP configuration is **required** on each. Create
+`<harness-dir>/settings/mcp.json` (Kiro), `.mcp.json` (Claude Code),
+`~/.codex/config.toml` (Codex), or the top-level `mcp` key in `opencode.json`
+(opencode) from the Global or China example in
+`<harness-dir>/knowledge/aidlc-pipeline-deploy-agent/mcp-setup.md` — which carries
+the per-harness translation, including opencode's one-array `command` shape.
+Regional availability checks, CDK validation, and the step-8 cost analysis all run
+through those servers. Then start the customer-delivery flow with either explicit
+entry:
 
 ```text
 /poc-accelerator-cde Build a safe customer demo for <customer scenario>

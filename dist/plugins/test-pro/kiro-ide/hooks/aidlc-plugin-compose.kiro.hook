@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "enabled": true,
   "name": "aidlc-test-pro-compose",
-  "description": "Composes the test-pro AIDLC plugin on first interaction.",
+  "description": "Composes the test-pro AIDLC plugin on first interaction. Legacy format: executed only by pre-1.0 Kiro IDE builds; inert on 1.x, where aidlc-plugin-compose.json is the live registration.",
   "when": {
     "type": "promptSubmit"
   },

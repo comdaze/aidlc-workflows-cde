@@ -16,6 +16,7 @@ output_schema:
       column: number
       message: string
 timeout_seconds: 60
+coalesce_seconds: 120
 ---
 
 # type-check sensor
@@ -25,6 +26,19 @@ multi-language auto-detection (mypy, go vet, cargo-check) is deferred
 to v0.6.0+.
 
 Echoes Fowler's "type checkers" example from the harness-engineering article.
+
+## Cost shape and the coalesce window
+
+`tsc --project` type-checks the WHOLE project and the sensor then filters the
+diagnostics down to the written file — correct semantics (cross-file inference
+demands it), but it means the cost tracks project size, not edit size, and every
+write re-pays it. `coalesce_seconds: 120` defers a re-fire for the same stage
+inside two minutes of a PASS, records it in the coalesce ledger, and leaves
+`aidlc-sensor flush` to land it before the stage's approval gate (`--doctor`
+reports anything still outstanding). A fire after a FAILED one is never
+coalesced, so the write that carries the fix is always checked.
+
+The `tsc --version` probe is memoized per anchor dir for the same reason.
 
 ## Failure mode
 

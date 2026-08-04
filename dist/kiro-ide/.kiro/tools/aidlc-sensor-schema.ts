@@ -19,6 +19,17 @@
 //   - input_schema: object          — optional invocation contract
 //   - output_schema: object         — optional return contract
 //   - timeout_seconds: number       — optional execution budget
+//   - coalesce_seconds: number      — optional re-fire window. When set, the
+//                                      dispatcher skips a fire whose (stage,
+//                                      sensor) pair already PASSED within the
+//                                      window, marks the pair dirty in the
+//                                      coalesce ledger, and leaves `aidlc-sensor
+//                                      flush` / `--doctor` to surface the debt.
+//                                      For sensors whose cost is the whole
+//                                      project rather than the written file
+//                                      (linter, type-check), where firing once
+//                                      per write means re-running the toolchain
+//                                      ten times for ten edits to one file.
 //   - matches: string               — optional path-shape filter; consumed
 //                                      by the PostToolUse hook at fire time.
 //                                      Sensors that analyse any output omit it.
@@ -37,6 +48,7 @@ export interface SensorManifest {
   input_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;
   timeout_seconds?: number;
+  coalesce_seconds?: number;
   matches?: string;
 }
 
@@ -82,6 +94,13 @@ export function parseSensorManifest(raw: string): SensorManifest {
   if (timeout !== "") {
     const n = parseInt(timeout, 10);
     if (!Number.isNaN(n)) obj.timeout_seconds = n;
+  }
+  const coalesce = scalarField(fm, "coalesce_seconds");
+  if (coalesce !== "") {
+    const n = parseInt(coalesce, 10);
+    // A non-positive window is the same as absent (never coalesce), so it is
+    // dropped rather than stored — the dispatcher then has one thing to test.
+    if (!Number.isNaN(n) && n > 0) obj.coalesce_seconds = n;
   }
 
   // Cast-through-unknown: obj is Record<string, unknown> with the

@@ -1,8 +1,9 @@
 // aidlc-sensor-linter.ts — per-sensor script for the `linter` sensor.
 //
 // Owns the linter check itself; the dispatcher (aidlc-sensor.ts) routes a
-// SENSOR fire to this script via the manifest's `command:` field. Self-
-// contained: no imports from sibling tools. Wraps `bunx eslint --format
+// SENSOR fire to this script via the manifest's `command:` field. Imports only
+// the toolchain-probe memo from aidlc-lib (the sibling type-check sensor does
+// the same for sensorsDir). Wraps `bunx eslint --format
 // json --max-warnings -1 <path>` and prints the locked stdout JSON shape:
 //
 //   {"pass": <bool>, "errorCount": <n>, "warningCount": <n>,
@@ -18,14 +19,25 @@
 //   walk-up resolvers silently drop outer-inherited rules in monorepos
 //   with root flat config + nested legacy config.
 //
-// * "no eslint config" detection: probe `bunx eslint --print-config <path>`.
-//   Exit non-zero with stderr matching "No ESLint configuration" /
-//   "Could not find config" → exit 127 with stderr "no-eslint-config".
-//   The dispatcher's branch b reclassifies status 127 to PASSED with
-//   Note=tool-unavailable, giving a quiet PASS for projects without
-//   eslint config rather than spamming script-error.
+// * "no eslint config" detection, in two stages. First an ON-DISK walk
+//   (hasEslintConfigOnDisk): no `eslint.config.*` / `.eslintrc.*` and no
+//   package.json declaring eslint anywhere up the tree → exit 127 with zero
+//   subprocesses. Then eslint's own authoritative answer: probe `bunx eslint
+//   --print-config <path>` and map "No ESLint configuration" / "Could not find
+//   config" to the same 127. The dispatcher's branch b reclassifies status 127
+//   to PASSED with Note=tool-unavailable, giving a quiet PASS for projects
+//   without eslint config rather than spamming script-error.
 //
-// * Tool-unavailable detection: `bunx eslint --version` once at startup.
+//   The on-disk stage exists for cost, not correctness. A real PoC run fired
+//   this sensor 50 times on a project with no eslint at all and paid ~11s per
+//   fire — 9 minutes to re-derive the same "not configured" answer, because
+//   both `bunx` probes went to the registry and failed. The disk walk answers
+//   that case in microseconds and errs permissive: anything that looks like a
+//   config falls through to the probes, which remain the authority.
+//
+// * Tool-unavailable detection: `bunx eslint --version`, MEMOIZED per anchor
+//   dir via aidlc-lib's toolchain-probe cache (TTL + dependency-manifest
+//   fingerprint, so `bun add eslint` is seen by the next fire).
 //   `bunx <tool>` returns non-127 codes for several failure modes
 //   (network-fetch failure, package-resolution failure, registry timeout)
 //   so the dispatcher's `result.status === 127` check alone won't catch
@@ -44,8 +56,9 @@
 //   1   stdout JSON parse failed (dispatcher reclassifies via branch f)
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, parse as parsePath, resolve } from "node:path";
+import { readToolchainProbe, writeToolchainProbe } from "./aidlc-lib.ts";
 
 interface ESLintMessage {
 	ruleId: string | null;
@@ -161,14 +174,84 @@ const ESLINT_SPEC = "eslint@10";
 // (status === 127) won't catch those — so we propagate by exiting 127
 // ourselves on any non-zero exit from this probe.
 function probeEslintAvailable(cwd: string): void {
+	// Memoized: the probe answer is a property of the project's toolchain, not of
+	// the file being linted. Unmemoized it was re-paid per fire — ~11s each time
+	// on a project without eslint, because `bunx` goes to the registry and fails.
+	// The memo invalidates on a TTL and on the dependency-manifest fingerprint,
+	// so `bun add eslint` is picked up by the next fire.
+	const memo = readToolchainProbe(cwd, `available:${ESLINT_SPEC}`);
+	if (memo === true) return;
+	if (memo === false) {
+		process.stderr.write("eslint-unavailable\n");
+		process.exit(127);
+	}
 	const result = spawnSync("bunx", [ESLINT_SPEC, "--version"], {
 		encoding: "utf-8",
 		timeout: 30_000,
 		cwd,
 	});
+	writeToolchainProbe(cwd, `available:${ESLINT_SPEC}`, result.status === 0);
 	if (result.status !== 0) {
 		process.stderr.write("eslint-unavailable\n");
 		process.exit(127);
+	}
+}
+
+// Config discovery ON DISK, before any subprocess. `probeEslintConfig` below is
+// authoritative (it asks eslint), but it costs a `bunx` round trip, and the
+// no-config answer is knowable from the filesystem for a few microseconds. A
+// project with no eslint config anywhere up the tree cannot be linted, so there
+// is nothing for the probes to discover.
+//
+// Deliberately walks to the filesystem root rather than stopping at the nearest
+// package.json: legacy `.eslintrc.*` cascading and monorepo roots put the config
+// above the package. Erring permissive is the safe direction — a false "config
+// present" just falls through to the old probe path, while a false "absent"
+// would skip a lint the project wanted.
+const ESLINT_CONFIG_FILENAMES = [
+	"eslint.config.js",
+	"eslint.config.mjs",
+	"eslint.config.cjs",
+	"eslint.config.ts",
+	"eslint.config.mts",
+	"eslint.config.cts",
+	".eslintrc",
+	".eslintrc.js",
+	".eslintrc.cjs",
+	".eslintrc.mjs",
+	".eslintrc.json",
+	".eslintrc.yaml",
+	".eslintrc.yml",
+] as const;
+
+function packageJsonDeclaresEslint(dir: string): boolean {
+	try {
+		const raw: unknown = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
+		if (typeof raw !== "object" || raw === null) return false;
+		const pkg = raw as Record<string, unknown>;
+		if ("eslintConfig" in pkg) return true;
+		for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
+			const deps = pkg[field];
+			if (typeof deps === "object" && deps !== null && "eslint" in deps) return true;
+		}
+		return false;
+	} catch {
+		return false;
+	}
+}
+
+export function hasEslintConfigOnDisk(filePath: string): boolean {
+	let dir = dirname(resolve(filePath));
+	const root = parsePath(dir).root;
+	for (;;) {
+		for (const name of ESLINT_CONFIG_FILENAMES) {
+			if (existsSync(join(dir, name))) return true;
+		}
+		if (packageJsonDeclaresEslint(dir)) return true;
+		if (dir === root) return false;
+		const parent = dirname(dir);
+		if (parent === dir) return false;
+		dir = parent;
 	}
 }
 
@@ -335,9 +418,16 @@ export function main(argv: string[]): void {
 	const projectRoot =
 		findProjectRoot(args.filePath) ?? dirname(resolve(args.filePath));
 
-	// Probe order: tool first (cheap, ~1s for cached bunx), then config
-	// (~1s for --print-config). Both gates feed dispatcher branch b
-	// (PASSED Note=tool-unavailable) on non-zero.
+	// Probe order: on-disk config discovery first (microseconds, no subprocess),
+	// then tool availability (memoized), then eslint's own authoritative config
+	// resolution. All three gates feed dispatcher branch b (PASSED
+	// Note=tool-unavailable) on non-zero. Ordering matters for cost: a project
+	// with no eslint config at all now exits here instead of paying two `bunx`
+	// round trips to learn the same thing.
+	if (!hasEslintConfigOnDisk(args.filePath)) {
+		process.stderr.write("no-eslint-config\n");
+		process.exit(127);
+	}
 	probeEslintAvailable(projectRoot);
 	probeEslintConfig(args.filePath, projectRoot);
 

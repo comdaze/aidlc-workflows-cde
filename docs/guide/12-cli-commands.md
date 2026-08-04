@@ -609,10 +609,13 @@ Sensors are deterministic checks that run after every `Write` or `Edit` to a sta
 | Subcommand | What it does |
 |------------|--------------|
 | `list` | Print every framework Sensor (`id`, `kind`, `description`), alphabetically |
-| `describe <id>` | Print one Sensor's full manifest (command, default severity, `matches` glob, timeout) |
+| `describe <id>` | Print one Sensor's full manifest (command, default severity, `matches` glob, timeout, coalesce window) |
 | `fire <id> --stage <slug> --output-path <path>` | Run a Sensor against a file and emit a `SENSOR_FIRED` row plus its paired result row |
+| `flush [--stage <slug>]` | Re-fire Sensors whose fires were coalesced, bypassing their `coalesce_seconds` window |
 
 A manual fire emits a `SENSOR_FIRED` audit row, then exactly one terminal row: `SENSOR_PASSED`, `SENSOR_FAILED`, or `SENSOR_BUDGET_OVERRIDE`. A failure writes a detail file under `<record>/.aidlc-sensors/<stage>/` (in the intent's record dir). Sensors are advisory — a Sensor failure is never a tool failure, so the command still exits 0. The five Sensors that ship with the framework are `claim-sources`, `required-sections`, `upstream-coverage`, `linter`, and `type-check`.
+
+The two code Sensors (`linter`, `type-check`) run a whole-project toolchain, so they carry a `coalesce_seconds: 120` window: a repeat fire for the same stage inside it is deferred rather than run, and `flush` lands the deferred work — run it before a stage's approval gate. `--doctor` lists anything outstanding under **Deferred sensor fires**. See reference [Coalescing](../reference/07-sensor-system.md#coalescing).
 
 ```
 bun .claude/tools/aidlc-sensor.ts list

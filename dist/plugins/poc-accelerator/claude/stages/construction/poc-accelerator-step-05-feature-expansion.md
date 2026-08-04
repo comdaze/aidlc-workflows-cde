@@ -25,7 +25,6 @@ consumes:
 requires_stage:
   - poc-accelerator-step-04-walking-skeleton
 sensors:
-  - linter
   - type-check
   - required-sections
   - upstream-coverage
@@ -68,7 +67,18 @@ only approved synthetic or masked data.
 
 ### Step 3: Verify Locally and in the PoC Environment
 
-Run build, lint, type checks, tests, `cdk synth`, and the safe deployed flow.
+Run build, the repo's real linter, type checks, tests, `cdk synth`, and the safe
+deployed flow — once, here, as the authority on this workspace's code. Then land
+any deferred sensor work before the gate:
+
+```bash
+bun {{HARNESS_DIR}}/tools/aidlc-sensor.ts flush --stage poc-accelerator-step-05-feature-expansion
+```
+
+`type-check` carries a coalesce window, so a burst of edits produces one real
+fire plus a recorded debt; flush converts that debt into a verification instead
+of letting the stage close on an unchecked write.
+
 Capture any intentional shortfall with its owner and follow-up path rather than
 quietly treating it as done. In the diff review, treat test-suite tampering as
 a first-class signal: a skipped test, a weakened assertion, or modified test
@@ -97,8 +107,15 @@ Mark `poc-accelerator-step-05-feature-expansion` complete in `<record>/aidlc-sta
 
 ## Sensors
 
-Workspace lint/type-check sensors run on code changes. Markdown sensors ensure
-feature evidence cites the skeleton review, requirements, and criteria.
+The `type-check` sensor runs on TypeScript changes and coalesces repeat fires
+inside its window — Step 3's flush closes the window before the gate. Markdown
+sensors ensure feature evidence cites the skeleton review, requirements, and
+criteria.
+
+The stock `linter` sensor is deliberately NOT bound here, for the reason given
+in step 04's `## Sensors`: it wraps eslint only, so it is a permanent no-op on a
+PoC whose application code is not JS/TS. Step 3 runs the repo's own linter
+instead; a JS/TS-only PoC can add `linter` back to this stage's `sensors:` list.
 
 ## Learn
 

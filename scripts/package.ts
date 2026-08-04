@@ -968,16 +968,41 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
   const command = `sh -c '${aidlcExpr}${bunExpr}; AIDLC_HARNESS_DIR=${harnessLeaf} "$BUN" "${rootExpr}/hooks/compose.ts"'`;
 
   if (kind === "kiro") {
+    // BOTH hook generations, for the same reason the framework's own Kiro tree
+    // ships both: the legacy `.kiro.hook` format is the only one a pre-1.0 IDE
+    // executes, and it is INERT on Kiro IDE >= 1.0.1xx — which is every current
+    // build. Shipping only the legacy file made plugin auto-compose a promise the
+    // modern IDE could not keep: dropping the plugin's hooks into `.kiro/hooks/`
+    // registered a hook that never fired, and the failure looked like "the plugin
+    // did nothing". The v2 `.json` fixes that; the pair coexists without
+    // double-composing because compose itself is idempotent (content-hashed
+    // sentinel splices, compare-before-write).
+    //
+    // Trigger split mirrors the framework's own hooks: v2 gets `SessionStart`
+    // (compose once per session), legacy stays on `promptSubmit` because that
+    // generation has no session-start trigger.
     writeFileSync(
       join(hooksDir, "aidlc-plugin-compose.kiro.hook"),
       JSON.stringify({
         version: "1.0.0",
         enabled: true,
         name: `aidlc-${pluginName}-compose`,
-        description: `Composes the ${pluginName} AIDLC plugin on first interaction.`,
+        description: `Composes the ${pluginName} AIDLC plugin on first interaction. Legacy format: executed only by pre-1.0 Kiro IDE builds; inert on 1.x, where aidlc-plugin-compose.json is the live registration.`,
         when: { type: "promptSubmit" },
         // biome-ignore lint/suspicious/noThenProperty: required Kiro hook schema field
         then: { type: "runCommand", command },
+      }, null, 2) + "\n"
+    );
+    writeFileSync(
+      join(hooksDir, "aidlc-plugin-compose.json"),
+      JSON.stringify({
+        version: "v1",
+        hooks: [{
+          name: `aidlc-${pluginName}-compose`,
+          trigger: "SessionStart",
+          description: `Composes the ${pluginName} AIDLC plugin once per session. Supersedes the legacy aidlc-plugin-compose.kiro.hook on Kiro IDE >= 1.0.1xx, where that format never fires. Only active if these hook files are installed under the project's hooks dir; the supported Kiro path is still the explicit compose command in the plugin README.`,
+          action: { type: "command", command },
+        }],
       }, null, 2) + "\n"
     );
   } else {

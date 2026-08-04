@@ -38,7 +38,27 @@ const PROJECT_DIR =
 const HARNESS_LEAF = process.env.AIDLC_HARNESS_DIR || ".claude";
 const HARNESS_DIR = join(PROJECT_DIR, HARNESS_LEAF);
 const STAGES_DIR = join(HARNESS_DIR, "aidlc-common", "stages");
-const SKILLS_DIR = join(HARNESS_DIR, "skills");
+// Stage-runner skills live under the harness dir on most hosts, but Codex
+// discovers skills at `<project>/.agents/skills/` and ships nothing in
+// `.codex/skills/`. Without this fallback, composing a plugin on Codex generated
+// NO stage runners at all: the existence probe missed `.codex/skills` and the
+// only trace was an advisory drop, so the plugin's stages had no `/…` entry
+// point even though every file had landed correctly.
+//
+// KEEP IN SYNC with aidlc-runtime-paths.ts resolveSkillsPath — that is what
+// aidlc-runner-gen actually writes through, so this probe must agree with it or
+// compose decides "generate" against one dir while the generator writes another.
+// Same rule, same order: harness skills win when present; `.codex` alone falls
+// back. Resolved once at module scope so the probe, the per-stage SKILL.md
+// check, and the drop message can never disagree.
+const SKILLS_DIR = ((): string => {
+  const harnessSkills = join(HARNESS_DIR, "skills");
+  if (HARNESS_LEAF !== ".codex" || existsSync(harnessSkills)) return harnessSkills;
+  return join(PROJECT_DIR, ".agents", "skills");
+})();
+// The skills dir RELATIVE to the project, for messages — `.codex/skills` would
+// be a lie on a Codex install whose runners live in `.agents/skills`.
+const SKILLS_DIR_LABEL = relative(PROJECT_DIR, SKILLS_DIR) || SKILLS_DIR;
 const PHASES = ["initialization", "ideation", "inception", "construction", "operation"];
 const SCOPE_TABLE_BEGIN =
   "<!-- BEGIN: compiled scope grid via `bun aidlc-utility.ts scope-table` - do NOT hand-edit -->";
@@ -1592,7 +1612,7 @@ try {
   const pluginShipsScopes = existsSync(join(PLUGIN_ROOT, "scopes"));
   if (recompiled || missingPluginStageRunner) {
     if (!skillsDirExists) {
-      recordDrop(`runner regeneration skipped: ${HARNESS_LEAF}/skills not present in this install`, "advisory");
+      recordDrop(`runner regeneration skipped: ${SKILLS_DIR_LABEL} not present in this install`, "advisory");
     } else {
       const runnerEnv = installedToolEnv();
       const runRunnerGen = (args: string[], label: string): boolean => {
