@@ -21,24 +21,48 @@ so re-derive rather than trust — the numbers below are a snapshot.
 releases/day (49 distinct versions in 30 days), so a week is ~14 commits — one
 sitting. A month is 60+ and nobody volunteers for it.
 
-**CI.** `.gitlab-ci.yml` runs the guards on every MR into `main`: contract checks
-(`bun run check` — dist byte-parity, typecheck, lint), the smoke + unit tiers, and
-`scripts/ci-changelog-guard.ts` against `CI_MERGE_REQUEST_DIFF_BASE_SHA`. The
-inherited `.github/workflows/ci.yml` is kept for upstream parity but does nothing
-here — it keys off `github.event.pull_request.base.sha`.
+**CI — there is none. Every guard in this chapter is a human step.**
+`.gitlab-ci.yml` was added 2026-08-02 (`88c6aa42`), disabled 2026-08-03
+(`25321eb2`, a blanket `workflow: rules: - when: never`), and deleted 2026-08-04.
+The inherited `.github/workflows/ci.yml` still exists for upstream parity but does
+nothing here — it keys off `github.event.pull_request.base.sha`, a GitHub-only
+trigger. So no push and no merge request runs anything on a server.
 
-A fourth job, `upstream-drift`, has no upstream counterpart and runs on a
-**schedule** (configure it under Settings → CI/CD → Schedules on `main`). It is
-what makes the weekly cadence a mechanism rather than a promise: it fetches
-`github/v2`, prints how many commits are pending, runs the §5 derivation to print
-the actual conflict surface, and fails on any collapsed GitHub alert block (the
-A4 reformat trap). Advisory by construction — `allow_failure: true`, because being
-behind upstream is not a build error. Read the log, then decide whether to spend
-the session.
+Run these yourself, and treat them as the merge gate:
 
-Everything before 2026-08-01 ran only when a human remembered. That is how 15
-collapsed alert blocks and a 16-entry `CHANGELOG.md` deletion both got in without
-anything noticing.
+```bash
+bun run check                                  # dist byte-parity + typecheck + lint
+bun tests/run-tests.ts --smoke --unit --parallel 4
+bun scripts/ci-changelog-guard.ts cde/main     # no CHANGELOG.md entry was dropped
+```
+
+And the fourth one, which used to be a scheduled job (`upstream-drift`) and is now
+the weekly ritual this chapter's cadence depends on: fetch `github/v2`, count the
+pending commits, run the §5 derivation for the real conflict surface, and check for
+collapsed GitHub alert blocks (the A4 reformat trap).
+
+> [!IMPORTANT]
+> **The cadence is a promise again, not a mechanism.** That is the cost of deleting
+> the CI, and it is the same condition that let 15 collapsed alert blocks and a
+> 16-entry `CHANGELOG.md` deletion both land unnoticed before 2026-08-02. Upstream
+> ships ~1.6 releases a day, so a week of not remembering is ~14 commits of drift.
+> If the weekly sitting keeps slipping, re-enable the pipeline rather than
+> re-discovering this paragraph.
+
+> [!NOTE]
+> **If a merge request will not merge, check the merge checks, not the branch.**
+> With no pipeline being created, a project that has GitLab's **Pipelines must
+> succeed** check enabled (Settings → Merge requests) blocks every MR forever — it
+> waits on a success that can never arrive. Turning CI off and leaving that check
+> on is the trap; turn both off together.
+>
+> Recovering the pipeline is one command, since the file is only deleted, never
+> lost: `git show 25321eb2:.gitlab-ci.yml > .gitlab-ci.yml`, then replace the
+> blanket `when: never` with the rule set from `9b78ae27`, which gates each job to
+> a merge-request event, `main`, a schedule, or a manual run — and, critically,
+> creates NO pipeline when none of those match. Without that block GitLab builds an
+> empty pipeline on every topic-branch push, marks it failed, and mails the project
+> — a red with `0 failed jobs`, which is what soured the first attempt at CI here.
 
 ## 1. The shape of the problem
 
@@ -529,7 +553,8 @@ bun scripts/package.ts --check       # byte-parity gate: must print all trees in
 
 Byte-parity is what makes this safe: a mis-resolved `dist/` cannot survive
 `--check`. **Never hand-edit a `dist/` conflict hunk** — the result would be a
-tree that no source produces, and the drift guard would fail CI on it anyway.
+tree that no source produces, and `bun scripts/package.ts --check` catches it the
+moment you run the gate above.
 
 ## 4. Upstream sync procedure
 
@@ -584,7 +609,7 @@ Anything that reproduces there is upstream's, not yours. As of the 2.5.30 merge
 | `integration/t92` (4) | **Environment.** `tsc` exceeds the 30s per-test timeout on this machine. Reproduces at `d0cd10a6`. |
 | `integration/t66` (2) | **Upstream defect.** Designer-export golden fixture drift. Reproduces at `d0cd10a6`. |
 | `unit/gen-coverage-registry` (1) | **Was ours; fixed.** The A5 ratchet entry was missing. Fixed in the 2.5.31 follow-up. |
-| **Timeout flakes (a whole class, not a list)** | **Environmental.** Any test that spawns a subprocess — a tool, a hook, `run-tests` itself — can exceed its per-test or hook timeout when the tier runs `--parallel 8` on a loaded machine. Observed on `integration/t188`, `unit/t248`, `smoke/t05`, `unit/t150` in a single afternoon; every one passed standalone, and `t248` and `t05` were confirmed green on an unmodified `github/v2` worktree too. **Signature:** the message says `timed out after <n>ms` or `a beforeEach/afterEach hook timed out`, and there is **no assertion diff** — no `Expected`/`Received`. A real failure always prints one. **Re-run the single file before investigating.** Expect the CI `tests` job to go red on these occasionally; that is a retry, not a bug hunt. If it becomes frequent, lower `--parallel` rather than raising timeouts. |
+| **Timeout flakes (a whole class, not a list)** | **Environmental.** Any test that spawns a subprocess — a tool, a hook, `run-tests` itself — can exceed its per-test or hook timeout when the tier runs `--parallel 8` on a loaded machine. Observed on `integration/t188`, `unit/t248`, `smoke/t05`, `unit/t150` in a single afternoon; every one passed standalone, and `t248` and `t05` were confirmed green on an unmodified `github/v2` worktree too. **Signature:** the message says `timed out after <n>ms` or `a beforeEach/afterEach hook timed out`, and there is **no assertion diff** — no `Expected`/`Received`. A real failure always prints one. **Re-run the single file before investigating** — that is a retry, not a bug hunt. If it becomes frequent, lower `--parallel` rather than raising timeouts; `--parallel 4` has been reliable on this hardware where `-P 8` was not. |
 
 ## 5. Re-deriving this table
 

@@ -33,6 +33,28 @@ CDE-specific work. This restores the policy the fork already had at
 Entries below are keyed by date and by the upstream version the fork was
 sitting on, not by a fork version number.
 
+## 2026-08-04 (ci) — on upstream 2.5.33
+
+**`.gitlab-ci.yml` is deleted; every guard in this repo is now a human step.** The
+file was added 2026-08-02, disabled a day later with a blanket
+`workflow: rules: - when: never`, and is now gone. Nothing runs on a server for a
+push or a merge request. `docs/fork/divergence.md` carries the replacement: the
+three commands that are the merge gate, the weekly upstream-drift ritual that used
+to be a scheduled job, and the one-line recovery if you want the pipeline back.
+
+Two things worth knowing, both recorded in that chapter:
+
+* **If a merge request will not merge, look at the merge checks.** With no pipeline
+  created, a project with GitLab's **Pipelines must succeed** check enabled
+  (Settings → Merge requests) blocks every MR forever, waiting on a success that
+  cannot arrive. Turn CI off and that check off together.
+* **The first CI attempt soured on a false red, not a real one.** Every job was
+  gated to a merge-request event, `main`, a schedule, or a manual run, and the file
+  had no top-level `workflow:` block — so a plain topic-branch push created a
+  pipeline, found nothing to run, marked it failed, and mailed the project. The
+  notification said `0 failed jobs`, which is the tell. `9b78ae27` fixed it
+  properly; if the pipeline ever comes back, start from that commit's rule set.
+
 ## 2026-08-04 (plugin harness parity) — on upstream 2.5.33
 
 **A plugin now composes identically on all five harnesses.** Composing
