@@ -76,7 +76,7 @@ upstream `9c9201b8`:
 | `dist/` | 256 | **Not a conflict** — generated. Never merge it; regenerate (§3). |
 | `core/` | 2 | Low. Both are small and policy-driven, not functional. See A1, A2. |
 | `harness/` | 6 | **One real risk**, the Kiro IDE adapter. See B1. |
-| `tests/` | 2 | Low. One new file, one ratchet entry. See A5. |
+| `tests/` | 3 | Low. One new file, one ratchet entry, one appended guard. See A5, A10. |
 | root files | 6 | Low. No longer includes `CHANGELOG.md` or the version — see A3. |
 
 The plugin mechanism is doing its job: the majority of this fork's work lives in
@@ -122,7 +122,7 @@ What is left is only two kinds of thing:
 | `docs/` | 16 | A1 (7 files) + A6 (`docs/fork/`, 4 files) + 5 files no row explains — see §2's unclassified note |
 | `harness/` | 7 | A1 (5 `onboarding.fills.ts`) + A5 + `codex/manifest.ts` (unclassified) |
 | `core/` | 2 | A1 (`aidlc-utility.ts`) + A2 — but `aidlc-utility.ts` also carries +92 unclassified lines |
-| `tests/` | 5 | **all unclassified** |
+| `tests/` | 6 | A10 (1 appended guard) + 5 files no row explains — see §2's unclassified note |
 | `scripts/` | 2 | **all unclassified** |
 | root | 9 | A1 (`README.md` install text) + A4 |
 
@@ -521,6 +521,49 @@ scope row + 8 stage rows in the orchestrator table, zero compose drops.
 > nothing failed — no test, no doctor row, no drop. When porting to a sixth
 > harness, diff the `<!-- BEGIN: … -->` literals against `aidlc-utility.ts` rather
 > than eyeballing them.
+
+### A10 — Generated state files were missing `Construction Autonomy Mode` (2 files) — **upstream-bound**
+| | |
+| --- | --- |
+| Files | `core/tools/aidlc-utility.ts` (one line in the state-file template literal) · `tests/integration/t12-state-fixture-validation.test.ts` (additive guard, appended test) |
+| Class | **B — general, not CDE-specific.** A plain defect in upstream's state-file generator. Nothing here knows about CDE, PoCs, or any fork plugin. |
+| Upstream | **Offer it.** One line plus one static test; independently applicable and it restores an engine capability that is currently unreachable from a clean start on every scope. |
+| On conflict | Keep ours. If upstream rewrites the `## Current Status` block, re-derive from `state-template.md` rather than re-applying the patch — the point of the row is that the two files must agree, not that this exact line exists. |
+`state-template.md` documents `- **Construction Autonomy Mode**: [unset/autonomous/gated]`
+under `## Current Status`. The generator emitted that section with five fields and
+never wrote this one, so **every freshly initialised workflow, in every scope,
+produced a state file without the field.** `aidlc-bolt.ts set-autonomy` writes it
+with `setFieldStrict`, which hard-fails on an absent field, so:
+```
+bun .kiro/tools/aidlc-bolt.ts set-autonomy --mode autonomous
+→ {"error":"State update failed: Field not found in state file: \"Construction Autonomy Mode\"..."}
+```
+Reproduced on a scratch install with `--scope feature`, not just the fork's own
+`vibe` scope — the field appeared 0 times and the command failed identically. The
+consequence is that **autonomous Construction could not be switched on at all**
+through the documented command, and every consumer that reads the field via
+`getField` (the Stop hook's block cap, `state.ts park`, `utility.ts`
+scope-change/recompose refusals) silently took its not-autonomous branch.
+Found by installing the framework into this repository and opening a real session
+— the Stop hook then nudged the container as an abandoned workflow, which is
+precisely what the missing field was supposed to prevent.
+> [!IMPORTANT]
+> **The guard was right; the brand-new file was what looked legacy.** t33 already
+> tested `set-autonomy`'s hard-fail on an absent field and labelled it the "v4
+> state file" guard — so the failure was not only reachable, it was *tested*, under
+> a name that said it could not happen to a current file. A guard whose name
+> asserts an impossible precondition stops being read as a live constraint.
+>
+> Nothing caught it because every existing check compared a **fixture** to the
+> template, and the fixtures were written *from* the template. The generator was
+> never compared to either. The new guard closes exactly that edge, and it is
+> deliberately static (it reads both shipped files, spawns nothing) so it stays
+> inside t12's "Mechanism: none" character. Verified failing before the fix and
+> passing after — a guard nobody has watched fail is not yet a guard.
+Note the file cost: `core/tools/aidlc-utility.ts` now carries **three** fork
+stakes (A1's doctor hint, U2's +92 doctor lines, and this line). It is upstream's
+25-edits-in-60-days file, so pricing this as "one line" understates it — the
+merge cost is per-file, not per-line.
 
 ### Unclassified — real divergence with no row above (found 2026-08-03)
 

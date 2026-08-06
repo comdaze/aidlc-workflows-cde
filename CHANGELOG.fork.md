@@ -33,6 +33,156 @@ CDE-specific work. This restores the policy the fork already had at
 Entries below are keyed by date and by the upstream version the fork was
 sitting on, not by a fork version number.
 
+## 2026-08-06 (core fix, upstream-bound) — on upstream 2.5.33
+**Freshly initialised workflows were missing `Construction Autonomy Mode`, which
+made autonomous Construction unreachable on every scope.** The state-file
+generator wrote `## Current Status` with five fields and omitted this one, while
+`state-template.md` documents it as belonging to that section. Since
+`aidlc-bolt.ts set-autonomy` writes the field with `setFieldStrict` — which
+hard-fails when the field is absent — the documented command could not run on a
+clean start:
+```
+bun .kiro/tools/aidlc-bolt.ts set-autonomy --mode autonomous
+→ {"error":"State update failed: Field not found in state file: ..."}
+```
+Reproduced with `--scope feature` on a scratch install, so this was never
+vibe-specific. Every consumer that reads the field (`aidlc-stop.ts`'s block cap,
+`state.ts park`, the scope-change and recompose refusals) silently took its
+not-autonomous branch. Fixed by emitting the field as `unset` at generation time;
+recorded as divergence row **A10** and offerable upstream as-is.
+Found by dogfooding: the framework was installed into its own repository and a
+real `vibe` session opened, at which point the Stop hook nudged the container as
+an abandoned workflow — exactly what the missing field was supposed to prevent.
+Two things worth carrying forward, both in A10:
+* **A guard whose name asserts an impossible precondition stops being read as a
+  live constraint.** t33 already tested this hard-fail and labelled it the "v4
+  state file" guard. The failure was not merely reachable, it was *tested* — under
+  a name that said it could not happen to a current file.
+* **Comparing a fixture to a template proves nothing about the generator.** Every
+  existing check compared shipped fixtures to `state-template.md`, and those
+  fixtures were written *from* the template. The generator was never compared to
+  either. The new guard in `t12-state-fixture-validation.test.ts` closes that
+  edge, stays static (reads both shipped files, spawns nothing), and was verified
+  **failing before the fix and passing after** — a guard nobody has watched fail
+  is not yet a guard.
+
+## 2026-08-06 (vibe 0.2.0) — on upstream 2.5.33
+**`vibe` is now selectable as an agent, not just invoked as a command.** In Kiro,
+pick **`aidlc-vibe`** from the agent picker and start talking — the agent opens the
+container on its first turn, so there is no command to remember. The scope commands
+(`/vibe`, `/aidlc --scope vibe`) are unchanged and remain the entry on every other
+harness. Two new files, both inside the plugin:
+* **`agents/aidlc-vibe.md`** — the plugin's own persona, now the stage's
+  `lead_agent` **and** the picker entry's prompt, so both entries behave
+  identically. This replaces the borrowed `aidlc-developer-agent` seat, which fixes
+  a second problem: the vibe-only sedimentation guide was sitting in that core
+  agent's knowledge dir, where every developer-agent stage had to load it. Knowledge
+  moved to `knowledge/aidlc-vibe/`, and the test now pins that this plugin ships
+  exactly one seat and it is its own.
+* **`agents/aidlc-vibe.json`** — the Kiro agent config. `resources` pins the memory
+  layer, this seat's knowledge, `aidlc-shared`, and both runner skills into context
+  at session start, so **the read path is guaranteed by the agent itself** rather
+  than by an always-on steering include.
+**Both files share the stem `aidlc-vibe` on purpose.** Kiro reads `.md` *and*
+`.json` under `.kiro/agents/` as agent configs, so two different stems produce two
+picker entries — and the `.md` one carries no `resources`, `tools`, or
+`toolsSettings`, making the more discoverable entry the degraded one. Caught by
+dogfooding: the entry actually selected in a real install was the persona, so that
+session ran with neither the tool posture nor the pinned memory. Sharing a stem is
+how the 14 core agents ship and collapses the pair to one name — which is also the
+name originally asked for. A test pins the two stems equal.
+
+Worth knowing about the install this exposed: **all 14 core agents ship as `.md` +
+`.json` pairs, so 14 delegated personas are themselves picker entries.** That is
+upstream's existing shape, not introduced here, and it is not addressed by this
+change.
+
+The agent is an *entry*, not a replacement for the stage: selecting it still opens
+the container, because the learnings tool still refuses to write unless the
+requested stage is the state file's `Current Stage`. What it removes is the command
+and the feeling of starting a workflow.
+Four decisions worth recording, each of which fails silently if edited away:
+* **The JSON carries no `hooks` key, deliberately.** Kiro's own docs disagree on
+  the blast radius — two pages say the IDE ignores the *field*, one says it ignores
+  any *agent containing* it. Omitting it is the only shape that is safe under both
+  readings, and the failure it avoids (the agent quietly missing from the picker)
+  has no visible symptom. A test pins the absence. Related and unfixed: the 14 core
+  `aidlc-*-agent.json` files all carry `"hooks": {}`, so that is the first thing to
+  check if the core agents are missing from a picker.
+* **`toolsSettings` is kept even though IDE 1.0 deprecates it** for shell/fs rules
+  in favour of `permissions.rules`. Consistency with the 14 core agent files and
+  0.x compatibility won; the README documents the 1.x migration.
+* **The tool posture is wide on purpose.** `fs_write` and `execute_bash` are
+  unrestricted, because the framework-tools-only allowlist the core agents use
+  would make a free-form coding seat useless for its one purpose. Auto-approval
+  stays narrow (`fs_read`, `thinking`) and `rm -r` / `git push` stay denied.
+* **A disabled plugin leaves the picker entry behind.** Plugin `agents/` are copied
+  regardless of the enabled-plugin selection while the stage is filtered out of the
+  graph, so the prompt detects that the container cannot open and says so — instead
+  of working for an hour and then finding nowhere to sediment.
+Verified by composing into a scratch install: both agent files land in
+`.kiro/agents/`, the compiled graph shows `vibe-session` with `lead_agent:
+aidlc-vibe` (still `mode: inline`, still no consumes or requires_stage), every
+`resources` entry resolves against the install except the space memory glob (which
+`workspace-scaffold` creates on first run, exactly as the 14 core agent files
+declare it), and compose records zero drops. All five harnesses carry both files;
+Codex nests them under `plugins/aidlc-vibe/agents/`.
+
+Because the stage stays `mode: inline`, none of this needs the Kiro dispatch
+surface — a *dispatched* stage naming a plugin agent would additionally require
+`trustedAgents` registration in the install's `aidlc.json`, which a no-clobber
+compose hook cannot write, and compose would reject the stage outright without it.
+
+## 2026-08-04 (new plugin: vibe 0.1.0) — on upstream 2.5.33
+
+**A plugin for the opposite trade from `poc-accelerator`: free-form coding with no
+workflow rails, that still sediments.** Installed as `aidlc-vibe`. One scope, one
+stage, one knowledge file — no MCP, no sensors bound, no approval gate until you
+close out.
+
+```text
+/vibe <what you are about to work on>
+```
+
+Then work normally; say **sediment** to harvest the session diary through the §13
+admission gate (repeatable), **close** to end the container.
+
+* **Why a stage at all rather than a steering file.** Reading memory was already
+  free — every harness includes the `org → team → project → phase` chain in ambient
+  context whether or not a workflow is running. Writing it *well* is the hard part:
+  the learnings tool refuses unless the requested stage is the state file's
+  `Current Stage`, and that refusal is what buys the conflict check against broader
+  policy, idempotency, and a `RULE_LEARNED` audit row. A parked stage satisfies it;
+  a steering file cannot. The stage exists to hold that one precondition, not to
+  sequence anyone's work.
+* **The container stays `in-progress` on purpose, and two hooks depend on it.**
+  `aidlc-block` fires only while a gate is *open*, so with no open gate free-form
+  tool use is not interfered with — which also means **native Kiro Spec can run
+  inside the container** (it cannot be *governed* there: `PreTaskExec` exit 2
+  confers no veto, measured in `docs/fork/kiro-spec-integration.md`). And step 1
+  sets `Construction Autonomy Mode: autonomous`, the Stop hook's first carve-out,
+  without which every turn ending mid-session would be nudged as an abandoned
+  workflow. The plugin test pins both.
+* **What it deliberately does not give.** No requirements, no reviewed design, no
+  acceptance criteria — so nothing produced in a vibe session is evidence of
+  correctness or completeness. The scope file and README say so in those words, and
+  point at `feature`/`mvp`/`enterprise` for when that claim is needed.
+* **Sensors: none bound.** The only artifact is a session log written once at
+  close-out. The two code sensors are documented as a one-line opt-in with the
+  condition attached — bind them only if the repo has that toolchain, because a
+  sensor that cannot produce a finding is pure latency (measured: 11 s per write,
+  50 times, zero findings, on a project with no eslint).
+* Verified by composing into a scratch install: scope + stage + knowledge land, a
+  scope runner and a stage runner are generated, the compiled graph shows
+  `vibe-session` with no consumes and no requires_stage, the scope resolves to
+  **4** executing stages (three initialization + the container), and compose records
+  zero drops.
+
+Naming note: the directory and manifest are `vibe`; the packager prefixes the host
+plugin to `aidlc-vibe`. The internal name has to stay unprefixed — compose refuses
+any scope or agent declaring `plugin: aidlc-*`, because a plugin-owned runner uses
+the bare name and would collide with core's `aidlc-<name>` runner path.
+
 ## 2026-08-04 (ci) — on upstream 2.5.33
 
 **`.gitlab-ci.yml` is deleted; every guard in this repo is now a human step.** The

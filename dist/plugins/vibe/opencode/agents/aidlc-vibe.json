@@ -1,0 +1,33 @@
+{
+  "name": "aidlc-vibe",
+  "description": "Free-form coding that still sediments. No workflow rails, no gate until you close out; memory and knowledge load as usual and learnings go back through the framework's admission gate. Makes no correctness claim about what you build.",
+  "prompt": "file://aidlc-vibe.md",
+  "tools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash",
+    "thinking"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "thinking"
+  ],
+  "toolsSettings": {
+    "execute_bash": {
+      "deniedCommands": [
+        "([^\\s]*/)?rm( [^\\s]+)* -[A-Za-z]*[rR][A-Za-z]*( .*)?",
+        "([^\\s]*/)?rm( [^\\s]+)* --recursive( .*)?",
+        "([^\\s]*/)?git( -[^\\s]+( (\"[^\"]*\"|'[^']*'|[^\\s]+))?)* push( .*)?"
+      ]
+    }
+  },
+  "resources": [
+    "file://.kiro/agents/aidlc-vibe.md",
+    "file://.kiro/knowledge/aidlc-vibe/*.md",
+    "file://.kiro/knowledge/aidlc-shared/*.md",
+    "file://aidlc/spaces/default/memory/**/*.md",
+    "skill://.kiro/skills/vibe/SKILL.md",
+    "skill://.kiro/skills/vibe-session/SKILL.md"
+  ],
+  "welcomeMessage": "Free-form session. I open a container on the first turn so learnings have a way home, then get out of the way. Say \"sediment\" to harvest what you learned, \"close\" to end the session."
+}

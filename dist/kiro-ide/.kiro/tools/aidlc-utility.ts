@@ -4019,6 +4019,7 @@ ${stageProgress}
 - **Current Stage**: ${firstPostInit}
 - **Next Stage**: ${nextStageName}
 - **Status**: Running
+- **Construction Autonomy Mode**: unset
 - **Last Updated**: ${ts}
 
 ## Session Resume Point
