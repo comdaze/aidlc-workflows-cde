@@ -74,9 +74,9 @@ upstream `9c9201b8`:
 | `plugins/` | 59 | **None.** Ours entirely; upstream has no such directory. |
 | `docs/` | 8 | None in practice. Fork-authored chapters live under `docs/fork/`, a path upstream has none of — see A6. |
 | `dist/` | 256 | **Not a conflict** — generated. Never merge it; regenerate (§3). |
-| `core/` | 3 | Low. See A1, A2 (small, policy-driven) and A11 (a message-ordering fix in the Stop hook). |
-| `harness/` | 6 | **One real risk**, the Kiro IDE adapter. See B1. |
-| `tests/` | 4 | Low. One new file, one ratchet entry, two appended guards. See A5, A10, A11. |
+| `core/` | 4 | Low. See A1, A2 (small, policy-driven), A11 (Stop-hook message ordering), A13 (learnings identity) and A14 (a doctor row). |
+| `harness/` | 7 | **One real risk**, the Kiro IDE adapter. See B1; also A12 (one hook matcher). |
+| `tests/` | 5 | Low. One new file, one ratchet entry, three files with appended guards. See A5, A10, A11, A13. |
 | root files | 6 | Low. No longer includes `CHANGELOG.md` or the version — see A3. |
 
 The plugin mechanism is doing its job: the majority of this fork's work lives in
@@ -596,6 +596,83 @@ truncated token is unrecoverable.
 >
 > The appended t121 assertion pins index-of-token < index-of-payload, and was
 > verified failing on the pre-fix order (316 vs 144) before being kept.
+
+### A12 — `aidlc-block` fired on every tool call (1 file) — **upstream-bound**
+| | |
+| --- | --- |
+| Files | `harness/kiro-ide/hooks/aidlc-block.json` (adds a `matcher`) · `tests/unit/t245-kiro-ide-hook-registrations.test.ts` (the pinned registration table) |
+| Class | **B — general.** A registration-scope fix in upstream's Kiro IDE hook set; nothing CDE-specific. |
+| Upstream | **Offer it.** One field, and it makes the hook's cost proportional to what it can actually act on. |
+| On conflict | Keep ours. If upstream adds new mutating tool names, extend the alternation — the matcher must stay a superset of the mutation surface `aidlc-audit-logger` and `aidlc-shell-post` recognise. |
+The hook was registered as `PreToolUse` with **no matcher**, so it ran on every
+tool call — every read, every grep — at ~80ms of bun startup each, measured. Its
+first two carve-outs return 0 immediately under autonomous Construction or with no
+gate open, which is the entire duration of a `vibe` session: provably dead work on
+every call.
+Now matched on `fs_write|str_replace|fs_append|execute_bash` — the same mutation
+surface the other two hooks already use. A human-presence floor has no reason to
+gate a read, and this leaves the floor's actual purpose (blocking *changes* while a
+gate is open) untouched.
+The legacy `aidlc-block.kiro.hook` is deliberately left unmatched: its 1.0-era
+schema has no matcher field, and it is inert on IDE ≥ 1.0 anyway.
+
+### A13 — `persist` keyed learning identity on `candidate_id` (2 files) — **upstream-bound**
+| | |
+| --- | --- |
+| Files | `core/tools/aidlc-learnings.ts` · `tests/integration/t99-learnings-gate-flow.test.ts` (two appended tests) |
+| Class | **B — general.** A silent data-loss defect in upstream's learnings gate. |
+| Upstream | **Offer it.** Self-contained, and it closes a path where an approved learning is discarded while the tool reports success. |
+| On conflict | Keep ours. The property to preserve is that identity derives from destination + text; the marker's prefix shape is only there for compatibility and can be re-derived. |
+`surface` candidate IDs are **positional** — re-derived from the diary on every
+call — so appending a diary entry renumbers them, and a second `persist` in the
+same stage routinely reuses an id for different content. Both the line marker
+(`cidMarker`) and the audit-row check keyed on that id, which produced two silent
+failures, both measured in one session:
+- reused id, **different** method file → the line was written but the audit row was
+  suppressed and the count under-reported: **7 rules written, `rule_learned: 4`**,
+  leaving 12 rules on disk with only 9 `RULE_LEARNED` rows;
+- reused id, **same** method file → `hasRow && hasLine` held and the rule was
+  **dropped entirely while `persist` reported success**.
+Identity is now a short hash of destination scope + exact text, **appended** to the
+historical `cid:<slug>:<candidate_id>` marker rather than replacing the id — so all
+16 existing assertions across t97, t99 and t158 keep passing unchanged, and a
+`Content-Key` field joins `Candidate-ID` in the audit row. A pre-upgrade install
+stays idempotent through a text-containment check, which is the only legacy-safe
+test available (a marker without a hash cannot tell you whether the text matches).
+> [!IMPORTANT]
+> **The failure mode was "the tool said OK".** Nothing in the output distinguished
+> a dropped rule from a written one; the count was simply lower than the number
+> approved, and nobody counts. The appended t99 test was verified failing on the
+> old logic (audit rows `Expected: 2, Received: 1`, with the second rule absent
+> from the method file) before being kept.
+
+### A14 — bun unresolvable in `/bin/sh` hooks, and doctor could not see it (2 files) — **upstream-bound**
+| | |
+| --- | --- |
+| Files | `core/tools/aidlc-utility.ts` (a second doctor row) · `README.md` (a troubleshooting row) |
+| Class | **B — general.** Affects any Kiro IDE install whose IDE was launched from the GUI. |
+| Upstream | **Offer it.** The check is deterministic and the README row documents a case the existing one misses. |
+| On conflict | Keep ours. If upstream restructures the doctor rows, re-add the *property* — bun resolving with no inherited PATH — rather than the literal path list. |
+Every framework entry point is a bare `bun`, spawned through `/bin/sh`. A
+non-interactive `/bin/sh` reads **no** rc file — not `~/.zshrc`, and not
+`~/.zshenv`, which is zsh-only — so it sees only the PATH its parent handed down.
+Launched from the GUI, that parent is launchd, whose default PATH excludes
+`~/.bun/bin`. Result: every hook dies with `/bin/sh: bun: command not found` (127),
+and because the hook never ran it records **no drop**, so the hook-health files look
+clean while nothing fires. The same install works in a terminal-launched window.
+The existing README advice (export into `~/.zshenv`) does not help this case, and
+was measured not helping: the export was already present.
+Doctor's `bun installed` row cannot detect any of this — it runs inside a process
+bun already launched, so it is true by construction. The new row checks the property
+that actually matters: bun on a standard system path, resolvable with no inherited
+PATH and no rc file. Verified failing when the symlink is absent (43/1) and passing
+when present (44/0).
+> [!IMPORTANT]
+> **Three wrong diagnoses preceded this one** — launchd's PATH, a `/usr/local/bin`
+> symlink that worked by accident, and the README's `~/.zshenv` row. Each was
+> tested in an environment that was not the failing one. When diagnosing an
+> environment problem, the probe has to run where the failure lives; a
+> stripped-*looking* shell is not the same as the shell the hook gets.
 
 ### Unclassified — real divergence with no row above (found 2026-08-03)
 

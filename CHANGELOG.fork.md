@@ -59,6 +59,42 @@ divergence row **A11**, offerable upstream as-is.
   verified failing on the pre-fix order (316 vs 144) before being kept — after an
   earlier guard in this same session passed vacuously and had to be re-verified.
 
+## 2026-08-06 (three core/harness fixes, all upstream-bound) — on upstream 2.5.33
+Three defects the vibe dogfood surfaced, none of them vibe-specific. Divergence
+rows **A12**, **A13**, **A14**.
+**`aidlc-block` fired on every tool call (A12).** Registered as `PreToolUse` with no
+matcher, so it ran on every read and every grep at ~80ms of bun startup each — to
+reach a carve-out that returns 0 immediately under autonomous Construction or with
+no gate open, which is the whole duration of a `vibe` session. Now matched on
+`fs_write|str_replace|fs_append|execute_bash`, the same mutation surface the other
+two Kiro hooks already use. A human-presence floor has no reason to gate a read.
+**`persist` keyed learning identity on `candidate_id`, losing approved rules
+silently (A13).** `surface` candidate IDs are positional, so a second persist in one
+stage routinely reuses an id for different content. Measured: **7 rules written,
+`rule_learned: 4` returned**, leaving 12 rules on disk with 9 audit rows — and where
+a reused id targeted the same method file, the rule was **dropped entirely while the
+tool reported success**. Identity is now a hash of destination + exact text,
+*appended* to the historical marker so all 16 existing assertions keep passing, with
+a `Content-Key` field joining `Candidate-ID` in the audit row. Two tests added;
+verified failing on the old logic first.
+**bun was unresolvable in `/bin/sh` hooks, and doctor could not see it (A14).** Every
+entry point is a bare `bun` spawned through `/bin/sh`, which reads no rc file — not
+`~/.zshrc`, not `~/.zshenv` (zsh-only) — so a GUI-launched IDE hands it launchd's
+PATH, which excludes `~/.bun/bin`. Every hook then dies with 127 and records **no
+drop**, because the hook never ran: the health files look clean while nothing fires.
+Doctor's existing `bun installed` row is true by construction — it runs inside a
+process bun already launched. The new row checks bun on a standard system path, and
+the README gains the troubleshooting case its existing `~/.zshenv` row does not
+cover (measured: that export was already present and did not help).
+* **`team.md` is now tracked.** The six team-tier rules this session produced are
+  generalisations meant for other projects, and under the local dogfood exclude they
+  existed only on one machine. Force-added; `project.md`, the session diary and the
+  audit stay excluded, which is the right line between general and local.
+* Three wrong diagnoses preceded A14 — launchd's PATH, a `/usr/local/bin` symlink
+  that worked by accident, and the README's `~/.zshenv` row. Each was tested in an
+  environment that was not the failing one. A stripped-*looking* shell is not the
+  shell the hook gets.
+
 ## 2026-08-06 (vibe 0.2.3) — on upstream 2.5.33
 **The real defect: a same-stem `.json` beside the persona `.md` is silently inert,
 so three consecutive fixes to it changed nothing.** Kiro reads both formats out of

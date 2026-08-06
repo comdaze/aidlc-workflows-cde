@@ -1134,6 +1134,38 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
       : "install via `brew install bun` or `npm install -g bun`",
   });
 
+  // 1b. bun resolvable WITHOUT an inherited PATH.
+  //
+  // Check 1 above cannot detect the failure it is named for: it runs inside a
+  // process bun already launched, so "bun installed" is true by construction. A
+  // hook, though, is spawned as `bun ...` through `/bin/sh` — and a
+  // non-interactive `/bin/sh` reads NO rc file (not `~/.zshrc`, not `~/.zshenv`,
+  // which is zsh-only), so it sees only the PATH its parent handed down. When the
+  // IDE is launched from the GUI that parent is launchd, whose default PATH is
+  // `/usr/bin:/bin:/usr/sbin:/sbin` — no `~/.bun/bin`. Measured: every hook in
+  // such a session dies with `/bin/sh: bun: command not found` (127), which
+  // leaves no drop record because the hook never ran, so the health files look
+  // clean while nothing fires. The same install works perfectly in a
+  // terminal-launched window on the same machine.
+  //
+  // So the property worth checking is not "is bun installed" but "does bun
+  // resolve with no inherited PATH and no rc file" — i.e. does it sit on a
+  // standard system path. Deterministic, no spawn, and it passes exactly when
+  // hooks survive a GUI launch.
+  if (!isWindows) {
+    const systemPaths = ["/usr/local/bin/bun", "/opt/homebrew/bin/bun", "/usr/bin/bun"];
+    const onSystemPath = systemPaths.some((p) => existsSync(p));
+    results.push({
+      pass: onSystemPath || !bunFound,
+      label: "bun resolves without an inherited PATH (hooks survive a GUI-launched IDE)",
+      fix:
+        'symlink it onto a system path: `ln -s "$HOME/.bun/bin/bun" /usr/local/bin/bun`. ' +
+        "A hook runs via `/bin/sh`, which reads no rc file, so the `~/.zshenv` / " +
+        "`~/.bashrc` export only helps harnesses that invoke hooks through your login " +
+        "shell. Launching the IDE from a terminal also works, but only for that session.",
+    });
+  }
+
   // 2. Hook presence — every framework hook is TypeScript, run via bun (no
   // executable bit needed). The core hook bodies ship in EVERY harness tree; the
   // Kiro and Codex trees additionally carry an authored stdin adapter that wires
