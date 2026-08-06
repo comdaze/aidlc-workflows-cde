@@ -63,13 +63,16 @@ agent 去掉的是那条命令，和"我在启动一个流程"的感觉。
   （agent 在选择器里悄悄消失）没有任何可见症状。而且 hook 本来就该放 `.kiro/hooks/`。
   插件测试把"没有这个键"钉住了。顺带一提：核心那 14 个 `aidlc-*-agent.json` 全都带 `"hooks": {}`，
   所以如果你的选择器里看不到它们，这是第一个该查的地方。
-- **`toolsSettings` 是已废弃的 shell/fs 写法**（IDE 1.0 起改成 `permissions.rules`）。
-  这里仍然用它，为的是和核心那 14 个 agent 文件保持一致、并且在 0.x 上照样能用。如果你在 1.x
-  想用新形状，`/upgrade-agent` 能迁移，或者把那一块换成 `"permissions": { "rules": [...] }`。
-- **工具面刻意开得宽。** 自由编程需要不受限的 `fs_write` 和 `execute_bash` —— 如果像核心 agent
-  那样只允许跑框架工具，这个席位对它唯一的用途就没用了。自动批准仍然收得很窄
-  （只有 `fs_read` 和 `thinking`）：写入和 shell 照样弹确认，`rm -r` 和 `git push` 直接拒绝。
-  嫌确认多可以自己放宽 `allowedTools`。
+- **它刻意不声明任何工具 —— `tools` 是限制，不是授予。** 列出工具等于把默认 agent 的工具集
+  **替换**成这个列表，skill、MCP 工具以及其他一切全被切掉。这个配置曾经写着
+  `["fs_read","fs_write","execute_bash","thinking"]`，在真实 Kiro IDE 会话里实测的结果是：
+  agent 只有**一个**工具（skill 加载器）—— 能把一份操作手册读进上下文，却一步都执行不了。
+  两个错误叠加：列表本身是限制，而那几个是 CLI 2.x / IDE 0.x 的旧名字，在 IDE 1.x 上没解析出来，
+  所以连这四个也没兑现。
+
+  所以现在这个席位**继承默认 agent 的能力**，只叠加 prompt、`resources`、description 和欢迎语。
+  **护栏应该放在 harness 自己的权限设置里**，那样对所有 agent 都生效 —— 而不是塞进某一个 agent
+  的配置里，那里一旦搞错 schema 版本就会静默地把这个席位废掉。测试钉住了「不出现任何限制工具的键」。
 - **在非 Kiro 的 harness 上这个 JSON 是惰性的。** Claude 读 `.md`、Codex 读 `.toml`、
   opencode 读自己的原生孪生 —— 拷过去的 JSON 在那边只是无害的多余文件，入口仍然是 scope 命令。
 
@@ -179,4 +182,5 @@ bun test plugins/vibe/tests/plugin.test.ts
 
 agent 那一面也有守卫，因为那里每一种失败都是静默的：选择器条目不带 `hooks` 键、
 `prompt` 和 `name` 都指向真实存在的文件、`resources` 仍然钉住记忆层、
-`fs_write` 和 `execute_bash` 仍然可用、知识仍然留在本插件自己的席位里而不是漏进某个核心 agent 的目录。
+没有任何限制工具的键悄悄回来（也就是默认 agent 的能力仍然是继承的）、
+知识仍然留在本插件自己的席位里而不是漏进某个核心 agent 的目录。

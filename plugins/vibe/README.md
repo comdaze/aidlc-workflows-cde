@@ -76,16 +76,20 @@ Four things to know:
   pins the absence. Worth knowing: the 14 core `aidlc-*-agent.json` files all carry
   `"hooks": {}`, so if your picker is missing those, this is the first thing to
   check.
-- **`toolsSettings` is the deprecated shell/fs form** as of IDE 1.0, replaced by
-  `permissions.rules`. It is used here anyway, to stay consistent with the 14 core
-  agent files and to keep working on 0.x. If you are on 1.x and want the current
-  shape, `/upgrade-agent` migrates it, or replace the block with
-  `"permissions": { "rules": [...] }`.
-- **Tool posture is deliberately wide.** Free-form coding needs `fs_write` and
-  `execute_bash` unrestricted — a framework-tools-only allowlist would make this
-  seat useless for its one purpose. Auto-approval stays narrow (`fs_read` and
-  `thinking`); writes and shell still prompt, and `rm -r` / `git push` are denied.
-  Widen `allowedTools` yourself if you want fewer prompts.
+- **It declares no tools, on purpose — `tools` is a restriction, not a grant.**
+  Listing tools *replaces* the default agent's toolset with exactly that list,
+  cutting off skills, MCP tools and everything else. This config shipped once with
+  `["fs_read","fs_write","execute_bash","thinking"]` and was measured in a real
+  Kiro IDE session: the agent came up with **one** tool, the skill loader — able to
+  load a manual into context and unable to execute a single step of it. Two
+  failures compounded, because those are the CLI 2.x / IDE 0.x names and they did
+  not resolve on IDE 1.x, so even the four were not granted.
+
+  So the seat now inherits the default agent's capability and adds only a prompt,
+  `resources`, a description and a welcome message. **Put guardrails in the
+  harness's own permission settings**, where they apply to every agent — not in one
+  agent's config, where getting the schema version wrong silently disarms the seat.
+  A test pins that no tool-restricting key is present.
 - **On non-Kiro harnesses the JSON is inert.** Claude reads `.md` agents, Codex
   reads `.toml`, opencode reads its own native twin — the copied JSON is harmless
   noise there, and the scope commands remain the entry.
@@ -215,6 +219,6 @@ for real work).
 
 It also guards the agent surface, where every failure is silent: the picker entry
 carries no `hooks` key, its `prompt` and `name` resolve to the shipped files,
-`resources` still pins the memory layer, `fs_write` and `execute_bash` are still
-available, and knowledge stays in this plugin's own seat instead of leaking into a
-core agent's.
+`resources` still pins the memory layer, no tool-restricting key has crept back in
+(so the default agent's capability is still inherited), and knowledge stays in this
+plugin's own seat instead of leaking into a core agent's.

@@ -34,6 +34,61 @@ Entries below are keyed by date and by the upstream version the fork was
 sitting on, not by a fork version number.
 
 ## 2026-08-06 (core fix, upstream-bound) — on upstream 2.5.33
+**Load-steering continuations could not be followed on a harness that truncates
+hook output, which made the Stop hook nag forever.** The continuation inlined the
+whole rules bundle into its message and put the `continue` token *after* it —
+16,583 chars across 37 entries on a stock install. Kiro IDE truncates hook output,
+so every delivery ended mid-payload and the token never arrived.
+Without the token the chain cannot advance, and the obvious recovery is a trap:
+the chain's position lives in the token rather than in state, so calling `next`
+again returns the head of the chain with the same token. Observed while dogfooding:
+**seven identical deliveries in one session, zero progress**, each one spending the
+full payload of context. Draining it took reading the token out of `next`'s JSON
+and calling `continue` by hand.
+Fixed by ordering: the token and its command lead, the payload follows. Truncated
+rule text is recoverable — the method files are on disk and already ambient through
+each harness's always-on include — whereas a truncated token is not. Recorded as
+divergence row **A11**, offerable upstream as-is.
+* **A failure that presents as "nothing to do" is worse than a crash.** Every
+  delivery looked benign — a wall of rules already present on disk — so the
+  reasonable conclusion each time was "already applied, continue". The reader was
+  reasoning correctly about the wrong question, because the question (*echo this
+  token back*) had been truncated away. The general rule: in any channel that can
+  truncate, the actionable instruction precedes bulk context.
+* The t121 assertion added with it pins index-of-token < index-of-payload, and was
+  verified failing on the pre-fix order (316 vs 144) before being kept — after an
+  earlier guard in this same session passed vacuously and had to be re-verified.
+
+## 2026-08-06 (vibe 0.2.1) — on upstream 2.5.33
+**The `aidlc-vibe` agent declared a `tools` list, which silently disarmed it.**
+`tools` is a RESTRICTION, not a grant: declaring it replaces the default agent's
+toolset with exactly that list, cutting off skills, MCP tools and everything else.
+The config shipped with `["fs_read","fs_write","execute_bash","thinking"]` — the
+CLI 2.x / IDE 0.x names — and two failures compounded, because those names do not
+resolve on IDE 1.x either. Measured in a real Kiro IDE session: the agent came up
+with **one** tool, the skill loader. It could load a manual into context and could
+not execute a single step of it.
+Fixed by removing every tool-restricting key. The agent now inherits the default
+agent's capability and adds only what is additive: `prompt`, `resources`,
+`description`, `welcomeMessage`. A test pins that `tools`, `allowedTools`,
+`excludedTools`, `toolsSettings` and `permissions` are all absent, and that the
+key set is exactly those five.
+* **Guardrails belong in the harness's permission settings, not in one agent's
+  config.** The removed block also carried `toolsSettings.execute_bash.deniedCommands`
+  for `rm -r` and `git push` — deprecated shape on IDE 1.0, and on the evidence
+  above there is no reason to believe it was in force. A deny rule that silently
+  does nothing is worse than no deny rule, because it is cited as protection.
+* **The 14 core agents are shaped for dispatch, and this is why that shape is
+  wrong for a picker entry.** They declare narrow `tools` plus an
+  `execute_bash.allowedCommands` allowlist limited to framework tools — correct for
+  a delegated seat, and the reason selecting one from the picker yields an agent
+  that can barely act. Copying that shape is what caused this bug.
+* Propagation note, learned the hard way in the same session: fixing the source is
+  not fixing an install. `dist/` needed a repackage and the installed copy had to
+  be **deleted** before compose would replace it — a no-clobber compose silently
+  keeps the old bytes and exits 0.
+
+## 2026-08-06 (core fix, upstream-bound) — on upstream 2.5.33
 **Freshly initialised workflows were missing `Construction Autonomy Mode`, which
 made autonomous Construction unreachable on every scope.** The state-file
 generator wrote `## Current Status` with five fields and omitted this one, while

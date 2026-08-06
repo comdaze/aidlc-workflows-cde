@@ -74,9 +74,9 @@ upstream `9c9201b8`:
 | `plugins/` | 59 | **None.** Ours entirely; upstream has no such directory. |
 | `docs/` | 8 | None in practice. Fork-authored chapters live under `docs/fork/`, a path upstream has none of — see A6. |
 | `dist/` | 256 | **Not a conflict** — generated. Never merge it; regenerate (§3). |
-| `core/` | 2 | Low. Both are small and policy-driven, not functional. See A1, A2. |
+| `core/` | 3 | Low. See A1, A2 (small, policy-driven) and A11 (a message-ordering fix in the Stop hook). |
 | `harness/` | 6 | **One real risk**, the Kiro IDE adapter. See B1. |
-| `tests/` | 3 | Low. One new file, one ratchet entry, one appended guard. See A5, A10. |
+| `tests/` | 4 | Low. One new file, one ratchet entry, two appended guards. See A5, A10, A11. |
 | root files | 6 | Low. No longer includes `CHANGELOG.md` or the version — see A3. |
 
 The plugin mechanism is doing its job: the majority of this fork's work lives in
@@ -564,6 +564,38 @@ Note the file cost: `core/tools/aidlc-utility.ts` now carries **three** fork
 stakes (A1's doctor hint, U2's +92 doctor lines, and this line). It is upstream's
 25-edits-in-60-days file, so pricing this as "one line" understates it — the
 merge cost is per-file, not per-line.
+
+### A11 — Load-steering continuations were unfollowable under output truncation (2 files) — **upstream-bound**
+| | |
+| --- | --- |
+| Files | `core/hooks/aidlc-stop.ts` (`continuationReason`, load-steering branch) · `tests/integration/t121-stop-hook-enforce.test.ts` (ordering assertion, appended to the existing case) |
+| Class | **B — general, not CDE-specific.** A message-ordering defect in upstream's Stop hook. Nothing here knows about CDE or any fork plugin. |
+| Upstream | **Offer it.** Reordering two clauses plus one assertion; it makes the steering chain survive any harness that truncates hook output. |
+| On conflict | Keep ours. If upstream rewrites the message, re-apply the *property* — actionable instruction before bulk payload — rather than the exact wording. |
+The load-steering continuation inlined the whole rules bundle into the hook's
+`reason` and put the `continue` token **after** it. Measured on a stock install:
+**16,583 chars across 37 entries**. Kiro IDE truncates hook output, so every
+delivery ended mid-payload and the token never arrived.
+Without the token the chain cannot be followed, and the obvious recovery is a
+trap: the chain's position lives in the token, not in state, so calling `next`
+again returns the head of the chain with the *same* token, forever. Observed in a
+real session: **seven identical deliveries, no progress**, each costing the full
+payload in context window. Draining it required reading the token out of `next`'s
+JSON directly and calling `continue` by hand.
+The fix is ordering, not size: the token and its command now lead, the payload
+follows. Truncated rule text is recoverable — the method files are on disk and
+already reach the model through each harness's always-on include — whereas a
+truncated token is unrecoverable.
+> [!IMPORTANT]
+> **A failure that presents as "nothing to do" is worse than a crash.** Each
+> delivery looked benign: a wall of rules that were already on disk, so the
+> correct-looking conclusion was "already applied, continue". The reader was
+> reasoning well about the wrong question, because the question — *echo this token
+> back* — had been cut off. Put the actionable instruction before bulk context in
+> any channel that can truncate.
+>
+> The appended t121 assertion pins index-of-token < index-of-payload, and was
+> verified failing on the pre-fix order (316 vs 144) before being kept.
 
 ### Unclassified — real divergence with no row above (found 2026-08-03)
 

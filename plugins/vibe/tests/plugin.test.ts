@@ -237,13 +237,28 @@ describe(`${PLUGIN_NAME} plugin — agent surface`, () => {
       expect(resources).toContain(`file://.kiro/knowledge/${basename(PERSONA, ".md")}/*.md`);
     });
 
-    test("free-form work is actually possible: writes and shell are available", () => {
-      // A read-only tool set would make this seat useless for its one purpose.
-      // Auto-approval stays narrow (that is `allowedTools`), but the capability
-      // must be there.
-      expect(agent.tools).toContain("fs_write");
-      expect(agent.tools).toContain("execute_bash");
-      expect(agent.toolsSettings?.execute_bash?.allowedCommands).toBeUndefined();
+    test("declares NO tool-restricting keys — the default agent's capability is inherited", () => {
+      // `tools` is a RESTRICTION, not a grant: declaring it replaces the default
+      // toolset with exactly that list, cutting off skills, MCP tools and
+      // everything else the default agent has. Shipped once with
+      // ["fs_read","fs_write","execute_bash","thinking"] — the CLI 2.x / IDE 0.x
+      // names — and measured in a real Kiro IDE session: the agent ended up with
+      // ONE tool (the skill loader), able to read the docx-cn manual into context
+      // and unable to execute a single step of it. Two failures compounding: the
+      // list restricted, and the legacy names did not resolve on IDE 1.x, so even
+      // those four were not granted.
+      //
+      // A free-form coding seat must therefore add nothing to the tool surface
+      // and take nothing away. Guardrails belong in the harness's own permission
+      // settings, where they apply to every agent, not smuggled into one agent's
+      // config where getting the schema version wrong disarms the seat entirely.
+      for (const key of ["tools", "allowedTools", "excludedTools", "toolsSettings", "permissions"]) {
+        expect(key in agent).toBe(false);
+      }
+      // What it DOES declare is purely additive.
+      expect(Object.keys(agent).sort()).toEqual(
+        ["description", "name", "prompt", "resources", "welcomeMessage"],
+      );
     });
   });
 });

@@ -8,7 +8,7 @@
     {
       "name": "aidlc-vibe",
       "source": ".",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Free-form coding that still sediments — one parked stage, no workflow rails, no approval gate until you close out. Memory and knowledge load as usual; learnings go through the framework's §13 admission gate rather than being written by hand. Entered by the /vibe scope command on any harness, or by picking the aidlc-vibe agent in Kiro."
     }
   ]
