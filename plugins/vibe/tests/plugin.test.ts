@@ -167,17 +167,47 @@ describe(`${PLUGIN_NAME} plugin — content validation`, () => {
 // prompt file it owns.
 describe(`${PLUGIN_NAME} plugin — agent surface`, () => {
   const PERSONA = join(PLUGIN_ROOT, "agents", "aidlc-vibe.md");
-  const KIRO_AGENT = join(PLUGIN_ROOT, "agents", "aidlc-vibe.json");
+  const personaFrontmatter = (): string =>
+    readFileSync(PERSONA, "utf-8").match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
 
-  test("persona and Kiro config share one filename stem (one picker entry, not two)", () => {
-    // Kiro reads BOTH .md and .json under .kiro/agents/ as agent configs, so two
-    // different stems produce two picker entries — and the .md one carries no
-    // resources, tools, or toolsSettings, i.e. the more discoverable entry was
-    // the degraded one. Measured in a real install: the user selected
-    // `vibe-agent` and got the prompt without the tool posture or memory pinning.
-    // Sharing a stem is how the 14 core agents are shipped, and it collapses the
-    // pair to a single name.
-    expect(basename(PERSONA, ".md")).toBe(basename(KIRO_AGENT, ".json"));
+  test("the seat is ONE file — no same-stem .json to shadow it", () => {
+    // The whole configuration lives in the .md frontmatter, and there must be no
+    // `aidlc-vibe.json` beside it. Kiro reads both formats out of agents/ as
+    // agent configs, and when a .md and a .json share a stem the .md wins — so a
+    // .json twin is silently inert. That cost three consecutive wrong fixes here:
+    // the JSON's `tools` was edited three times (0.x names, then omitted, then
+    // ["*"]) and the observed behaviour never changed, because the file was never
+    // being read. Its `resources` never applied either.
+    //
+    // The 14 core agents do ship both, and their .md carries the real config
+    // (`tools: ["read","write","shell"]`) while the .json holds a stale 0.x
+    // vocabulary. Do not copy the pair; it is the shape that hides the defect.
+    const files = readdirSync(join(PLUGIN_ROOT, "agents")).sort();
+    expect(files).toEqual(["aidlc-vibe.md"]);
+  });
+
+  test("the frontmatter grants the full toolset with the wildcard", () => {
+    // Measured three times in a live Kiro session, all before the shadowing was
+    // understood: 0.x names -> one tool; key omitted -> one tool; ["*"] in the
+    // JSON -> one tool. The fix was never about the value; it was about which
+    // file gets read. `["*"]` is the form meaning "everything" (9 of 40+ working
+    // configs on a real machine use it, including the stock `developer` agent),
+    // and it is the only form that does not pin a tool-name vocabulary that
+    // shifts between IDE versions — `fs_read`/`fs_write`/`execute_bash` are 0.x
+    // names and do not resolve on 1.x, where the tags are `read`/`write`/`shell`.
+    expect(personaFrontmatter()).toMatch(/^tools:\s*\["\*"\]\s*$/m);
+  });
+
+  test("the frontmatter pins the knowledge seat and the memory layer", () => {
+    // `resources` has to live here too, for the same shadowing reason. Memory
+    // also reaches the model through the harness's always-on steering include, so
+    // this is belt-and-braces for the memory files — but the knowledge seat is
+    // NOT ambient, and pinning it is the only thing that puts the sedimentation
+    // guide in front of the model before it is needed.
+    const fm = personaFrontmatter();
+    expect(fm).toContain("resources:");
+    expect(fm).toContain("knowledge/aidlc-vibe/vibe-sedimentation.md");
+    expect(fm).toContain("aidlc/spaces/default/memory/org.md");
   });
 
   test("ships its own persona, with stem == frontmatter name", () => {
@@ -207,58 +237,5 @@ describe(`${PLUGIN_NAME} plugin — agent surface`, () => {
   test("knowledge lands in its own seat (no core seat gets polluted)", () => {
     const seats = readdirSync(join(PLUGIN_ROOT, "knowledge"));
     expect(seats).toEqual([basename(PERSONA, ".md")]);
-  });
-
-  describe("Kiro picker entry", () => {
-    const agent = JSON.parse(readFileSync(KIRO_AGENT, "utf-8"));
-
-    test("declares NO hooks field", () => {
-      // Kiro's docs are self-contradictory on the blast radius: two pages say the
-      // IDE ignores the FIELD, one says it ignores any AGENT CONTAINING it. Under
-      // that ambiguity a `hooks` key risks the whole agent vanishing from the
-      // picker — the one failure mode with no visible symptom. Hooks belong in
-      // .kiro/hooks/ regardless, which the IDE does read.
-      expect("hooks" in agent).toBe(false);
-    });
-
-    test("prompt resolves to the shipped persona", () => {
-      expect(agent.prompt).toBe(`file://${basename(PERSONA)}`);
-    });
-
-    test("name matches the filename so both surfaces agree", () => {
-      // Kiro derives the agent name from the filename when `name` is omitted;
-      // when both exist and disagree, which one the picker shows is unspecified.
-      expect(agent.name).toBe(basename(KIRO_AGENT, ".json"));
-    });
-
-    test("pins the memory layer into context — the read path is the point", () => {
-      const resources: string[] = agent.resources ?? [];
-      expect(resources.some((r) => r.includes("spaces/default/memory/"))).toBe(true);
-      expect(resources).toContain(`file://.kiro/knowledge/${basename(PERSONA, ".md")}/*.md`);
-    });
-
-    test("declares NO tool-restricting keys — the default agent's capability is inherited", () => {
-      // `tools` is a RESTRICTION, not a grant: declaring it replaces the default
-      // toolset with exactly that list, cutting off skills, MCP tools and
-      // everything else the default agent has. Shipped once with
-      // ["fs_read","fs_write","execute_bash","thinking"] — the CLI 2.x / IDE 0.x
-      // names — and measured in a real Kiro IDE session: the agent ended up with
-      // ONE tool (the skill loader), able to read the docx-cn manual into context
-      // and unable to execute a single step of it. Two failures compounding: the
-      // list restricted, and the legacy names did not resolve on IDE 1.x, so even
-      // those four were not granted.
-      //
-      // A free-form coding seat must therefore add nothing to the tool surface
-      // and take nothing away. Guardrails belong in the harness's own permission
-      // settings, where they apply to every agent, not smuggled into one agent's
-      // config where getting the schema version wrong disarms the seat entirely.
-      for (const key of ["tools", "allowedTools", "excludedTools", "toolsSettings", "permissions"]) {
-        expect(key in agent).toBe(false);
-      }
-      // What it DOES declare is purely additive.
-      expect(Object.keys(agent).sort()).toEqual(
-        ["description", "name", "prompt", "resources", "welcomeMessage"],
-      );
-    });
   });
 });

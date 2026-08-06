@@ -44,23 +44,21 @@ no fourth thing waiting to happen.
 
 ## The agent entry (Kiro)
 
-The plugin ships two files that make it selectable rather than invoked:
+The plugin ships **one** file for this: `agents/aidlc-vibe.md`. Its frontmatter is
+the Kiro agent config (`tools`, `resources`, `description`) and its body is the
+prompt; it is also the stage's `lead_agent`, so both entry paths behave
+identically.
 
-- `agents/aidlc-vibe.md` — the persona. It is the stage's `lead_agent` **and** the
-  picker entry's prompt, so both entries behave identically.
-- `agents/aidlc-vibe.json` — the Kiro agent config. `resources` pins the memory
-  layer, this seat's knowledge, and the two runner skills into context at session
-  start, which means the read path is guaranteed by the agent itself rather than
-  by an always-on steering file.
+**There is deliberately no `aidlc-vibe.json` beside it.** Kiro reads both `.md` and
+`.json` out of `agents/` as agent configs, and when the two share a stem **the
+`.md` wins** — so a `.json` twin is silently inert. That cost three consecutive
+wrong fixes here: the JSON's `tools` was edited three times (0.x names → omitted →
+`["*"]`) and the observed behaviour never changed once, because the file was never
+being read. Its `resources` never applied either.
 
-**The two files share one filename stem on purpose.** Kiro reads both `.md` and
-`.json` under `.kiro/agents/` as agent configs, so two different stems produce
-**two** picker entries — and the `.md` one carries no `resources`, `tools`, or
-`toolsSettings`, which makes the more discoverable entry the degraded one.
-Measured in a real install before this was fixed: the entry that got selected was
-the persona, so the session ran without the tool posture or the pinned memory.
-Sharing a stem is how the 14 core agents ship, and it collapses the pair to a
-single name. Do not rename one without the other.
+The 14 core agents *do* ship both, and their `.md` carries the working config
+(`tools: ["read","write","shell"]`) while the `.json` holds a stale 0.x vocabulary
+plus a `hooks` key. Do not copy that pair — it is the shape that hides the defect.
 
 The agent is an **entry**, not a replacement for the stage. Selecting it still
 opens the container, because the write path needs it (see the next section). What
@@ -76,20 +74,36 @@ Four things to know:
   pins the absence. Worth knowing: the 14 core `aidlc-*-agent.json` files all carry
   `"hooks": {}`, so if your picker is missing those, this is the first thing to
   check.
-- **It declares no tools, on purpose — `tools` is a restriction, not a grant.**
-  Listing tools *replaces* the default agent's toolset with exactly that list,
-  cutting off skills, MCP tools and everything else. This config shipped once with
-  `["fs_read","fs_write","execute_bash","thinking"]` and was measured in a real
-  Kiro IDE session: the agent came up with **one** tool, the skill loader — able to
-  load a manual into context and unable to execute a single step of it. Two
-  failures compounded, because those are the CLI 2.x / IDE 0.x names and they did
-  not resolve on IDE 1.x, so even the four were not granted.
+- **`"tools": ["*"]` — the wildcard, and nothing narrower.** Two earlier shapes
+  were measured in a real Kiro IDE session and both left the agent with **one**
+  tool, the skill loader — able to read a manual into context and unable to execute
+  a single step of it:
 
-  So the seat now inherits the default agent's capability and adds only a prompt,
-  `resources`, a description and a welcome message. **Put guardrails in the
-  harness's own permission settings**, where they apply to every agent — not in one
-  agent's config, where getting the schema version wrong silently disarms the seat.
-  A test pins that no tool-restricting key is present.
+  | Declared | Result |
+  | --- | --- |
+  | `["fs_read","fs_write","execute_bash","thinking"]` | one tool |
+  | key omitted entirely | one tool |
+
+  So **omitting `tools` does not inherit the default agent's capability** — it
+  yields an agent with essentially nothing. And `fs_read`/`fs_write`/`execute_bash`
+  are the CLI 2.x / IDE 0.x names, which do not resolve on IDE 1.x; the current
+  tags are `read`/`write`/`shell`.
+
+  `["*"]` is the form that means "everything", and it is what the stock `developer`
+  agent uses — 9 of the 40+ working agent configs on a real machine declare exactly
+  that. It is also the only form that does not pin a tool-name vocabulary which
+  shifts between IDE versions.
+
+  **Guardrails belong in the harness's own permission settings**, where they apply
+  to every agent — not in one agent's config, where getting the schema version
+  wrong silently disarms the seat. A test pins `["*"]` and the absence of any
+  allowlist or deny list.
+
+  Worth knowing about the install: all 14 core `aidlc-*-agent.json` files declare
+  the 0.x names, so on IDE 1.x they carry the same defect. They are built for
+  dispatch rather than selection, and whether the dispatch path is affected has not
+  been measured here — but selecting one from the picker will not give you a
+  working seat.
 - **On non-Kiro harnesses the JSON is inert.** Claude reads `.md` agents, Codex
   reads `.toml`, opencode reads its own native twin — the copied JSON is harmless
   noise there, and the scope commands remain the entry.

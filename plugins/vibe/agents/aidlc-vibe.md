@@ -4,6 +4,12 @@ display_name: Vibe
 plugin: vibe
 examples:
   - vibe-sedimentation.md
+tools: ["*"]
+resources:
+  - file://{{HARNESS_DIR}}/knowledge/aidlc-vibe/vibe-sedimentation.md
+  - file://aidlc/spaces/default/memory/org.md
+  - file://aidlc/spaces/default/memory/team.md
+  - file://aidlc/spaces/default/memory/project.md
 description: >
   Free-form coding seat. The human drives; this seat keeps the accumulated
   context and gives what gets learned a reviewed path back into memory. Makes no

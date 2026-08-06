@@ -59,6 +59,63 @@ divergence row **A11**, offerable upstream as-is.
   verified failing on the pre-fix order (316 vs 144) before being kept — after an
   earlier guard in this same session passed vacuously and had to be re-verified.
 
+## 2026-08-06 (vibe 0.2.3) — on upstream 2.5.33
+**The real defect: a same-stem `.json` beside the persona `.md` is silently inert,
+so three consecutive fixes to it changed nothing.** Kiro reads both formats out of
+`agents/` as agent configs, and when they share a stem the `.md` wins. The `.md`
+had no `tools` key, so the seat had no tools — and every edit to
+`aidlc-vibe.json` (0.x names → key omitted → `["*"]`) was made to a file that was
+never read. Its `resources` never applied either.
+Fixed by putting the whole configuration in the `.md` frontmatter — `tools: ["*"]`
+plus `resources` for the knowledge seat and the memory files — and **deleting the
+`.json`**. One file, one picker entry, nothing to shadow it.
+* **Three wrong fixes, one diagnostic error.** Each round changed the value and
+  re-tested; the value was never the variable. Three different inputs producing an
+  identical result was the signal that the input wasn't reaching the system, and it
+  took until the third repeat to read it that way. When a change provably lands on
+  disk and the behaviour does not move, stop refining the change and prove the
+  system is reading that file.
+* **The claim that `resources` guaranteed the read path was false on IDE.** It was
+  stated repeatedly here and is now corrected: memory reaches the model through the
+  harness's always-on steering include, which is why nothing appeared broken. The
+  frontmatter `resources` now does pin the knowledge seat, which is *not* ambient.
+* **The 14 core agents carry the same trap without suffering from it**: their `.md`
+  holds the working `tools: ["read","write","shell"]` while their `.json` holds
+  0.x names, `hooks`, and `resources` that never apply. Copying that pair is what
+  produced this bug. The README now says so explicitly.
+* The previous test asserted `tools` on the JSON and passed — a guard written from
+  the same wrong model as the code, reading the same ignored file. It now asserts
+  the frontmatter and that `agents/` contains exactly one file.
+
+## 2026-08-06 (vibe 0.2.2) — on upstream 2.5.33
+**The 0.2.1 fix was wrong in the other direction: omitting `tools` does not inherit
+the default agent's capability, it yields an agent with almost nothing.** Both
+shapes were measured in a real Kiro IDE session and both left the seat with **one**
+tool, the skill loader:
+| Declared | Result |
+| --- | --- |
+| `["fs_read","fs_write","execute_bash","thinking"]` (0.2.0) | one tool |
+| key omitted entirely (0.2.1) | one tool |
+Now `"tools": ["*"]`. That is the form meaning "everything", and it is what the
+stock `developer` agent uses — 9 of the 40+ working agent configs on a real machine
+declare exactly that, and none of them omit the key. It is also the only form that
+does not pin a tool-name vocabulary that shifts between IDE versions:
+`fs_read`/`fs_write`/`execute_bash` are the CLI 2.x / IDE 0.x names and do not
+resolve on IDE 1.x, where the tags are `read`/`write`/`shell`.
+* **The lesson is about evidence, not about tool names.** 0.2.0 shipped a
+  restriction by copying the 14 core agents. 0.2.1 replaced it with a guess
+  ("omitting means inherit") that read plausibly and was never tested against a
+  live picker. 0.2.2 came from reading 40+ working configs on the machine where it
+  failed. A config format's defaults are not derivable from its documentation when
+  working examples are sitting on disk.
+* **Same defect exists in all 14 core `aidlc-*-agent.json` files** — every one
+  declares the 0.x names. They are built for dispatch rather than selection, and
+  whether the dispatch path is affected has not been measured; but selecting one
+  from the Kiro picker will not give a working seat. Not addressed here.
+* The test now pins `["*"]` plus the absence of any allowlist or deny list. The
+  previous assertion had pinned the *broken* shape — a test written from the same
+  wrong assumption as the code it guarded, which is why it passed.
+
 ## 2026-08-06 (vibe 0.2.1) — on upstream 2.5.33
 **The `aidlc-vibe` agent declared a `tools` list, which silently disarmed it.**
 `tools` is a RESTRICTION, not a grant: declaring it replaces the default agent's
