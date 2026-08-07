@@ -639,6 +639,12 @@ historical `cid:<slug>:<candidate_id>` marker rather than replacing the id — s
 `Content-Key` field joins `Candidate-ID` in the audit row. A pre-upgrade install
 stays idempotent through a text-containment check, which is the only legacy-safe
 test available (a marker without a hash cannot tell you whether the text matches).
+That containment check is **anchored to the written line shape** (`- <text> (learned `),
+not a bare substring search. The first implementation used the latter and thereby
+reintroduced the very defect it was closing: a new rule whose text is a
+prefix-substring of one already on file — "Use TDD" against "Use TDD for all new
+modules" — was silently skipped. A third t99 test covers it, verified failing on the
+unanchored form.
 > [!IMPORTANT]
 > **The failure mode was "the tool said OK".** Nothing in the output distinguished
 > a dropped rule from a written one; the count was simply lower than the number

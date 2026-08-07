@@ -539,7 +539,14 @@ function handlePersist(args: string[], projectDir: string): void {
         // The exact text already being present IS content-identity, and it is the
         // only legacy-safe test: a pre-content-key line carries `cid:<slug>:<id>`
         // with no hash, so its marker cannot tell us whether the text matches.
-        const textAlreadyPresent = content.includes(sel.text);
+        //
+        // ANCHORED to the written line shape (`- <text> (learned `), not a bare
+        // substring search. An unanchored `content.includes(sel.text)` silently
+        // skips a new rule whose text happens to be a PREFIX-substring of an
+        // existing one — e.g. persisting "Use TDD" when the file already holds
+        // "Use TDD for all new modules" — which is the same
+        // approved-but-never-written failure this whole change exists to close.
+        const textAlreadyPresent = content.includes(`- ${sel.text} (learned `);
         const hasRow =
           priorAuditRowForContent(auditContent, stageSlug, identity) ||
           (legacyAuditRowOnly(auditContent, stageSlug, sel.candidate_id) && textAlreadyPresent);

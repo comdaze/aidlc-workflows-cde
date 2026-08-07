@@ -651,6 +651,53 @@ describe("t99 §13 learning-gate end-to-end (migrated from t99-learnings-gate-fl
     expect(ruleLearnedRows(pd)).toBe(2);
   }, TIMEOUT);
 
+  // The legacy-compatibility test is anchored to the written line shape. An
+  // unanchored substring search would silently skip a rule whose text is a
+  // prefix-substring of one already on file — the same approved-but-never-written
+  // failure the content-keying exists to close, reintroduced by the shim.
+  test("a rule whose text is a substring of an existing rule still lands", () => {
+    const pd = mkproj();
+    seedMemoryMixed(pd);
+
+    const long = join(pd, "long.json");
+    writeJson(long, {
+      stage_slug: "user-stories",
+      selections: [
+        {
+          candidate_id: "c1",
+          type: "learning",
+          scope: "project",
+          heading: "Corrections",
+          text: "Prefer integration tests for the adapter seam",
+          source: "orchestrator",
+        },
+      ],
+    });
+    expect(persist(pd, long).status).toBe(0);
+
+    const short = join(pd, "short.json");
+    writeJson(short, {
+      stage_slug: "user-stories",
+      selections: [
+        {
+          candidate_id: "c2",
+          type: "learning",
+          scope: "project",
+          heading: "Corrections",
+          // A strict prefix of the rule persisted above.
+          text: "Prefer integration tests",
+          source: "orchestrator",
+        },
+      ],
+    });
+    expect(persist(pd, short).status).toBe(0);
+
+    const practices = readFileSync(projectPractices(pd), "utf-8");
+    expect(practices).toContain("- Prefer integration tests (learned ");
+    expect(practices).toContain("- Prefer integration tests for the adapter seam (learned ");
+    expect(ruleLearnedRows(pd)).toBe(2);
+  }, TIMEOUT);
+
   test("re-persisting identical content stays a no-op (idempotency preserved)", () => {
     const pd = mkproj();
     seedMemoryMixed(pd);
