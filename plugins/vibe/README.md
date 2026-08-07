@@ -1,6 +1,9 @@
 # vibe — free-form coding that still sediments
 
-**Chinese**: [README.zh-CN.md](README.zh-CN.md)
+**Chinese**: [README.zh-CN.md](README.zh-CN.md) · **Installing this in another
+project**: [INSTALL.md](INSTALL.md) — read its first section before shipping this to
+anyone, because the plugin depends on three `core/` fixes that exist only in this
+fork.
 
 Installed as **`aidlc-vibe`**. One stage, no rails, no approval gate until you
 close out — but memory and knowledge load as usual, and what you learn goes back

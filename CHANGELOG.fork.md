@@ -59,6 +59,29 @@ divergence row **A11**, offerable upstream as-is.
   verified failing on the pre-fix order (316 vs 144) before being kept — after an
   earlier guard in this same session passed vacuously and had to be re-verified.
 
+## 2026-08-06 (vibe 0.2.4) — on upstream 2.5.33
+**Customer-facing install docs for the plugin, `INSTALL.md` + `INSTALL.zh-CN.md`,
+because the one thing a recipient most needs to know was only recorded where they
+would never look.** The plugin depends on three fixes that live in this fork's
+`core/`, not in the plugin — and with stock upstream it does not degrade gracefully,
+it fails at the stage's first step. That warning existed only in
+`docs/fork/divergence.md` and this changelog.
+The docs lead with that dependency and state what breaks without each fix (A10: step
+1 hard-errors and the Stop hook then nudges the parked container every turn; A11: the
+`continue` token is truncated away so the steering chain can never advance; A13: a
+second sediment can silently discard an approved rule). Practical conclusion stated
+plainly: **ship the fork, not the plugin alone.**
+They also carry the operational knowledge this session paid for, which is otherwise
+scattered: `plugins/vibe/` is source and `dist/plugins/vibe/<harness>/` is what
+installs; framework-before-plugin ordering fails *silently*; `select-plugins` is
+absolute rather than additive, and omitting a plugin leaves the files installed but
+the stage filtered out; compose is no-clobber so an update needs the installed copies
+deleted first, and the drop's own remediation text misdiagnoses that case; Kiro reads
+agent configs at session start; the `/bin/sh` PATH trap and its one-line fix; and
+that nothing under `aidlc/` is touched by install or uninstall.
+Pointers added from both plugin READMEs and the `PLUGINS.md` table, since a document
+nobody is routed to is the same as no document.
+
 ## 2026-08-06 (three core/harness fixes, all upstream-bound) — on upstream 2.5.33
 Three defects the vibe dogfood surfaced, none of them vibe-specific. Divergence
 rows **A12**, **A13**, **A14**.
