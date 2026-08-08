@@ -680,12 +680,12 @@ when present (44/0).
 > environment problem, the probe has to run where the failure lives; a
 > stripped-*looking* shell is not the same as the shell the hook gets.
 
-### A15 — a completed workflow was a dead end (4 files) — **upstream-bound**
+### A15 — a completed workflow was a dead end (4 files) — **submitted upstream**
 | | |
 | --- | --- |
 | Files | `core/tools/aidlc-orchestrate.ts` (the `done` branch names the move) · `core/hooks/aidlc-session-start.ts` (resume line keyed on `Status`) · `core/tools/aidlc-utility.ts` (`intent birth` in `--help`) · `tests/unit/t275-completed-workflow-new-intent-path.test.ts` (new) · `tests/unit/gen-coverage-registry.test.ts` + `tests/.coverage-registry.json` (ratchet) |
 | Class | **B — general.** Affects every scope on every harness; nothing here is CDE behaviour. |
-| Upstream | **Offer it.** Three prose-in-code edits plus a guard; no behavioural surface changes beyond the messages. |
+| Upstream | **Submitted: [awslabs/aidlc-workflows#726](https://github.com/awslabs/aidlc-workflows/pull/726)** (opened 2026-08-08 against `v2` at 2.5.59, submitted as 2.5.60). The shared text is byte-identical to that PR, so **A15 disappears from this table the moment it merges** — no follow-up edit needed. The one field that cannot match: upstream's `done` directive carries a `narration` the fork's directive type does not have, so the PR sets it and the fork does not. |
 | On conflict | Keep ours. If upstream rewrites either message, re-apply the *property* — a completed workflow must name `--new-intent` — rather than the literal sentence. |
 A completed intent is a finished record, never a container to re-enter, so the only
 move onward is to birth a new intent. That move (`next --new-intent` →
@@ -868,10 +868,18 @@ and A5 all land, `core/` and `harness/` divergence goes to **zero** and the fork
 reduces to `plugins/` plus the A4 identity files — the shape §7 argues it should
 have had all along.
 
-**Open submissions.** A1 is [#701](https://github.com/awslabs/aidlc-workflows/pull/701).
+**Open submissions.** A1 is [#701](https://github.com/awslabs/aidlc-workflows/pull/701);
+A15 is [#726](https://github.com/awslabs/aidlc-workflows/pull/726).
 A2 (one word, inclusive language) and A5 (one 8-line rule) are still unsent and
 should go as separate PRs — they are unrelated concerns and bundling them would
 give a reviewer three reasons to hesitate instead of one to agree.
+
+> [!CAUTION]
+> **Record a submission only against a PR number you just verified.** U2's row
+> exists because `CHANGELOG.fork.md` claimed "Submitted upstream" for a change no
+> PR ever carried, and that claim survived long enough to need a dated correction.
+> A row saying "submitted" is read as a reason not to look again — so it has to be
+> true. Both numbers above were confirmed with `gh pr view` at the time of writing.
 
 **Make the fork's text byte-identical to the submission.** This is the step that
 actually closes a row. If the fork keeps its own phrasing while the PR carries
