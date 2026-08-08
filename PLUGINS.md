@@ -15,6 +15,8 @@ install it — see [README.md](README.md).
 | **`poc-accelerator`** | An eight-step, 3–5 working-day **customer PoC delivery flow** for CDE-certified SAs — CDK-first deployment, a three-tier cost analysis (pilot / production / over-production), a recorded handoff quality checklist, and team knowledge reuse wired into both ends of the flow. | [plugin README](plugins/poc-accelerator/README.md) |
 | **`knowledge-plugin`** | **Brownfield deep knowledge engineering** — anchored `.ai-ready/` domain knowledge behind a senior sign-off gate, translated into the `reverse-engineering` codekb, with gate rejections written back as KEM-lite learnings. | [plugin README](plugins/knowledge-plugin/README.md) |
 | **`test-pro`** | Comprehensive, traceable test coverage layered onto the workflow. Also the reference implementation of the plugin mechanism — copy its shape for your own plugin. | [plugin README](plugins/test-pro/README.md) |
+| **`unknowns`** | **Find the unknowns before they get expensive.** Two cheap, self-skipping ideation stages — a **blindspot pass** that scouts what the human does not know they do not know, and an **evaluation calibration** that raises their ability to judge a domain *before* a downstream gate asks them to approve work in it — plus the **over-specification** check (the missing symmetric half of requirements completeness) and a **conservative-deviation rule** for code generation. | [plugin README](plugins/unknowns/README.md) |
+| **`vibe`** | The opposite trade: **free-form coding with no workflow rails**, in a single parked stage with no approval gate until you close out — while memory and knowledge load as usual and learnings go back through the §13 admission gate instead of being hand-written. Selectable as the **`aidlc-vibe`** agent in Kiro, or by scope command anywhere. Native Kiro Spec can run inside the container. **Shipping it elsewhere: [INSTALL.md](plugins/vibe/INSTALL.md)** — it depends on three `core/` fixes that exist only in this fork. | [plugin README](plugins/vibe/README.md) |
 
 ## Quick install from the chat window
 
@@ -132,6 +134,43 @@ entry:
 
 Do not use `/aidlc pocx` or bare `/aidlc poc`: `pocx` is not an alias, and core
 `poc` remains the separate throwaway feasibility-spike scope.
+
+**`vibe`** — no setup at all: one scope, one stage, one persona, one Kiro picker
+entry, one knowledge file; no MCP, no sensors bound. In Kiro, pick **`aidlc-vibe`**
+from the agent picker and start talking — it opens the container itself. On any
+harness, the explicit entries do the same thing:
+
+```text
+/vibe <what you are about to work on>
+# or
+/aidlc --scope vibe <what you are about to work on>
+```
+
+Then work normally. Say **sediment** to harvest the session diary through the
+learnings admission gate (repeatable), and **close** to end the container. The
+scope declares no keywords, so it is never selected by inference — a casual "vibe"
+in a request cannot hijack a workflow. Note what it deliberately does not give:
+no requirements, no reviewed design, no acceptance criteria, so nothing produced in
+a vibe session is evidence of correctness — use `feature`/`mvp`/`enterprise` when
+you need that claim.
+
+**`unknowns`** — no setup: two stages, one persona, one knowledge file, two
+contributions; no MCP, no sensors of its own. It has no entry point, because
+having one would defeat it — a blindspot pass you must remember to ask for cannot
+help with the category you did not know existed. Both stages join the
+`enterprise`, `feature`, and `mvp` scope grids and fire inside the normal ideation
+flow, each after a single applicability question:
+
+- `unknowns-blindspot-pass` asks how familiar you are with each area the work
+  touches, and stands down when you report working expertise everywhere.
+- `unknowns-calibration` asks how you will tell whether the result is good, and
+  stands down when you can already name the dimensions.
+
+A one-word answer ("make it feel clean") is the signal calibration fires on — not
+laziness, but the honest report of someone who has not been given the vocabulary
+yet. `poc` is excluded on purpose. Everything the plugin writes is scaffolding that
+dies with the intent: nothing downstream requires an `unknowns-*` artifact, and
+none of it is meant to be maintained.
 
 **`knowledge-plugin`** — needs `python3` on PATH (the vendored engine is
 standard-library only) and targets **brownfield** repositories: its bootstrap stage

@@ -39,7 +39,20 @@ const EXPECTED_V2_REGISTRATIONS: Array<{
 }> = [
   { file: "aidlc-session-start.json", trigger: "SessionStart", matcher: null, adapterTarget: "session-start" },
   { file: "aidlc-mint.json", trigger: "UserPromptSubmit", matcher: null, adapterTarget: "mint" },
-  { file: "aidlc-block.json", trigger: "PreToolUse", matcher: null, adapterTarget: "block" },
+  // Matched, NOT unmatched. As a bare PreToolUse this ran on every tool call —
+  // every read, every grep — at ~80ms of bun startup each, only to hit a carve-out
+  // that returns 0 immediately under autonomous Construction or with no gate open
+  // (i.e. for the entire duration of a `vibe` session). The matcher is the union of
+  // the mutation surface the other two hooks recognise: a human-presence floor has
+  // no reason to gate a read, and blocking *changes* while a gate is open is
+  // untouched. Keep this a superset of audit-logger's and shell-post's matchers —
+  // see divergence A12.
+  {
+    file: "aidlc-block.json",
+    trigger: "PreToolUse",
+    matcher: "fs_write|str_replace|fs_append|execute_bash",
+    adapterTarget: "block",
+  },
   { file: "aidlc-audit-logger.json", trigger: "PostToolUse", matcher: "fs_write|str_replace|fs_append", adapterTarget: "audit-and-sensors" },
   // ONE registration on the execute_bash matcher, not two. runtime-compile and
   // state-sync are both payload-independent on the IDE, so two registrations

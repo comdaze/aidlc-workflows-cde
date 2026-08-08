@@ -680,6 +680,21 @@ describe("t121 aidlc-stop hook — forwarding-loop enforcement (migrated from t1
     );
     expect(parsed.reason).toContain("keep following load-steering continuations");
     expect(parsed.reason).toContain("Do not report or narrate steering chunks");
+
+    // ORDER: the continue token must precede the rules payload. A bundle runs to
+    // many KB (16,583 chars across 37 entries on a stock install) and a harness
+    // may truncate hook output; with the token last, truncation removes the only
+    // instruction that advances the chain and the engine re-emits load-steering
+    // every turn forever. Observed in a real session before this was fixed:
+    // seven identical deliveries, no progress. Truncated rule text is
+    // recoverable (the method files are on disk and ambient); a truncated token
+    // is not.
+    const reasonText = parsed.reason ?? "";
+    const tokenAt = reasonText.indexOf('continue "steering-token-495"');
+    const payloadAt = reasonText.indexOf('"path":"aidlc/spaces/default/memory/org.md"');
+    expect(tokenAt).toBeGreaterThanOrEqual(0);
+    expect(payloadAt).toBeGreaterThanOrEqual(0);
+    expect(tokenAt).toBeLessThan(payloadAt);
   }, 30000);
 
   // =========================================================================

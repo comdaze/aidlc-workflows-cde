@@ -74,9 +74,9 @@ upstream `9c9201b8`:
 | `plugins/` | 59 | **None.** Ours entirely; upstream has no such directory. |
 | `docs/` | 8 | None in practice. Fork-authored chapters live under `docs/fork/`, a path upstream has none of — see A6. |
 | `dist/` | 256 | **Not a conflict** — generated. Never merge it; regenerate (§3). |
-| `core/` | 2 | Low. Both are small and policy-driven, not functional. See A1, A2. |
-| `harness/` | 6 | **One real risk**, the Kiro IDE adapter. See B1. |
-| `tests/` | 2 | Low. One new file, one ratchet entry. See A5. |
+| `core/` | 4 | Low. See A1, A2 (small, policy-driven), A11 (Stop-hook message ordering), A13 (learnings identity) and A14 (a doctor row). |
+| `harness/` | 7 | **One real risk**, the Kiro IDE adapter. See B1; also A12 (one hook matcher). |
+| `tests/` | 5 | Low. One new file, one ratchet entry, three files with appended guards. See A5, A10, A11, A13. |
 | root files | 6 | Low. No longer includes `CHANGELOG.md` or the version — see A3. |
 
 The plugin mechanism is doing its job: the majority of this fork's work lives in
@@ -122,7 +122,7 @@ What is left is only two kinds of thing:
 | `docs/` | 16 | A1 (7 files) + A6 (`docs/fork/`, 4 files) + 5 files no row explains — see §2's unclassified note |
 | `harness/` | 7 | A1 (5 `onboarding.fills.ts`) + A5 + `codex/manifest.ts` (unclassified) |
 | `core/` | 2 | A1 (`aidlc-utility.ts`) + A2 — but `aidlc-utility.ts` also carries +92 unclassified lines |
-| `tests/` | 5 | **all unclassified** |
+| `tests/` | 6 | A10 (1 appended guard) + 5 files no row explains — see §2's unclassified note |
 | `scripts/` | 2 | **all unclassified** |
 | root | 9 | A1 (`README.md` install text) + A4 |
 
@@ -521,6 +521,164 @@ scope row + 8 stage rows in the orchestrator table, zero compose drops.
 > nothing failed — no test, no doctor row, no drop. When porting to a sixth
 > harness, diff the `<!-- BEGIN: … -->` literals against `aidlc-utility.ts` rather
 > than eyeballing them.
+
+### A10 — Generated state files were missing `Construction Autonomy Mode` (2 files) — **upstream-bound**
+| | |
+| --- | --- |
+| Files | `core/tools/aidlc-utility.ts` (one line in the state-file template literal) · `tests/integration/t12-state-fixture-validation.test.ts` (additive guard, appended test) |
+| Class | **B — general, not CDE-specific.** A plain defect in upstream's state-file generator. Nothing here knows about CDE, PoCs, or any fork plugin. |
+| Upstream | **Offer it.** One line plus one static test; independently applicable and it restores an engine capability that is currently unreachable from a clean start on every scope. |
+| On conflict | Keep ours. If upstream rewrites the `## Current Status` block, re-derive from `state-template.md` rather than re-applying the patch — the point of the row is that the two files must agree, not that this exact line exists. |
+`state-template.md` documents `- **Construction Autonomy Mode**: [unset/autonomous/gated]`
+under `## Current Status`. The generator emitted that section with five fields and
+never wrote this one, so **every freshly initialised workflow, in every scope,
+produced a state file without the field.** `aidlc-bolt.ts set-autonomy` writes it
+with `setFieldStrict`, which hard-fails on an absent field, so:
+```
+bun .kiro/tools/aidlc-bolt.ts set-autonomy --mode autonomous
+→ {"error":"State update failed: Field not found in state file: \"Construction Autonomy Mode\"..."}
+```
+Reproduced on a scratch install with `--scope feature`, not just the fork's own
+`vibe` scope — the field appeared 0 times and the command failed identically. The
+consequence is that **autonomous Construction could not be switched on at all**
+through the documented command, and every consumer that reads the field via
+`getField` (the Stop hook's block cap, `state.ts park`, `utility.ts`
+scope-change/recompose refusals) silently took its not-autonomous branch.
+Found by installing the framework into this repository and opening a real session
+— the Stop hook then nudged the container as an abandoned workflow, which is
+precisely what the missing field was supposed to prevent.
+> [!IMPORTANT]
+> **The guard was right; the brand-new file was what looked legacy.** t33 already
+> tested `set-autonomy`'s hard-fail on an absent field and labelled it the "v4
+> state file" guard — so the failure was not only reachable, it was *tested*, under
+> a name that said it could not happen to a current file. A guard whose name
+> asserts an impossible precondition stops being read as a live constraint.
+>
+> Nothing caught it because every existing check compared a **fixture** to the
+> template, and the fixtures were written *from* the template. The generator was
+> never compared to either. The new guard closes exactly that edge, and it is
+> deliberately static (it reads both shipped files, spawns nothing) so it stays
+> inside t12's "Mechanism: none" character. Verified failing before the fix and
+> passing after — a guard nobody has watched fail is not yet a guard.
+Note the file cost: `core/tools/aidlc-utility.ts` now carries **three** fork
+stakes (A1's doctor hint, U2's +92 doctor lines, and this line). It is upstream's
+25-edits-in-60-days file, so pricing this as "one line" understates it — the
+merge cost is per-file, not per-line.
+
+### A11 — Load-steering continuations were unfollowable under output truncation (2 files) — **upstream-bound**
+| | |
+| --- | --- |
+| Files | `core/hooks/aidlc-stop.ts` (`continuationReason`, load-steering branch) · `tests/integration/t121-stop-hook-enforce.test.ts` (ordering assertion, appended to the existing case) |
+| Class | **B — general, not CDE-specific.** A message-ordering defect in upstream's Stop hook. Nothing here knows about CDE or any fork plugin. |
+| Upstream | **Offer it.** Reordering two clauses plus one assertion; it makes the steering chain survive any harness that truncates hook output. |
+| On conflict | Keep ours. If upstream rewrites the message, re-apply the *property* — actionable instruction before bulk payload — rather than the exact wording. |
+The load-steering continuation inlined the whole rules bundle into the hook's
+`reason` and put the `continue` token **after** it. Measured on a stock install:
+**16,583 chars across 37 entries**. Kiro IDE truncates hook output, so every
+delivery ended mid-payload and the token never arrived.
+Without the token the chain cannot be followed, and the obvious recovery is a
+trap: the chain's position lives in the token, not in state, so calling `next`
+again returns the head of the chain with the *same* token, forever. Observed in a
+real session: **seven identical deliveries, no progress**, each costing the full
+payload in context window. Draining it required reading the token out of `next`'s
+JSON directly and calling `continue` by hand.
+The fix is ordering, not size: the token and its command now lead, the payload
+follows. Truncated rule text is recoverable — the method files are on disk and
+already reach the model through each harness's always-on include — whereas a
+truncated token is unrecoverable.
+> [!IMPORTANT]
+> **A failure that presents as "nothing to do" is worse than a crash.** Each
+> delivery looked benign: a wall of rules that were already on disk, so the
+> correct-looking conclusion was "already applied, continue". The reader was
+> reasoning well about the wrong question, because the question — *echo this token
+> back* — had been cut off. Put the actionable instruction before bulk context in
+> any channel that can truncate.
+>
+> The appended t121 assertion pins index-of-token < index-of-payload, and was
+> verified failing on the pre-fix order (316 vs 144) before being kept.
+
+### A12 — `aidlc-block` fired on every tool call (1 file) — **upstream-bound**
+| | |
+| --- | --- |
+| Files | `harness/kiro-ide/hooks/aidlc-block.json` (adds a `matcher`) · `tests/unit/t245-kiro-ide-hook-registrations.test.ts` (the pinned registration table) |
+| Class | **B — general.** A registration-scope fix in upstream's Kiro IDE hook set; nothing CDE-specific. |
+| Upstream | **Offer it.** One field, and it makes the hook's cost proportional to what it can actually act on. |
+| On conflict | Keep ours. If upstream adds new mutating tool names, extend the alternation — the matcher must stay a superset of the mutation surface `aidlc-audit-logger` and `aidlc-shell-post` recognise. |
+The hook was registered as `PreToolUse` with **no matcher**, so it ran on every
+tool call — every read, every grep — at ~80ms of bun startup each, measured. Its
+first two carve-outs return 0 immediately under autonomous Construction or with no
+gate open, which is the entire duration of a `vibe` session: provably dead work on
+every call.
+Now matched on `fs_write|str_replace|fs_append|execute_bash` — the same mutation
+surface the other two hooks already use. A human-presence floor has no reason to
+gate a read, and this leaves the floor's actual purpose (blocking *changes* while a
+gate is open) untouched.
+The legacy `aidlc-block.kiro.hook` is deliberately left unmatched: its 1.0-era
+schema has no matcher field, and it is inert on IDE ≥ 1.0 anyway.
+
+### A13 — `persist` keyed learning identity on `candidate_id` (2 files) — **upstream-bound**
+| | |
+| --- | --- |
+| Files | `core/tools/aidlc-learnings.ts` · `tests/integration/t99-learnings-gate-flow.test.ts` (two appended tests) |
+| Class | **B — general.** A silent data-loss defect in upstream's learnings gate. |
+| Upstream | **Offer it.** Self-contained, and it closes a path where an approved learning is discarded while the tool reports success. |
+| On conflict | Keep ours. The property to preserve is that identity derives from destination + text; the marker's prefix shape is only there for compatibility and can be re-derived. |
+`surface` candidate IDs are **positional** — re-derived from the diary on every
+call — so appending a diary entry renumbers them, and a second `persist` in the
+same stage routinely reuses an id for different content. Both the line marker
+(`cidMarker`) and the audit-row check keyed on that id, which produced two silent
+failures, both measured in one session:
+- reused id, **different** method file → the line was written but the audit row was
+  suppressed and the count under-reported: **7 rules written, `rule_learned: 4`**,
+  leaving 12 rules on disk with only 9 `RULE_LEARNED` rows;
+- reused id, **same** method file → `hasRow && hasLine` held and the rule was
+  **dropped entirely while `persist` reported success**.
+Identity is now a short hash of destination scope + exact text, **appended** to the
+historical `cid:<slug>:<candidate_id>` marker rather than replacing the id — so all
+16 existing assertions across t97, t99 and t158 keep passing unchanged, and a
+`Content-Key` field joins `Candidate-ID` in the audit row. A pre-upgrade install
+stays idempotent through a text-containment check, which is the only legacy-safe
+test available (a marker without a hash cannot tell you whether the text matches).
+That containment check is **anchored to the written line shape** (`- <text> (learned `),
+not a bare substring search. The first implementation used the latter and thereby
+reintroduced the very defect it was closing: a new rule whose text is a
+prefix-substring of one already on file — "Use TDD" against "Use TDD for all new
+modules" — was silently skipped. A third t99 test covers it, verified failing on the
+unanchored form.
+> [!IMPORTANT]
+> **The failure mode was "the tool said OK".** Nothing in the output distinguished
+> a dropped rule from a written one; the count was simply lower than the number
+> approved, and nobody counts. The appended t99 test was verified failing on the
+> old logic (audit rows `Expected: 2, Received: 1`, with the second rule absent
+> from the method file) before being kept.
+
+### A14 — bun unresolvable in `/bin/sh` hooks, and doctor could not see it (2 files) — **upstream-bound**
+| | |
+| --- | --- |
+| Files | `core/tools/aidlc-utility.ts` (a second doctor row) · `README.md` (a troubleshooting row) |
+| Class | **B — general.** Affects any Kiro IDE install whose IDE was launched from the GUI. |
+| Upstream | **Offer it.** The check is deterministic and the README row documents a case the existing one misses. |
+| On conflict | Keep ours. If upstream restructures the doctor rows, re-add the *property* — bun resolving with no inherited PATH — rather than the literal path list. |
+Every framework entry point is a bare `bun`, spawned through `/bin/sh`. A
+non-interactive `/bin/sh` reads **no** rc file — not `~/.zshrc`, and not
+`~/.zshenv`, which is zsh-only — so it sees only the PATH its parent handed down.
+Launched from the GUI, that parent is launchd, whose default PATH excludes
+`~/.bun/bin`. Result: every hook dies with `/bin/sh: bun: command not found` (127),
+and because the hook never ran it records **no drop**, so the hook-health files look
+clean while nothing fires. The same install works in a terminal-launched window.
+The existing README advice (export into `~/.zshenv`) does not help this case, and
+was measured not helping: the export was already present.
+Doctor's `bun installed` row cannot detect any of this — it runs inside a process
+bun already launched, so it is true by construction. The new row checks the property
+that actually matters: bun on a standard system path, resolvable with no inherited
+PATH and no rc file. Verified failing when the symlink is absent (43/1) and passing
+when present (44/0).
+> [!IMPORTANT]
+> **Three wrong diagnoses preceded this one** — launchd's PATH, a `/usr/local/bin`
+> symlink that worked by accident, and the README's `~/.zshenv` row. Each was
+> tested in an environment that was not the failing one. When diagnosing an
+> environment problem, the probe has to run where the failure lives; a
+> stripped-*looking* shell is not the same as the shell the hook gets.
 
 ### Unclassified — real divergence with no row above (found 2026-08-03)
 

@@ -144,4 +144,40 @@ describe("t12 state-fixture structural meta-test (migrated from t12-state-fixtur
     // value, so the fixture's value is a real template option, not a typo.
     expect(TEMPLATE.includes("IDEATION")).toBe(true);
   });
+
+  // Additive guard (no .sh ancestor): the template is only a contract if the
+  // code that WRITES state files honours it. It did not. `Construction Autonomy
+  // Mode` is documented under `## Current Status` in the template, but the
+  // generator in aidlc-utility.ts emitted that section with five fields and
+  // omitted this one — so every freshly initialised workflow, in every scope,
+  // produced a state file without the field. `aidlc-bolt.ts set-autonomy` uses
+  // setFieldStrict and hard-fails on an absent field (t33 pins that failure as
+  // the "v4 legacy state file" guard), which made autonomous Construction
+  // unreachable from a clean start: the guard was right and the brand-new v7
+  // file was the thing that looked legacy.
+  //
+  // Nothing caught it because every existing check compared a FIXTURE to the
+  // template, and the fixtures were written from the template. Comparing the
+  // GENERATOR to the template is the missing edge. Static on purpose — reads
+  // both shipped files, spawns nothing, keeping this file's "Mechanism: none".
+  test("the state-file generator emits every Current Status field the template documents", () => {
+    const generator = readFileSync(
+      join(AIDLC_SRC, "tools", "aidlc-utility.ts"),
+      "utf-8",
+    );
+    const currentStatusBlock = (source: string): string =>
+      source.slice(source.indexOf("## Current Status"))
+        .split("## Session Resume Point")[0] ?? "";
+    const fields = (block: string): string[] =>
+      [...block.matchAll(/^- \*\*(.+?)\*\*:/gm)].map((m) => m[1] as string);
+
+    const documented = fields(currentStatusBlock(TEMPLATE));
+    const emitted = new Set(fields(currentStatusBlock(generator)));
+    expect(documented.length).toBeGreaterThan(0);
+    const missing = documented.filter((field) => !emitted.has(field));
+    expect(missing).toEqual([]);
+    // Pin the specific field this guard was written for, so a future refactor
+    // that guts the loop above still fails loudly rather than vacuously.
+    expect(emitted.has("Construction Autonomy Mode")).toBe(true);
+  });
 });

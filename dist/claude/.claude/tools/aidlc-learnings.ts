@@ -358,6 +358,59 @@ function priorAuditRow(
   return rows.some((r) => stageRe.test(r.block) && cidRe.test(r.block));
 }
 
+// A prior RULE_LEARNED row for this exact CONTENT, in this stage.
+//
+// This is the check that makes a re-persist safe. Matching on `Candidate-ID`
+// alone cannot: surface candidate IDs are POSITIONAL, re-derived from the diary
+// on every `surface` call, so appending a diary entry renumbers them and a second
+// `persist` in the same stage routinely reuses an id for entirely different
+// content. Keying on the id then produced two silent failures, both measured:
+//
+//   * reused id, different method file -> the line was written but the audit row
+//     was suppressed and the returned count under-reported (7 written, 4 reported);
+//   * reused id, SAME method file      -> `hasRow && hasLine` held and the rule
+//     was dropped entirely while the tool reported success.
+//
+// The second is the dangerous one: a human approves a learning, the tool reports
+// success, and nothing reaches disk.
+//
+// A row written before content-keying existed carries no `Content-Key`; for those
+// the Candidate-ID match is still honoured (via priorAuditRow at the call site,
+// guarded on the absence of a Content-Key) so upgrading an install stays
+// idempotent instead of duplicating what it already holds.
+function priorAuditRowForContent(
+  auditContent: string,
+  slug: string,
+  key: string
+): boolean {
+  const rows = findAllEvents(auditContent, "RULE_LEARNED");
+  const stageRe = new RegExp(`^\\*\\*Stage\\*\\*:\\s*${escapeRegex(slug)}\\s*$`, "m");
+  const keyRe = new RegExp(`^\\*\\*Content-Key\\*\\*:\\s*${escapeRegex(key)}\\s*$`, "m");
+  return rows.some((r) => stageRe.test(r.block) && keyRe.test(r.block));
+}
+
+// True when the audit holds a legacy (pre-Content-Key) row for this candidate id.
+function legacyAuditRowOnly(
+  auditContent: string,
+  slug: string,
+  candidateId: string
+): boolean {
+  const rows = findAllEvents(auditContent, "RULE_LEARNED");
+  const stageRe = new RegExp(`^\\*\\*Stage\\*\\*:\\s*${escapeRegex(slug)}\\s*$`, "m");
+  const cidRe = new RegExp(`^\\*\\*Candidate-ID\\*\\*:\\s*${escapeRegex(candidateId)}\\s*$`, "m");
+  return rows.some(
+    (r) => stageRe.test(r.block) && cidRe.test(r.block) && !/^\*\*Content-Key\*\*:/m.test(r.block),
+  );
+}
+
+// Stable identity for a learning: its destination scope plus its exact text.
+function contentKey(scope: string, text: string): string {
+  return new Bun.CryptoHasher("sha256")
+    .update(`${scope}\u0000${text}`)
+    .digest("hex")
+    .slice(0, 16);
+}
+
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -405,9 +458,16 @@ function ensureHeading(content: string, heading: string): string {
 // cid marker — stable, date-/text-independent idempotency key per written
 // line. Keyed on (stage slug, candidate id) so a same-day re-run of the
 // same selection is a no-op rather than a double-append.
-function cidMarker(slug: string, candidateId: string): string {
-  return `<!-- cid:${slug}:${candidateId} -->`;
+// The line marker. The content key is APPENDED to the historical
+// `cid:<slug>:<candidate_id>` form rather than replacing the id, so the marker
+// stays prefix-compatible with every existing assertion and audit while identity
+// becomes content-sensitive (see contentKey for why that matters).
+function cidMarker(slug: string, candidateId: string, key?: string): string {
+  const suffix = key === undefined ? "" : `:${key}`;
+  return `<!-- cid:${slug}:${candidateId}${suffix} -->`;
 }
+
+
 
 function handlePersist(args: string[], projectDir: string): void {
   const flags = parseFlags(args);
@@ -465,15 +525,32 @@ function handlePersist(args: string[], projectDir: string): void {
         const bucket = ensureFile(sel.scope);
         const path = bucket.path;
         let content = bucket.content;
-        const marker = cidMarker(stageSlug, sel.candidate_id);
+        const identity = contentKey(sel.scope, sel.text);
+        const marker = cidMarker(stageSlug, sel.candidate_id, identity);
         const today = isoTimestamp().slice(0, 10);
         const source = sel.source ?? "orchestrator";
         // The orchestrator routes the learning to the fitting practice heading
         // (KNOWLEDGE); normalise + ensure-exists it before the append.
         const heading = practiceHeading(sel.heading);
 
-        const hasRow = priorAuditRow(auditContent, "RULE_LEARNED", stageSlug, sel.candidate_id);
-        const hasLine = content.includes(marker);
+        // Content-keyed identity, with the legacy id-keyed form still honoured so
+        // an install that predates content-keying is not made to re-append rules
+        // it already holds.
+        // The exact text already being present IS content-identity, and it is the
+        // only legacy-safe test: a pre-content-key line carries `cid:<slug>:<id>`
+        // with no hash, so its marker cannot tell us whether the text matches.
+        //
+        // ANCHORED to the written line shape (`- <text> (learned `), not a bare
+        // substring search. An unanchored `content.includes(sel.text)` silently
+        // skips a new rule whose text happens to be a PREFIX-substring of an
+        // existing one — e.g. persisting "Use TDD" when the file already holds
+        // "Use TDD for all new modules" — which is the same
+        // approved-but-never-written failure this whole change exists to close.
+        const textAlreadyPresent = content.includes(`- ${sel.text} (learned `);
+        const hasRow =
+          priorAuditRowForContent(auditContent, stageSlug, identity) ||
+          (legacyAuditRowOnly(auditContent, stageSlug, sel.candidate_id) && textAlreadyPresent);
+        const hasLine = content.includes(marker) || textAlreadyPresent;
 
         // no-op: audit row AND line both present.
         if (hasRow && hasLine) continue;
@@ -495,6 +572,7 @@ function handlePersist(args: string[], projectDir: string): void {
             {
               Stage: stageSlug,
               "Candidate-ID": sel.candidate_id,
+              "Content-Key": identity,
               Destination: path,
               Heading: heading,
               Source: source,

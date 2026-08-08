@@ -596,4 +596,129 @@ describe("t99 §13 learning-gate end-to-end (migrated from t99-learnings-gate-fl
     const fossils = section.filter((l) => fossilRe.test(l));
     expect(fossils).toEqual([]);
   }, TIMEOUT);
+
+  // Identity is the CONTENT, not the candidate id. Surface candidate ids are
+  // positional — re-derived from the diary on every `surface` call — so appending
+  // a diary entry renumbers them and a second persist in the same stage routinely
+  // reuses an id for different content. Measured before this was fixed: 7 rules
+  // written but `rule_learned: 4` returned, because 3 ids collided with the
+  // previous batch; and where a reused id targeted the SAME method file the rule
+  // was dropped entirely while the tool reported success. That second case is the
+  // dangerous one — a human approves a learning and nothing reaches disk.
+  test("a REUSED candidate id with different text still lands, and is audited", () => {
+    const pd = mkproj();
+    seedMemoryMixed(pd);
+
+    const first = join(pd, "reuse-1.json");
+    writeJson(first, {
+      stage_slug: "user-stories",
+      selections: [
+        {
+          candidate_id: "c1",
+          type: "learning",
+          scope: "project",
+          heading: "Corrections",
+          text: "FIRST rule under the reused id",
+          source: "orchestrator",
+        },
+      ],
+    });
+    expect(persist(pd, first).status).toBe(0);
+    expect(ruleLearnedRows(pd)).toBe(1);
+
+    // Same id, different text, same destination file — the exact collision.
+    const second = join(pd, "reuse-2.json");
+    writeJson(second, {
+      stage_slug: "user-stories",
+      selections: [
+        {
+          candidate_id: "c1",
+          type: "learning",
+          scope: "project",
+          heading: "Corrections",
+          text: "SECOND rule under the very same reused id",
+          source: "orchestrator",
+        },
+      ],
+    });
+    expect(persist(pd, second).status).toBe(0);
+
+    const practices = readFileSync(projectPractices(pd), "utf-8");
+    expect(practices).toContain("FIRST rule under the reused id");
+    expect(practices).toContain("SECOND rule under the very same reused id");
+    // Two distinct learnings => two audit rows. Under id-keyed identity this was
+    // 1, and the second rule was silently absent from the file above.
+    expect(ruleLearnedRows(pd)).toBe(2);
+  }, TIMEOUT);
+
+  // The legacy-compatibility test is anchored to the written line shape. An
+  // unanchored substring search would silently skip a rule whose text is a
+  // prefix-substring of one already on file — the same approved-but-never-written
+  // failure the content-keying exists to close, reintroduced by the shim.
+  test("a rule whose text is a substring of an existing rule still lands", () => {
+    const pd = mkproj();
+    seedMemoryMixed(pd);
+
+    const long = join(pd, "long.json");
+    writeJson(long, {
+      stage_slug: "user-stories",
+      selections: [
+        {
+          candidate_id: "c1",
+          type: "learning",
+          scope: "project",
+          heading: "Corrections",
+          text: "Prefer integration tests for the adapter seam",
+          source: "orchestrator",
+        },
+      ],
+    });
+    expect(persist(pd, long).status).toBe(0);
+
+    const short = join(pd, "short.json");
+    writeJson(short, {
+      stage_slug: "user-stories",
+      selections: [
+        {
+          candidate_id: "c2",
+          type: "learning",
+          scope: "project",
+          heading: "Corrections",
+          // A strict prefix of the rule persisted above.
+          text: "Prefer integration tests",
+          source: "orchestrator",
+        },
+      ],
+    });
+    expect(persist(pd, short).status).toBe(0);
+
+    const practices = readFileSync(projectPractices(pd), "utf-8");
+    expect(practices).toContain("- Prefer integration tests (learned ");
+    expect(practices).toContain("- Prefer integration tests for the adapter seam (learned ");
+    expect(ruleLearnedRows(pd)).toBe(2);
+  }, TIMEOUT);
+
+  test("re-persisting identical content stays a no-op (idempotency preserved)", () => {
+    const pd = mkproj();
+    seedMemoryMixed(pd);
+    const sel = join(pd, "same.json");
+    writeJson(sel, {
+      stage_slug: "user-stories",
+      selections: [
+        {
+          candidate_id: "c1",
+          type: "learning",
+          scope: "project",
+          heading: "Corrections",
+          text: "A rule persisted twice must appear once",
+          source: "orchestrator",
+        },
+      ],
+    });
+    expect(persist(pd, sel).status).toBe(0);
+    const afterFirst = readFileSync(projectPractices(pd), "utf-8");
+    expect(persist(pd, sel).status).toBe(0);
+    expect(readFileSync(projectPractices(pd), "utf-8")).toBe(afterFirst);
+    expect(ruleLearnedRows(pd)).toBe(1);
+  }, TIMEOUT);
 });
