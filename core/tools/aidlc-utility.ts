@@ -206,6 +206,11 @@ Utilities:
   --new-scope "<task>"  Force the composer to synthesize a custom scope even when a stock scope matches
   intent list       List intents in the active space (read-only; --json for structured output)
   intent switch <name>  Switch the active intent (bare intent <name> still works)
+  intent birth --scope <s> --arguments "<what to build>" --label <short-name>
+                    Start a SECOND workflow alongside the active one (a completed
+                    intent cannot be resumed). Usually reached via
+                    /aidlc next --new-intent --scope <s> "<what to build>", which
+                    names this command for you and keeps the label seam intact.
   space list        List spaces (read-only; --json for structured output)
   space switch <name>  Switch the active space (bare space <name> still works)
   space create <name>  Create a new space (space-create <name> still works)

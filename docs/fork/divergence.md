@@ -680,6 +680,42 @@ when present (44/0).
 > environment problem, the probe has to run where the failure lives; a
 > stripped-*looking* shell is not the same as the shell the hook gets.
 
+### A15 — a completed workflow was a dead end (4 files) — **upstream-bound**
+| | |
+| --- | --- |
+| Files | `core/tools/aidlc-orchestrate.ts` (the `done` branch names the move) · `core/hooks/aidlc-session-start.ts` (resume line keyed on `Status`) · `core/tools/aidlc-utility.ts` (`intent birth` in `--help`) · `tests/unit/t275-completed-workflow-new-intent-path.test.ts` (new) · `tests/unit/gen-coverage-registry.test.ts` + `tests/.coverage-registry.json` (ratchet) |
+| Class | **B — general.** Affects every scope on every harness; nothing here is CDE behaviour. |
+| Upstream | **Offer it.** Three prose-in-code edits plus a guard; no behavioural surface changes beyond the messages. |
+| On conflict | Keep ours. If upstream rewrites either message, re-apply the *property* — a completed workflow must name `--new-intent` — rather than the literal sentence. |
+A completed intent is a finished record, never a container to re-enter, so the only
+move onward is to birth a new intent. That move (`next --new-intent` →
+`intent-birth`) appeared in **no** directive, **no** hook message and **no** help
+text. Meanwhile the session-start hook told the conductor to offer "the standard
+resume options (Resume / Redo / Jump / Start Fresh)" — a menu defined nowhere:
+`Start Fresh` occurred exactly once in the whole authored tree, in the line asking
+for it, and `Redo` *is* defined elsewhere as the intra-stage Keep/Modify/Redo gate
+loop, so a conductor that went looking found an actively misleading definition
+rather than none.
+Every scope runner forwards freeform text into `next` and ends its loop on
+`{kind:"done"}`, so the observable failure was: close a workflow, type a new
+request, get answered "Workflow complete", stop. Reported live on the `vibe` scope,
+where "one session per container" is by design and the closed case is therefore the
+*normal* one from the second session onward — but the defect is generic, and
+`/feature <request>` after a close-out dead-ends identically.
+The fix removes the dangling half rather than defining it in a second place that
+would drift: the hook keys its guidance on the `Status` it already read, and the
+engine's `done` reason names the command. `intent-birth`'s own source comment
+already described the capability ("OR a new intent for new work alongside an active
+one"); only the user-visible surfaces were silent.
+> [!NOTE]
+> **The shape is a dangling reference: prose and the mechanism it names were never
+> checked against each other.** That is the same family as the four
+> "check and checked were not independent" failures in §7 — a guard named for an
+> impossible precondition, a fixture compared to its own template, a doctor row
+> probing its own process, and a probe run outside the failing environment. t275
+> closes this instance in both directions, and is deliberately explicit about which
+> of its five assertions catches the class and which catches only the literal.
+
 ### Unclassified — real divergence with no row above (found 2026-08-03)
 
 Running §5 against the merge base turns up 14 files that none of A1–A6 explains.

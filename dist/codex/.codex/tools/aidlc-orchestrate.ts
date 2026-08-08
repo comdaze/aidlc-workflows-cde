@@ -2568,10 +2568,26 @@ function handleNext(args: string[], projectDir: string | undefined): void {
     stateContent,
   );
   if (!next) {
-    // No stage left to run — the workflow is complete.
+    // No stage left to run — the workflow is complete. NAME the new-work move
+    // rather than stopping at the fact: a completed intent is a finished record,
+    // never a container to re-enter, so `done` is a dead end for a caller who
+    // just asked for new work. Every scope runner forwards freeform text into
+    // `next` and terminates its loop on `done` (aidlc-runner-gen.ts), so without
+    // this signpost `/vibe <request>` (or `/feature <request>`) after a close-out
+    // answers "workflow complete" to someone who was starting, and the only
+    // path onward — `--new-intent` → `intent-birth` — appears in no directive,
+    // no help text, and no runner. The stronger clause fires when freeform text
+    // WAS supplied, because that is the caller who is demonstrably not just
+    // checking status.
+    const askedForWork = (flags.intent ?? "").trim().length > 0;
+    const newWork = askedForWork
+      ? ` You supplied new-work text, which a completed workflow cannot absorb — start a NEW intent alongside this one with \`bun ${harnessDir()}/tools/aidlc-orchestrate.ts next --new-intent --scope ${scope} "${flags.intent?.trim()}"\`, then act on the \`intent-birth\` directive it returns.`
+      : ` To start new work, birth a new intent: \`bun ${harnessDir()}/tools/aidlc-orchestrate.ts next --new-intent --scope <scope> "<what to build>"\`. To revisit finished work, \`aidlc-utility.ts intent list\` / \`intent switch <name>\` (read-only — a completed intent cannot be resumed).`;
     emit({
       kind: "done",
-      reason: `Workflow complete — no in-scope stage remains after ${currentSlug} (scope: ${scope}).`,
+      reason:
+        `Workflow complete — no in-scope stage remains after ${currentSlug} (scope: ${scope}).` +
+        newWork,
     });
     return;
   }
