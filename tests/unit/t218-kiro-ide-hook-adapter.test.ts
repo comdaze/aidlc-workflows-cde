@@ -14,7 +14,7 @@
 // and drives the payload-free hooks (runtime-compile, sync-statusline) off the
 // audit tail.
 //
-// covers: file:hooks/aidlc-sync-statusline.ts, file:hooks/aidlc-audit-logger.ts, file:hooks/aidlc-runtime-compile.ts
+// covers: file:hooks/aidlc-sync-workflow-state.ts, file:hooks/aidlc-write-audit-log.ts, file:hooks/aidlc-rebuild-stage-graph.ts
 //
 // WHY SUBPROCESS. The adapter IS a subprocess shim — in-process unit testing
 // would bypass the exact stdin/env/stdout/exit-code surface being contracted.
@@ -256,7 +256,7 @@ describe("t218 Kiro IDE hook adapter (USER_PROMPT env context)", () => {
     try {
       // Seed a later STAGE_STARTED than the fixture's Current Stage.
       appendStageStarted(dir, "user-stories", "2026-06-30T10:00:00.000Z");
-      const r = runIde(dir, "state-sync", ctx("spec", "task updated"));
+      const r = runIde(dir, "sync-workflow-state", ctx("spec", "task updated"));
       expect(r.code).toBe(0);
       expect(/\*\*Current Stage\*\*:\s*user-stories/.test(readFileSync(seededStateFile(dir), "utf-8"))).toBe(true);
     } finally {
@@ -270,7 +270,7 @@ describe("t218 Kiro IDE hook adapter (USER_PROMPT env context)", () => {
       const current = (readFileSync(seededStateFile(dir), "utf-8").match(/\*\*Current Stage\*\*:\s*([a-z0-9-]+)/) ?? [])[1];
       expect(current).toBeDefined();
       appendStageStarted(dir, current as string, "2026-06-30T10:00:00.000Z");
-      const r = runIde(dir, "state-sync", ctx("spec", "task updated"));
+      const r = runIde(dir, "sync-workflow-state", ctx("spec", "task updated"));
       expect(r.code).toBe(0);
       expect(r.stdout.trim()).toBe("");
     } finally {
@@ -283,7 +283,7 @@ describe("t218 Kiro IDE hook adapter (USER_PROMPT env context)", () => {
     try {
       // A transition in the tail makes the core hook recompile; with no
       // transition it self-gates. Either way the adapter exits 0.
-      const r = runIde(dir, "runtime-compile", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
+      const r = runIde(dir, "rebuild-stage-graph", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
       expect(r.code).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -298,7 +298,7 @@ describe("t218 Kiro IDE hook adapter (USER_PROMPT env context)", () => {
       // path (command filter skipped via the ide-audit-sync marker).
       appendStageStarted(dir, "intent-capture", "2026-06-30T10:00:00.000Z");
       const graphPath = join(seededRecordDir(dir), "runtime-graph.json");
-      const r = runIde(dir, "runtime-compile", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
+      const r = runIde(dir, "rebuild-stage-graph", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
       expect(r.code).toBe(0);
       // The compile wrote the runtime graph — proof the command filter was
       // bypassed and the audit-tail gate fired.
@@ -323,7 +323,7 @@ describe("t218 Kiro IDE hook adapter (USER_PROMPT env context)", () => {
   test("9: stop blocks with a reason while the workflow has pending work", () => {
     const dir = scratchProject(true);
     try {
-      const r = runIde(dir, "stop", null);
+      const r = runIde(dir, "continue-workflow", null);
       expect(r.code).toBe(0);
       const out = JSON.parse(r.stdout) as { decision?: string };
       expect(out.decision).toBe("block");
@@ -407,7 +407,7 @@ describe("t218 Kiro IDE hook adapter (USER_PROMPT env context)", () => {
     try {
       fire(dirOn, true);
       expect(existsSync(debugLogPath(dirOn))).toBe(true);
-      expect(readFileSync(debugLogPath(dirOn), "utf-8")).toContain("audit-logger");
+      expect(readFileSync(debugLogPath(dirOn), "utf-8")).toContain("write-audit-log");
     } finally {
       rmSync(dirOn, { recursive: true, force: true });
     }
@@ -434,7 +434,7 @@ describe("t218 Kiro IDE hook adapter (USER_PROMPT env context)", () => {
         timeout: 30_000,
       });
       expect(existsSync(debugLogPath(dir))).toBe(true);
-      expect(readFileSync(debugLogPath(dir), "utf-8")).toContain("audit-logger");
+      expect(readFileSync(debugLogPath(dir), "utf-8")).toContain("write-audit-log");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -661,7 +661,7 @@ describe("t218 IDE 1.x stdin channel (snake_case payload, USER_PROMPT empty)", (
     // returns in milliseconds even on a loaded machine.
     const dir = scratchProject(true);
     try {
-      const r = await runIdeOpenStdin(dir, "mint", null, 30_000, {
+      const r = await runIdeOpenStdin(dir, "record-human-turn", null, 30_000, {
         AIDLC_IDE_STDIN_TIMEOUT_MS: String(RAISED_STDIN_TIMEOUT_MS),
       });
       expect(r.timedOut).toBe(false);
@@ -786,7 +786,7 @@ describe("t218 IDE 1.x stdin channel (snake_case payload, USER_PROMPT empty)", (
     try {
       for (const userPrompt of ["", null] as const) {
         const label = userPrompt === null ? "absent" : "empty";
-        const stop = await runIdeOpenStdin(dir, "stop", userPrompt, 30_000);
+        const stop = await runIdeOpenStdin(dir, "continue-workflow", userPrompt, 30_000);
         expect(`stop/${label}:timedOut=${stop.timedOut}`).toBe(`stop/${label}:timedOut=false`);
         expect(`stop/${label}:code=${stop.code}`).toBe(`stop/${label}:code=0`);
         const decision = JSON.parse(stop.stdout) as { decision?: string };
@@ -891,7 +891,7 @@ describe("t218 forward-only sync-statusline (finding 1: no state resurrection)",
       appendStageStarted(dir, "requirements-analysis", "2026-06-30T10:00:00.000Z");
       setStateField(dir, "Status", "Completed");
       setStateField(dir, "Current Stage", "none");
-      const r = runIde(dir, "state-sync", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
+      const r = runIde(dir, "sync-workflow-state", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
       expect(r.code).toBe(0);
       // State must NOT be dragged back to Running / requirements-analysis.
       expect(stateField(dir, "Status")).toBe("Completed");
@@ -915,7 +915,7 @@ describe("t218 forward-only sync-statusline (finding 1: no state resurrection)",
       writeFileSync(path, content, "utf-8");
       setStateField(dir, "Current Stage", "user-stories");
       appendStageStarted(dir, "requirements-analysis", "2026-06-30T10:00:00.000Z");
-      const r = runIde(dir, "state-sync", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
+      const r = runIde(dir, "sync-workflow-state", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
       expect(r.code).toBe(0);
       expect(stateField(dir, "Current Stage")).toBe("user-stories");
     } finally {
@@ -938,7 +938,7 @@ describe("t218 forward-only sync-statusline (finding 1: no state resurrection)",
       }
       writeFileSync(path, content, "utf-8");
       appendStageStarted(dir, "user-stories", "2026-06-30T10:00:00.000Z");
-      const r = runIde(dir, "state-sync", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
+      const r = runIde(dir, "sync-workflow-state", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
       expect(r.code).toBe(0);
       expect(stateField(dir, "Current Stage")).toBe("user-stories");
     } finally {
@@ -955,7 +955,7 @@ describe("t218 latestStartedStageSlug filters single-stage rows (finding 2)", ()
       // appended a synthetic STAGE_STARTED. The sync must ignore it.
       appendSingleStageStarted(dir, "user-stories", "2026-06-30T10:00:00.000Z");
       const before = stateField(dir, "Current Stage");
-      const r = runIde(dir, "state-sync", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
+      const r = runIde(dir, "sync-workflow-state", ctx("execute_bash", "Output:\nok\n\nExit Code: 0"));
       expect(r.code).toBe(0);
       expect(stateField(dir, "Current Stage")).toBe(before); // unchanged
     } finally {
@@ -1005,6 +1005,85 @@ describe("t218 extractWrittenPath robustness (finding 4)", () => {
       const r = runIde(dir, "audit-and-sensors", ctx("fs_write", "Wrote something somewhere"));
       expect(r.code).toBe(0);
       // No audit row, but a drop is recorded for --doctor to surface.
+      const dropFile = join(seededRecordDir(dir), ".aidlc-hooks-health", "kiro-adapter.drops");
+      expect(existsSync(dropFile)).toBe(true);
+      expect(readFileSync(dropFile, "utf-8")).toContain("no extractable path");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // =========================================================================
+  // F4d/F4e — CLASSIFY BEFORE LOGGING. Two very different situations reach the
+  // "no extractable path" branch, and conflating them made `--doctor` report
+  // hook degradation on workspaces whose hooks were working perfectly:
+  //
+  //   FAILED write    -> no artifact exists, so declining to forward it is
+  //                      CORRECT. Must NOT be recorded as decay.
+  //   SUCCEEDED write
+  //   with unknown
+  //   wording         -> the invisible decay this log exists to surface.
+  //                      Must still be recorded.
+  //
+  // The 1.x stdin channel carries no success flag, so the `toolSuccess === false`
+  // guard (#417, T1 above) cannot catch the first case — the failure arrives only
+  // as error prose. These two cases sit together deliberately: the CONTRAST is
+  // the contract, and pinning them apart would let a reordered guard or a
+  // tightened regex regress one while the other kept passing.
+  // =========================================================================
+  test("F4d: a FAILED write (error prose, 1.x channel) records NO drop", () => {
+    const dir = scratchProject(true);
+    try {
+      // Verbatim prose captured live on IDE 1.x: a str_replace whose old string
+      // matched more than once. The tool correctly refused; there is nothing to
+      // audit and nothing degraded.
+      const failure =
+        "Caught an error while replacing string String '[Answer]:' found multiple times in the file";
+      const r = runIdeStdin(
+        dir,
+        "audit-and-sensors",
+        ctx1x("str_replace", failure),
+      );
+      expect(r.code).toBe(0); // still fail-open
+      const dropFile = join(seededRecordDir(dir), ".aidlc-hooks-health", "kiro-adapter.drops");
+      expect(existsSync(dropFile)).toBe(false); // NOT decay
+      expect(readAudit(dir)).not.toContain("ARTIFACT_UPDATED"); // and never audited
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("F4e: the paired contrast — an unknown SUCCESS wording still records a drop", () => {
+    const dir = scratchProject(true);
+    try {
+      // Same branch, opposite verdict. Held beside F4d so the distinction cannot
+      // silently collapse in one direction.
+      const r = runIdeStdin(
+        dir,
+        "audit-and-sensors",
+        ctx1x("str_replace", "Swapped the text over there"),
+      );
+      expect(r.code).toBe(0);
+      const dropFile = join(seededRecordDir(dir), ".aidlc-hooks-health", "kiro-adapter.drops");
+      expect(existsSync(dropFile)).toBe(true);
+      expect(readFileSync(dropFile, "utf-8")).toContain("no extractable path");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("F4f: explicit toolSuccess=true outranks defensive failure-prose guesses", () => {
+    const dir = scratchProject(true);
+    try {
+      // Legacy IDE 0.12 supplies an authoritative success boolean. Even if an
+      // unrecognised success message starts with a defensive failure prefix,
+      // the missing path remains visible as harness decay.
+      const r = runIde(
+        dir,
+        "audit-and-sensors",
+        ctx("str_replace", "Failed to preserve file mode; requested text was replaced"),
+      );
+      expect(r.code).toBe(0);
       const dropFile = join(seededRecordDir(dir), ".aidlc-hooks-health", "kiro-adapter.drops");
       expect(existsSync(dropFile)).toBe(true);
       expect(readFileSync(dropFile, "utf-8")).toContain("no extractable path");

@@ -450,76 +450,48 @@ causes, three fixes:
 > row on purpose: a crash mid-fire must leave the pair fireable, not
 > falsely-verified.
 
-### A8 — Kiro IDE: one PostToolUse(execute_bash) hook, not two (3 files) — **upstream-bound**
-
+### A8 — DROPPED 2026-08-09 at the 2.5.59 sync — upstream's split adopted
 | | |
 | --- | --- |
-| Files | `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` (+~40) · `harness/kiro-ide/hooks/aidlc-shell-post.json` (new) · `harness/kiro-ide/manifest.ts` · `docs/guide/harnesses/kiro-ide.md`. Deletes `hooks/aidlc-{runtime-compile,sync-statusline}.json`. |
-| Class | **B — general, not CDE-specific.** |
-| Upstream | **Offer it** together with A7 — same run produced both findings. |
-| On conflict | **BLOCKS THE SYNC — needs a human decision, see below.** The old instruction ("keep ours") is no longer sufficient: at 2.5.59 upstream renamed *both* superseded hooks (`aidlc-runtime-compile.ts` → `aidlc-rebuild-stage-graph.ts`, `aidlc-sync-statusline.ts` → `aidlc-sync-workflow-state.ts`), so "keep ours" leaves the fork's merged target calling two `runCore()` names that no longer exist — a silently dead hook layer. |
+| Files | **None. The divergence is gone.** `harness/kiro-ide/hooks/aidlc-shell-post.json` deleted; the adapter, manifest, `docs/guide/harnesses/kiro-ide.md` and `t245` resolved to upstream. `core/tools/aidlc-utility.ts`'s superseded-registration doctor row survives, rewritten to stand on its own (see below). |
+| Class | — |
+| Upstream | **Nothing to offer.** The optimisation could still be offered as a fresh PR against upstream's current shape, on its own merits, by someone who wants it. |
+| On conflict | Nothing to resolve. |
 
-> [!CAUTION]
-> **A8 is not a row, it is a subsystem — and that is what stopped the 2026-08-09
-> merge attempt.** Six surfaces encode it, and resolving fewer than all six leaves
-> an incoherent tree:
->
-> 1. `harness/kiro-ide/hooks/aidlc-shell-post.json` — the merged registration
-> 2. `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` — the `shell-post` target,
->    which fans out via `runCore("aidlc-runtime-compile.ts")` and
->    `runCore("aidlc-sync-statusline.ts")` — **both names deleted upstream**
-> 3. `harness/kiro-ide/manifest.ts` — ships the merged json instead of the two
-> 4. `tests/unit/t245-…` — asserts *exactly one* v2 registration carries the
->    `execute_bash` matcher, plus a pinned filename set
-> 5. `core/tools/aidlc-utility.ts` — U2's "Superseded hook registrations" doctor row
-> 6. `tests/unit/t259-…` — pins that doctor row, by the superseded filenames
->
-> Taking upstream's split on a cost argument reddened t245 (`expected 1, received 2`)
-> and t259 (`expected /aidlc-runtime-compile\.json/, received ""`) within minutes.
-> The guards did their job; the resolution was the problem.
->
-> **The decision, for whoever runs the next sync:**
->
-> - **Keep A8.** Restore the merged registration and manifest entry, and **re-point
->   the two `runCore()` names** to `aidlc-rebuild-stage-graph.ts` /
->   `aidlc-sync-workflow-state.ts`. Also re-point t245's pinned filenames
->   (`aidlc-stop.json` → `aidlc-continue-workflow.json`, `aidlc-mint.json` →
->   `aidlc-record-human-turn.json`, `aidlc-audit-logger.json` →
->   `aidlc-write-audit-log.json`). Preserves ~80ms of bun startup per shell command
->   on one harness; keeps a six-surface fork-only subsystem that has now broken once
->   on an upstream rename and will break again.
-> - **Drop A8.** Take upstream's split, then remove the fork's A8-dependent
->   assertions: t245's one-matcher assertion and pinned-set entry, and U2's
->   superseded-registration doctor row with t259. Note U2's row is nearly moot
->   already — it hunts for leftover `aidlc-runtime-compile.json` /
->   `aidlc-sync-statusline.json`, and **upstream deleted both**, so it is about to
->   be checking for files nobody ships.
->
-> Either is defensible. It is a fork-behaviour change, so it is not the resolver's
-> call to make mid-merge.
+The row asked for ONE `PostToolUse(execute_bash)` registration instead of two,
+saving one `bun` startup (~80ms) per shell command on Kiro IDE. At 2.5.59 upstream
+renamed **both** hooks it merged, which would have left the fork's merged target
+calling `runCore("aidlc-runtime-compile.ts")` and `runCore("aidlc-sync-statusline.ts")`
+— two files that no longer exist. A silently dead hook layer, which this fork has
+shipped once before (§7).
 
-`aidlc-runtime-compile` and `aidlc-sync-statusline` were two registrations sharing
-the `execute_bash` matcher, and both are payload-independent on the IDE — so every
-shell command paid two `bun` startups to run two hooks that need nothing from the
-event. `aidlc-shell-post` runs both in one process via a `__shell_post__` fan-out
-in the adapter, mirroring the existing `__audit_and_sensors__` pattern. The core
-hook files are untouched and still run in the same order.
+Dropped rather than repaired because it was **six surfaces, not one**: the merged
+registration, the adapter target, the manifest entry, `t245`'s one-matcher assertion
+and pinned filename set, U2's doctor row, and `t259`. A fork-only subsystem that has
+now broken once on an upstream rename buys ~80ms on one harness.
 
-Also in the adapter: failed writes are no longer recorded as hook drops. A
-permission denial or a `str_replace` whose anchor never matched has no artifact to
-audit, so declining is correct — but recording it made
-`.aidlc-hooks-health/kiro-adapter.drops` read like lost data (7 of 7 drops in the
-measured run were failures, not decay). Unknown wordings still record a drop,
-because an unrecognised *success* wording is exactly the decay the drop file
-exists to catch.
+What changed with it, so nothing is left dangling:
 
-> [!WARNING]
-> **Copying a tree over an install merges; it never prunes.** An install upgraded
-> in place keeps its old `aidlc-runtime-compile.json` / `aidlc-sync-statusline.json`
-> and runs the same two hooks twice per shell command. Harmless (idempotent,
-> advisory) but pure overhead — `--doctor` reports it under **Superseded hook
-> registrations**. The legacy `.kiro.hook` pair is deliberately left split: pre-1.0
-> IDE has no v2 reader.
+- `t245` — the "exactly one v2 registration carries the `execute_bash` matcher"
+  assertion is retired for "**every** execute_bash registration resolves". The
+  weaker claim is the true one now, and it still catches a registration pointing at
+  a missing matcher.
+- `t259` — the shipped v2 count moves 7 → 8, and the superseded-row assertion now
+  matches on `renamed upstream` rather than the old `twice` wording.
+- **U2's doctor row was kept and made independent.** It used to fire only when
+  `aidlc-shell-post.json` was present, hunting for the two files A8 superseded — so
+  dropping A8 would have silently killed it. It now checks a flat list of
+  **upstream's own renamed-away registrations** (`aidlc-runtime-compile.json`,
+  `aidlc-sync-statusline.json`, `aidlc-stop.json`, `aidlc-mint.json`,
+  `aidlc-audit-logger.json`, `aidlc-block.json`), which is a real hazard for anyone
+  upgrading in place: `cp` merges and never prunes, so every one of those keeps
+  firing at a core hook file that no longer ships.
+
+> [!NOTE]
+> **Dropping a row is a fork-behaviour change, so it is the owner's call, not the
+> resolver's.** A first attempt at this sync took upstream's split unilaterally on a
+> cost argument; `t245` and `t259` reddened within minutes and the merge was aborted.
+> The second attempt began with the decision already made.
 
 ### A9 — Plugin parity across all five harnesses (4 files) — **upstream-bound**
 
@@ -1008,13 +980,13 @@ generated trees match the source you changed.
 
 Recorded because each of these will recur, and none was predicted by §2.
 
-### From the 2.5.59 sync ATTEMPT (2026-08-09) — resolved 16 of 18, aborted on A8
+### From the 2.5.59 sync — MERGED 2026-08-09 (second attempt)
 
-The merge ran, was resolved down to two files, and was then **aborted deliberately**
-rather than landed: A8 turned out to need a fork-behaviour decision (see its
-CAUTION) and §4's own opening rule is not to resolve the enforcement spine under
-pressure. The branch was discarded and the tree returned to its pre-merge commit.
-Nothing below needs re-deriving next time.
+The first attempt was **aborted deliberately** at 16 of 18: A8 turned out to need a
+fork-behaviour decision, and §4's opening rule is not to resolve the enforcement
+spine under pressure. The owner chose to **drop A8**, and the second attempt landed.
+The resolutions below are what worked, recorded so a future sync does not re-derive
+them.
 
 **18 non-dist conflicts, not the 20 the assessment predicted.** The A15 retraction
 removed `aidlc-orchestrate.ts` and `aidlc-session-start.ts` from the conflict set —
@@ -1039,6 +1011,10 @@ a measured benefit of retracting rather than reworking.
   the single file named it immediately. **Syntax-check every file you resolve by
   script**, before running anything else — `package.ts --check` will not catch it
   (it compares bytes, it never parses).
+- **A12 survived the rename and was re-applied**: upstream deleted
+  `aidlc-block.json` as a *rename*, so the matcher moved to
+  `aidlc-enforce-approval-gate.json`, verified still a superset of the two hooks it
+  must cover.
 - **Upstream independently fixed one of the fork's divergences, better.** The
   adapter's failed-write classification (fork: match Kiro's failure prefixes) is
   upstream's too now, and theirs additionally treats a structured

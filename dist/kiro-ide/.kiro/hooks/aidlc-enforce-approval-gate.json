@@ -1,0 +1,12 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "aidlc-enforce-approval-gate",
+      "trigger": "PreToolUse",
+      "matcher": "fs_write|str_replace|fs_append|execute_bash",
+      "description": "Stops the assistant from acting while the workflow is waiting for your approval, until you have actually replied. Matched on the mutation surface only: as a bare PreToolUse this ran on every tool call - every read, every grep - at ~80ms of bun startup each, to reach a carve-out that returns 0 immediately under autonomous Construction or with no gate open. A human-presence floor has no reason to gate a read; blocking *changes* while a gate is open is untouched. Keep this a superset of the write-audit-log and shell-post matchers - see divergence A12.",
+      "action": { "type": "command", "command": "bun .kiro/hooks/aidlc-kiro-adapter.ts enforce-approval-gate" }
+    }
+  ]
+}

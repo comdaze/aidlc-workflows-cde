@@ -31,20 +31,26 @@ import { projectTier } from "../../core/tools/aidlc-tiers.ts";
 // ---------------------------------------------------------------------------
 const HOOK_WIRING: Array<{ event: string; matcher?: string; target: string }> = [
   { event: "SessionStart", target: "session-start" },
-  { event: "UserPromptSubmit", target: "mint" },
-  { event: "PreToolUse", matcher: "spawn_agent", target: "dispatch-rules" },
+  { event: "UserPromptSubmit", target: "record-human-turn" },
+  { event: "PreToolUse", matcher: "spawn_agent", target: "deliver-stage-rules" },
   { event: "PreToolUse", target: "state-transition-guard" },
   // No matcher: the reviewer-scope target self-filters (Bash + apply_patch;
   // everything else exits 0 instantly), and Codex read access rides the shell
   // tool anyway. Verified on 0.142.5: subagent tool calls carry agent_type,
   // and a PreToolUse exit 2 + stderr blocks the call with the reason relayed.
   { event: "PreToolUse", target: "reviewer-scope" },
+  // No matcher for the same reason: the review-freeze target self-filters to
+  // apply_patch and mutation-capable Bash commands.
+  { event: "PreToolUse", target: "review-freeze" },
+  // No matcher: the plan-approval-guard target self-filters (spawn_agent
+  // naming the developer agent; everything else exits 0 instantly).
+  { event: "PreToolUse", target: "plan-approval-guard" },
   { event: "PostToolUse", matcher: "apply_patch", target: "audit-and-sensors" },
-  { event: "PostToolUse", matcher: "update_plan", target: "state-sync" },
-  { event: "PostToolUse", matcher: "Bash", target: "runtime-compile" },
+  { event: "PostToolUse", matcher: "update_plan", target: "sync-workflow-state" },
+  { event: "PostToolUse", matcher: "Bash", target: "rebuild-stage-graph" },
   { event: "PreCompact", target: "validate-state" },
   { event: "SubagentStop", target: "log-subagent" },
-  { event: "Stop", target: "stop" },
+  { event: "Stop", target: "continue-workflow" },
 ];
 
 const adapterCmd = (harnessDir: string, target: string) =>

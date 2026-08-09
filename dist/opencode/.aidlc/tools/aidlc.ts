@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   errorMessage,
+  parsePluginCommand,
   parseWorkspaceCommand,
   workspaceCommandUtilityArgv,
 } from "./aidlc-lib.ts";
@@ -175,6 +176,7 @@ export const ROUTES: readonly Route[] = [
       "merge",
       "park",
       "unpark",
+      "unit",
     ],
   },
   {
@@ -300,10 +302,10 @@ export const ROUTES: readonly Route[] = [
     group: "intent",
     kind: "custom",
     classification: "translation",
-    verbs: ["list", "switch", "<name>", "birth"],
+    verbs: ["list", "switch", "<name>", "create"],
     custom: "workspace",
-    human: [{ command: "intent [list|switch|birth]", summary: "list, switch, or create intent context" }],
-    all: ["list [--json]", "switch <name>", "<name>", "birth [args]"],
+    human: [{ command: "intent [list|switch|create]", summary: "list, switch, or create intent context" }],
+    all: ["list [--json]", "switch <name>", "<name>", "create [args]"],
   },
   {
     id: "space",
@@ -329,11 +331,12 @@ export const ROUTES: readonly Route[] = [
     group: "config",
     kind: "custom",
     classification: "translation",
-    verbs: ["set depth", "set test-strategy", "get", "list"],
+    verbs: ["set depth", "set test-strategy", "set review", "get", "list"],
     custom: "config",
     targets: {
       "set depth": "config-change",
       "set test-strategy": "config-change",
+      "set review": "config-change",
       get: "config-get",
       list: "config-list",
     },
@@ -342,7 +345,7 @@ export const ROUTES: readonly Route[] = [
       { command: "config set <key> <value>", summary: "change supported project configuration" },
       { command: "config list", summary: "list supported project configuration" },
     ],
-    all: ["set depth <value>", "set test-strategy <value>", "get <key>", "list"],
+    all: ["set depth <value>", "set test-strategy <value>", "set review <value>", "get <key>", "list"],
   },
   {
     id: "plugin",
@@ -582,20 +585,26 @@ function handleConfig(route: Route, argv: string[]): Action {
     if (missing) return missing;
     return { type: "delegate", tool: TOOLS.utility, args: ["config-change", "--test-strategy", value, ...argv.slice(4)] };
   }
+  if (key === "review") {
+    const missing = requireValue("config", "set review", value);
+    if (missing) return missing;
+    return { type: "delegate", tool: TOOLS.utility, args: ["config-change", "--review", value, ...argv.slice(4)] };
+  }
   return nounError("config", key ? `set ${key}` : "set");
 }
 
-function handlePlugin(route: Route, argv: string[]): Action {
-  const verb = argv[1];
-  if (verb === "select") {
-    const target = route.targets?.select ?? "select-plugins";
-    return { type: "delegate", tool: TOOLS.utility, args: [target, ...argv.slice(2)] };
+function handlePlugin(argv: string[]): Action {
+  const command = parsePluginCommand(argv);
+  if (command.kind === "help") {
+    return { type: "help", all: false };
   }
-  if (verb === "sync" || verb === "list") {
-    const target = route.targets?.[verb];
-    if (target) return { type: "delegate", tool: TOOLS.utility, args: [target, ...argv.slice(2)] };
+  if (command.kind === "error") {
+    return { type: "error", code: 1, message: `${command.message}\n` };
   }
-  return nounError("plugin", verb);
+  if (command.kind === "run") {
+    return { type: "delegate", tool: TOOLS.utility, args: command.argv };
+  }
+  return nounError("plugin", argv[1]);
 }
 
 function handleGen(argv: string[]): Action {
@@ -623,7 +632,7 @@ function handleGen(argv: string[]): Action {
 function handleCustom(route: Route, argv: string[]): Action {
   if (route.custom === "workspace") return handleWorkspace(argv);
   if (route.custom === "config") return handleConfig(route, argv);
-  if (route.custom === "plugin") return handlePlugin(route, argv);
+  if (route.custom === "plugin") return handlePlugin(argv);
   if (route.custom === "gen") return handleGen(argv);
   return nounError(argv[0], argv[1]);
 }
@@ -1114,6 +1123,11 @@ async function execute(action: Action): Promise<number> {
 
 export async function main(argv: string[]): Promise<void> {
   process.exitCode = 0;
+  if (argv.length === 1 && argv[0] === "--internal-metrics-send") {
+    const metrics = await import("./aidlc-metrics.ts");
+    await metrics.sendMetricFromStdin();
+    return;
+  }
   if (import.meta.url.includes("/$bunfs/") && !process.env.AIDLC_HARNESS_DIR) {
     // Compiled, no explicit harness: probe the project install (.claude /
     // .kiro / .codex by tools/data/harness.json) rather than assuming

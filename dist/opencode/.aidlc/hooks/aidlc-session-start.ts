@@ -18,7 +18,7 @@
 //   clear   → SESSION_STARTED
 //   compact → no emission (PreCompact already fired)
 //
-// The hook is a no-op if aidlc-state.md is absent in cwd (no active workflow).
+// With no aidlc-state.md, only cursor/include bootstrap runs; workflow work is a no-op.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { appendAuditEntry } from "../tools/aidlc-audit.ts";
@@ -27,6 +27,8 @@ import { repointHarnessIncludes } from "../tools/aidlc-includes.ts";
 import {
   activeIntentUuid,
   activeSpace,
+  clearSessionIntentUuid,
+  ensureActiveSpaceCursor,
   errorMessage,
   findIntentByUuid,
   getField,
@@ -42,16 +44,17 @@ import {
   writeCurrentSessionId,
   writeSessionIntentUuid,
 } from "../tools/aidlc-lib.ts";
+import { writeCurrentTranscriptPath } from "../tools/aidlc-usage.ts";
 
 export async function run(input: string): Promise<number> {
 const projectDir = resolveProjectDirFromHook(import.meta.url);
 
-// Idempotent ensure-step (P0.1 robustness): align the harness-native includes
-// with the active space at session start, BEFORE the no-workflow early-exit, so
-// turn-1 on a fresh clone (no aidlc-state.md yet) still has the includes pointed
-// at the active space. A no-op at `default` (the common case) and whenever the
-// cursor + includes already agree — so it never dirties a single-team committed
-// tree. Best-effort: a failure here must never break session startup.
+// Idempotent ensure-step (P0.1 robustness): atomically materialize a clone's
+// missing gitignored cursor, then align the harness-native includes with that
+// space BEFORE the no-workflow early-exit. Cursor creation cannot overwrite a
+// concurrent explicit switch. Best-effort: a failure here must never break
+// session startup.
+ensureActiveSpaceCursor(projectDir);
 try {
   repointHarnessIncludes(projectDir, activeSpace(projectDir));
 } catch {
@@ -84,6 +87,10 @@ let source = "startup";
 // per-session→intent record (resume rebind below); "" when absent (a TTY/empty
 // invocation) — the rebind logic no-ops without it.
 let sessionId = "";
+// The live transcript path, if the host pipes it on SessionStart. Persisted
+// below so the statusline/state tools can find the transcript even before the
+// first Stop/PostToolUse fold writes the pointer. "" when absent.
+let transcriptPath = "";
 if (!process.stdin.isTTY) {
   try {
     if (input.length > 0) {
@@ -92,6 +99,10 @@ if (!process.stdin.isTTY) {
         if (isClaudeCodeHookInput(raw)) {
           source = raw.source ? String(raw.source) : "unknown";
           if (typeof raw.session_id === "string") sessionId = raw.session_id;
+          const rawObj = raw as Record<string, unknown>;
+          if (typeof rawObj.transcript_path === "string") {
+            transcriptPath = rawObj.transcript_path;
+          }
         } else {
           source = "unknown";
         }
@@ -102,6 +113,17 @@ if (!process.stdin.isTTY) {
   } catch {
     // stdin read itself failed — treat as startup (no payload available)
   }
+}
+
+// Persist the transcript path (best-effort; the usage helper swallows write
+// errors and no-ops on an empty path). Lets the statusline resolve the live
+// transcript on a fresh session before any fold has written the pointer. Only
+// the Claude harness pipes transcript_path here; elsewhere transcriptPath stays
+// "" and this is a no-op.
+try {
+  writeCurrentTranscriptPath(projectDir, sessionId, transcriptPath);
+} catch {
+  // never break session startup on a usage-bookkeeping failure
 }
 
 // Record the live conversation as the "current session" on EVERY fire (startup /
@@ -173,6 +195,19 @@ if (sessionId) {
           `INTENT REBIND OFFER: This conversation was working ${was.slug}, but the active intent is ${liveSlug}. ` +
           `Switch back to ${was.slug}? [Y/n] — on Yes, run \`${switchCmd}\` to move the cursor; ` +
           `on No, keep working ${liveSlug}. This corrects the per-user cursor only; it never rebuilds the conversation.\n`;
+        // Until the user accepts the offered switch, this resumed conversation
+        // is operating on the live intent. Stamp that ownership now so a
+        // decline cannot leave usage attached to the old workflow. A Yes path
+        // runs the switch command above, whose utility handler re-stamps the
+        // session back to `was`.
+      }
+      // Whether the previous intent still resolves or was deleted, this resumed
+      // conversation now operates on the live target. Normalize ownership even
+      // when no rebind offer can be shown for a stale/deleted prior UUID.
+      if (liveUuid) {
+        writeSessionIntentUuid(projectDir, sessionId, liveUuid);
+      } else {
+        clearSessionIntentUuid(projectDir, sessionId);
       }
     }
   }
@@ -188,6 +223,17 @@ const last = getField(content, "Last Completed Stage") ?? "none";
 const next = getField(content, "Next Action") ?? "resume current stage";
 const agent = getField(content, "Active Agent") ?? "unknown";
 const scope = getField(content, "Scope") ?? "unknown";
+
+// Unit-level checkpoint (issue 681 claim 2): when a per-unit stage stopped
+// mid-unit, name the exact unit, its state, and — for a paused unit — the
+// recorded reason and next action, so a fresh session lands on the stopping
+// point instead of re-deriving it from disk coverage.
+const activeUnit = getField(content, "Active Unit");
+const unitLine = activeUnit
+  ? `Active Unit: ${activeUnit} (${getField(content, "Unit State") ?? "in-progress"}` +
+    `${getField(content, "Unit Pause Reason") ? `; reason: ${getField(content, "Unit Pause Reason")}` : ""}` +
+    `${getField(content, "Unit Next Action") ? `; next: ${getField(content, "Unit Next Action")}` : ""})\n`
+  : "";
 
 // Check for compaction recovery breadcrumb
 const recoveryFile = recoveryFilePath(projectDir);
@@ -221,7 +267,7 @@ Status: ${status}
 Active Agent: ${agent}
 Last Completed: ${last}
 Next Action: ${next}
-${recovery}${driftNote}On resume: offer the user the standard resume options (Resume / Redo / Jump / Start Fresh). Check the active intent's aidlc-state.md for full context.
+${unitLine}${recovery}${driftNote}On resume: offer the user the standard resume options (Resume / Redo / Jump / Start Fresh). Check the active intent's aidlc-state.md for full context.
 
 FORWARDING-LOOP DISCIPLINE (non-negotiable — the engine owns ALL routing):
 - The engine binary (\`aidlc-orchestrate.ts\`) is the ONLY authority on the next move. You run it, you do EXACTLY what its one directive says, you commit with \`report\`, you repeat. You never re-derive routing yourself.

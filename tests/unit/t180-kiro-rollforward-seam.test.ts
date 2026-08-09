@@ -28,7 +28,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,15 +52,27 @@ function runAdapter(
   projectDir: string,
   target: string,
   payload: unknown,
+  env: NodeJS.ProcessEnv = {},
 ): { stdout: string; code: number } {
   const r = spawnSync("bun", [join(projectDir, ".kiro", "hooks", "aidlc-kiro-adapter.ts"), target], {
     cwd: projectDir,
     input: typeof payload === "string" ? payload : JSON.stringify(payload),
     encoding: "utf-8",
-    env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir },
+    env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir, ...env },
     timeout: 30_000,
   });
   return { stdout: r.stdout ?? "", code: r.status ?? -1 };
+}
+
+function fakeCompiledExecutable(projectDir: string): string {
+  const path = join(projectDir, process.platform === "win32" ? "fake-aidlc.cmd" : "fake-aidlc");
+  if (process.platform === "win32") {
+    writeFileSync(path, "@echo off\r\necho %*\r\n", "utf-8");
+  } else {
+    writeFileSync(path, "#!/bin/sh\nprintf '%s\\n' \"$*\"\n", "utf-8");
+    chmodSync(path, 0o755);
+  }
+  return path;
 }
 
 // Build an expanded-prompt body carrying the forwarding-loop anchor the seam
@@ -117,6 +129,53 @@ describe("t180 verb-intercept turn-clock + read-only/nav latch", () => {
       expect(latch.turn).toBe(1);
       expect(latch.source).toBe("workspace-verb");
       expect(latch.flag).toBe("space-create teamB");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("2b: plugin list dispatches off-band and stamps the plugin-verb latch", () => {
+    const dir = scratchProject();
+    try {
+      const r = runAdapter(dir, "verb-intercept", {
+        prompt: promptWithNext("plugin list --json"),
+        cwd: dir,
+      });
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain("SYSTEM (deterministic harness dispatch)");
+      expect(r.stdout).toContain("/aidlc plugin list --json");
+      const latch = JSON.parse(readFileSync(latchPath(dir), "utf-8")) as {
+        turn?: number;
+        flag?: string;
+        source?: string;
+      };
+      expect(latch.turn).toBe(1);
+      expect(latch.source).toBe("plugin-verb");
+      expect(latch.flag).toBe("plugin list --json");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("2c: compiled plugin dispatch translates internal utility names back to public argv", () => {
+    const dir = scratchProject();
+    try {
+      const executable = fakeCompiledExecutable(dir);
+      for (const command of [
+        "plugin list --json",
+        "plugin sync",
+        "plugin select test-pro another-plugin",
+      ]) {
+        const r = runAdapter(
+          dir,
+          "verb-intercept",
+          { prompt: promptWithNext(command), cwd: dir },
+          { AIDLC_COMPILED_EXECUTABLE: executable },
+        );
+        expect(r.code, command).toBe(0);
+        const relayed = r.stdout.match(/--- OUTPUT ---\n([\s\S]*?)\n--- END OUTPUT ---/)?.[1].trim();
+        expect(relayed, command).toBe(command);
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -182,7 +241,7 @@ describe("t180 verb-intercept turn-clock + read-only/nav latch", () => {
       expect(r.stdout).toContain("SYSTEM (deterministic engine pre-dispatch)");
       expect(r.stdout).toContain('"kind":"print"');
       expect(r.stdout).toContain(
-        "aidlc-utility.ts intent-birth --scope feature",
+        "aidlc-utility.ts intent-create --scope feature",
       );
       expect(existsSync(counterPath(dir))).toBe(true);
       expect(readFileSync(counterPath(dir), "utf-8").trim()).toBe("1");
@@ -264,7 +323,7 @@ describe("t180 pretool-block roll-forward backstop (exit-code contract)", () => 
     const dir = scratchProject();
     try {
       seedClock(dir, 3, 3);
-      const r = runAdapter(dir, "pretool-block", { tool_input: { command: BARE_NEXT }, cwd: dir });
+      const r = runAdapter(dir, "guard-tool-call", { tool_input: { command: BARE_NEXT }, cwd: dir });
       expect(r.code).toBe(2);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -275,7 +334,7 @@ describe("t180 pretool-block roll-forward backstop (exit-code contract)", () => 
     const dir = scratchProject();
     try {
       seedClock(dir, 3, 3);
-      const r = runAdapter(dir, "pretool-block", {
+      const r = runAdapter(dir, "guard-tool-call", {
         tool_input: { command: `${BARE_NEXT} --stage foo` },
         cwd: dir,
       });
@@ -289,7 +348,7 @@ describe("t180 pretool-block roll-forward backstop (exit-code contract)", () => 
     const dir = scratchProject();
     try {
       seedClock(dir, 3, 2);
-      const r = runAdapter(dir, "pretool-block", { tool_input: { command: BARE_NEXT }, cwd: dir });
+      const r = runAdapter(dir, "guard-tool-call", { tool_input: { command: BARE_NEXT }, cwd: dir });
       expect(r.code).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -300,7 +359,7 @@ describe("t180 pretool-block roll-forward backstop (exit-code contract)", () => 
     const dir = scratchProject();
     try {
       // aidlc/ exists but no counter and no latch were ever written.
-      const r = runAdapter(dir, "pretool-block", { tool_input: { command: BARE_NEXT }, cwd: dir });
+      const r = runAdapter(dir, "guard-tool-call", { tool_input: { command: BARE_NEXT }, cwd: dir });
       expect(r.code).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -316,7 +375,7 @@ describe("t180 pretool-block roll-forward backstop (exit-code contract)", () => 
         '--scope feature "build auth across both repos"',
         ["--scope", "feature", "build auth across both repos"],
       );
-      const r = runAdapter(dir, "pretool-block", {
+      const r = runAdapter(dir, "guard-tool-call", {
         tool_input: { command: BARE_NEXT },
         cwd: dir,
       });
@@ -337,7 +396,7 @@ describe("t180 pretool-block roll-forward backstop (exit-code contract)", () => 
         raw,
         ["--scope", "feature", "build auth across both repos"],
       );
-      const r = runAdapter(dir, "pretool-block", {
+      const r = runAdapter(dir, "guard-tool-call", {
         tool_input: { command: `${BARE_NEXT} ${raw}` },
         cwd: dir,
       });
@@ -359,7 +418,7 @@ describe("t180 pretool-block roll-forward backstop (exit-code contract)", () => 
         raw,
         ["--scope", "poc", "answer the question; continue without waiting"],
       );
-      const r = runAdapter(dir, "pretool-block", {
+      const r = runAdapter(dir, "guard-tool-call", {
         tool_input: {
           command:
             `${BARE_NEXT} --scope poc answer\\ the\\ question\\;\\ continue\\ without\\ waiting`,

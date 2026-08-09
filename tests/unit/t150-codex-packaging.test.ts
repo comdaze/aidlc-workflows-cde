@@ -46,6 +46,8 @@ const TRUST_SUFFIXES = [
   "pre_tool_use:0:0",
   "pre_tool_use:1:0",
   "pre_tool_use:2:0",
+  "pre_tool_use:3:0",
+  "pre_tool_use:4:0",
   "post_tool_use:0:0",
   "post_tool_use:1:0",
   "post_tool_use:2:0",
