@@ -124,7 +124,9 @@ describe("guarantee-principle gate (mechanism >= minMechanism)", () => {
     // test today claims it at cli mechanism, so it must be UNCOVERED — proving
     // a hypothetical .none. claim would be gated out, never counted as covered.
     const { rows } = buildRegistry();
-    const sub = rows.find((r) => r.unitClass === "subcommand");
+    const sub = rows.find(
+      (r) => r.unitClass === "subcommand" && r.status !== "covered",
+    );
     expect(sub).toBeDefined();
     expect(sub!.minMechanism).toBe("cli");
     // Status is UNCOVERED (no adequate claim), never `covered`.
@@ -753,10 +755,17 @@ describe("mechanismsOf is body-derived (milestone 3)", () => {
     "unit/t220-tier-projection-module.test.ts",
     // Spawns the project's own aidlc-utility.ts doctor under bun.
     "unit/t259-doctor-ide-hook-registration.test.ts",
+
     "unit/t233-upstream-coverage-matching.test.ts",
     "unit/t231-handler-additions.test.ts",
     "unit/t238-build-binaries.test.ts",
+    "unit/t267-usage.test.ts",
+    "unit/t270-metrics-transport.test.ts",
     "unit/t240-opencode-packaging.test.ts",
+    "unit/t263-reviewer-terminal-ordering.test.ts",
+    "unit/t264-review-freeze-hook.test.ts",
+    "unit/t266-conversation-language-rule.test.ts",
+    "unit/t273-scope-aware-phase-dirs.test.ts",
     "integration/t102.test.ts",
     "integration/t104.test.ts",
     "integration/t105.test.ts",
@@ -779,7 +788,7 @@ describe("mechanismsOf is body-derived (milestone 3)", () => {
     "integration/t162-per-intent-layout-cli.test.ts",
     "integration/t163-reaper-steal-race.test.ts",
     "integration/t164-shard-ordering-and-lock-bucket.test.ts",
-    "integration/t165-intent-birth-p4.test.ts",
+    "integration/t165-intent-create-p4.test.ts",
     "integration/t166-multi-repo-construction.test.ts",
     "integration/t171-birth-gate-registry.test.ts",
     "integration/t172-migration-audit-trail.test.ts",
@@ -854,6 +863,7 @@ describe("mechanismsOf is body-derived (milestone 3)", () => {
     "unit/t179-orchestrate-rollforward-guard.test.ts",
     "unit/t180-kiro-rollforward-seam.test.ts",
     "unit/t182-codekb-placement.test.ts",
+    "unit/t248-codekb-scope-diff.test.ts",
     "unit/t184-stage-graph-drift.test.ts",
     "unit/t186-foreach-per-unit-iteration.test.ts",
     "unit/t188-human-presence-gate.test.ts",
@@ -896,9 +906,16 @@ describe("mechanismsOf is body-derived (milestone 3)", () => {
     "unit/t243-doctor-bundle.test.ts",
     "unit/t247-claim-sources-sensor.test.ts",
     "unit/t258-ars-subcommand.test.ts",
+    "unit/t261-audit-authority-floor.test.ts",
+    "unit/t260-unit-lifecycle-receipts.test.ts",
     "unit/t262-plugin-sensor-name-guard.test.ts",
+    "unit/t265-plan-approval-guard.test.ts",
+    "unit/t266-review-class.test.ts",
+    "unit/t271-review-iteration-ceiling.test.ts",
+    "unit/t272-unit-major-code-gen.test.ts",
     "unit/t263-sensor-coalesce.test.ts",
     "unit/t248-steering-content-delivery.test.ts",
+    "unit/t255-workspace-sync.test.ts",
     "unit/t27.test.ts",
     "unit/t29.test.ts",
     "unit/t30-hook-session-end.test.ts",

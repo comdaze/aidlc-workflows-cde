@@ -118,6 +118,24 @@ it runs once after all five Construction `for_each` stages have iterated
 across Units, consuming their aggregated outputs. No explicit `fan_in` or
 aggregation field — graph traversal figures it out.
 
+### `summary_confirmation`
+
+Optional enum controlling the deterministic pre-generation checkpoint for a
+stage's question flow:
+
+- `required` means every execution must create a questions file and obtain the
+  consolidated **Looks correct** confirmation before artifact generation.
+- `if-present` applies the same enforcement only when a conditional question
+  flow created a questions file.
+
+The receipt is not inferred from markdown alone. `aidlc-log.ts` records the
+reserved `SUMMARY_CONFIRMATION_RECORDED` event after a matching prompt record
+and a later human turn, binding it to the questions-file SHA-256. Completion refuses
+a missing or stale receipt, a changed questions file, or a declared artifact
+without a native write after the receipt. Per-unit stages require one
+unit-scoped receipt per applicable Unit; isolated runs use the same check with
+their `single-stage:<slug>` workflow identity.
+
 ### `workspace_requires`
 
 Boolean, default `false`. Set `true` on stages that must write **source code to
@@ -360,7 +378,7 @@ means dropping its `.md` file in `.claude/agents/` with the required
 frontmatter. See
 [Contributing: Adding an Agent](11-contributing.md#adding-an-agent).
 
-### `reviewer` and `reviewer_max_iterations`
+### `reviewer`, `reviewer_max_iterations`, and `review_class`
 
 Optional. `reviewer` names a quality-gate agent invoked after the stage body
 produces its artifacts and before the approval gate (see [Stage
@@ -376,6 +394,23 @@ to 2. Omit the field on a stage that declares no `reviewer`: the compiler reject
 a `reviewer_max_iterations` declared without a `reviewer` (the schema error
 `reviewer_max_iterations requires a reviewer` fails the graph compile), so it is
 never silently ignored.
+
+`review_class` selects the review contract: `adversarial` (the refute-and-repair
+loop above — the default when a `reviewer` is declared without a class) or
+`advisory` (one pass whose findings are quoted verbatim at the human approval
+gate, no repair loop; the effective iteration budget is 1). The shipped split:
+the 7 human-gated ideation/inception prose stages declare `advisory`; the 5
+Construction design/build stages default `adversarial`. `none` is deliberately
+not a stage value — a stage that wants no review deletes its `reviewer:` line;
+`none` exists on the scope `review_cap` and the per-run `--review` override,
+which can silence a declared reviewer without editing stages. The effective
+class at runtime is the LOWEST of stage declaration, the active scope's
+`review_cap` (the shipped `bugfix`, `poc`, and `workshop` scopes cap to
+`advisory`), and the per-run override — a cap or override can lower a class but
+never raise one. Autonomous swarm reviews are exempt from caps and overrides:
+inside a Bolt the reviewer is the only pre-merge verification, so the declared
+class always applies there. Like the cap, `review_class` requires a `reviewer`
+(schema error `review_class requires a reviewer`).
 
 ---
 

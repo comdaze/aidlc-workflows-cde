@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const AUTHORED_HOOKS = join(REPO_ROOT, "harness", "kiro-ide", "hooks");
 const DIST_HOOKS = join(REPO_ROOT, "dist", "kiro-ide", ".kiro", "hooks");
+const KIRO_IDE_GUIDE = join(REPO_ROOT, "docs", "guide", "harnesses", "kiro-ide.md");
 
 interface HookEntry {
   name: string;
@@ -38,30 +39,24 @@ const EXPECTED_V2_REGISTRATIONS: Array<{
   adapterTarget: string;
 }> = [
   { file: "aidlc-session-start.json", trigger: "SessionStart", matcher: null, adapterTarget: "session-start" },
-  { file: "aidlc-mint.json", trigger: "UserPromptSubmit", matcher: null, adapterTarget: "mint" },
+  { file: "aidlc-record-human-turn.json", trigger: "UserPromptSubmit", matcher: null, adapterTarget: "record-human-turn" },
   // Matched, NOT unmatched. As a bare PreToolUse this ran on every tool call —
-  // every read, every grep — at ~80ms of bun startup each, only to hit a carve-out
-  // that returns 0 immediately under autonomous Construction or with no gate open
-  // (i.e. for the entire duration of a `vibe` session). The matcher is the union of
-  // the mutation surface the other two hooks recognise: a human-presence floor has
-  // no reason to gate a read, and blocking *changes* while a gate is open is
-  // untouched. Keep this a superset of audit-logger's and shell-post's matchers —
-  // see divergence A12.
+  // every read, every grep — at ~80ms of bun startup each, only to reach a
+  // carve-out that returns 0 immediately under autonomous Construction or with no
+  // gate open. A human-presence floor has no reason to gate a read; blocking
+  // *changes* while a gate is open is untouched. Keep this a superset of the
+  // write-audit-log and shell-post matchers — see divergence A12.
   {
-    file: "aidlc-block.json",
+    file: "aidlc-enforce-approval-gate.json",
     trigger: "PreToolUse",
     matcher: "fs_write|str_replace|fs_append|execute_bash",
-    adapterTarget: "block",
+    adapterTarget: "enforce-approval-gate",
   },
-  { file: "aidlc-audit-logger.json", trigger: "PostToolUse", matcher: "fs_write|str_replace|fs_append", adapterTarget: "audit-and-sensors" },
-  // ONE registration on the execute_bash matcher, not two. runtime-compile and
-  // state-sync are both payload-independent on the IDE, so two registrations
-  // meant two bun startups per shell command for no added information; the
-  // shell-post target fans out to both core hooks in one process. A future edit
-  // that re-splits them regresses that — see divergence A8.
-  { file: "aidlc-shell-post.json", trigger: "PostToolUse", matcher: "execute_bash", adapterTarget: "shell-post" },
+  { file: "aidlc-write-audit-log.json", trigger: "PostToolUse", matcher: "fs_write|str_replace|fs_append", adapterTarget: "audit-and-sensors" },
+  { file: "aidlc-rebuild-stage-graph.json", trigger: "PostToolUse", matcher: "execute_bash", adapterTarget: "rebuild-stage-graph" },
+  { file: "aidlc-sync-workflow-state.json", trigger: "PostToolUse", matcher: "execute_bash", adapterTarget: "sync-workflow-state" },
   { file: "aidlc-log-subagent.json", trigger: "PostToolUse", matcher: "^(subagent_.+|invoke_sub_agent)$", adapterTarget: "log-subagent" },
-  { file: "aidlc-stop.json", trigger: "Stop", matcher: null, adapterTarget: "stop" },
+  { file: "aidlc-continue-workflow.json", trigger: "Stop", matcher: null, adapterTarget: "continue-workflow" },
 ];
 
 // The registrations aidlc-shell-post supersedes. They must NOT ship: an install
@@ -73,15 +68,24 @@ const SUPERSEDED_V2_FILES = [
 
 // Legacy .kiro.hook files that MUST be present (coexistence with pre-1.0 IDE).
 const EXPECTED_LEGACY_FILES = [
-  "aidlc-audit-logger.kiro.hook",
-  "aidlc-block.kiro.hook",
+  "aidlc-write-audit-log.kiro.hook",
+  "aidlc-enforce-approval-gate.kiro.hook",
   "aidlc-log-subagent.kiro.hook",
-  "aidlc-mint.kiro.hook",
-  "aidlc-runtime-compile.kiro.hook",
+  "aidlc-record-human-turn.kiro.hook",
+  "aidlc-rebuild-stage-graph.kiro.hook",
   "aidlc-session-end.kiro.hook",
   "aidlc-session-start.kiro.hook",
-  "aidlc-stop.kiro.hook",
-  "aidlc-sync-statusline.kiro.hook",
+  "aidlc-continue-workflow.kiro.hook",
+  "aidlc-sync-workflow-state.kiro.hook",
+];
+
+const RETIRED_HOOK_BASENAMES = [
+  "audit-logger",
+  "block",
+  "mint",
+  "runtime-compile",
+  "stop",
+  "sync-statusline",
 ];
 
 function parseHookJson(dir: string, file: string): HookFile {
@@ -146,17 +150,24 @@ describe("t245 Kiro IDE hook registrations (v2 schema contract)", () => {
         }
       });
 
-      test("exactly one v2 registration carries the execute_bash matcher", () => {
+      // Divergence A8 (one merged PostToolUse(execute_bash) registration) was
+      // DROPPED at the 2.5.59 sync: upstream renamed both hooks it merged, which
+      // would have left the fork's merged target dispatching to two core files that
+      // no longer exist. Upstream ships the pair separately, so the assertion is now
+      // that every execute_bash registration resolves — not that there is one.
+      test("every v2 registration on the execute_bash matcher resolves", () => {
         const onExecuteBash = EXPECTED_V2_REGISTRATIONS.filter(
           (r) => r.matcher === "execute_bash",
         );
-        expect(onExecuteBash.length).toBe(1);
-        const parsed = parseHookJson(tree.dir, onExecuteBash[0].file);
-        expect(parsed.hooks[0].matcher).toBe("execute_bash");
+        expect(onExecuteBash.length).toBeGreaterThan(0);
+        for (const reg of onExecuteBash) {
+          const parsed = parseHookJson(tree.dir, reg.file);
+          expect(parsed.hooks[0].matcher).toBe("execute_bash");
+        }
       });
 
       test("dispatch-rules has NO IDE registration (always-included steering is the delivery channel)", () => {
-        expect(existsSync(join(tree.dir, "aidlc-dispatch-rules.json"))).toBe(
+        expect(existsSync(join(tree.dir, "aidlc-deliver-stage-rules.json"))).toBe(
           false,
         );
       });
@@ -180,5 +191,22 @@ describe("t245 Kiro IDE hook registrations (v2 schema contract)", () => {
         expect(existsSync(join(DIST_HOOKS, legacy))).toBe(true);
       });
     }
+  });
+
+  test("upgrade instructions remove retired hook registrations before overlaying the new tree", () => {
+    const guide = readFileSync(KIRO_IDE_GUIDE, "utf-8");
+    const cleanupStart = guide.indexOf("for retired_hook in");
+    const overlayCopy = guide.indexOf("cp -R dist/kiro-ide/.kiro/.");
+
+    expect(cleanupStart).toBeGreaterThanOrEqual(0);
+    expect(overlayCopy).toBeGreaterThan(cleanupStart);
+
+    const cleanup = guide.slice(cleanupStart, overlayCopy);
+    for (const basename of RETIRED_HOOK_BASENAMES) {
+      expect(cleanup).toContain(basename);
+    }
+    expect(cleanup).toMatch(
+      /rm -f \\\n\s+"your-project\/\.kiro\/hooks\/aidlc-\$\{retired_hook\}\.json" \\\n\s+"your-project\/\.kiro\/hooks\/aidlc-\$\{retired_hook\}\.kiro\.hook"/,
+    );
   });
 });

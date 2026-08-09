@@ -96,9 +96,10 @@ describe("t259 doctor — Kiro IDE hook registration", () => {
     const out = runDoctor();
     const r = row(out, REGISTRATION);
     expect(r).toContain("✓");
-    // 7 v2 since aidlc-shell-post merged the two execute_bash registrations
+    // 8 v2 at 2.5.59. Divergence A8 (one merged PostToolUse(execute_bash)
+    // registration) was dropped at that sync, so the pair ships separately again.
     // (divergence A8); 9 legacy, which stay split for pre-1.0 IDEs.
-    expect(r).toMatch(/7 v2/);
+    expect(r).toMatch(/8 v2/);
     expect(r).toMatch(/9 legacy/);
   });
 
@@ -125,7 +126,7 @@ describe("t259 doctor — Kiro IDE hook registration", () => {
     );
     const r = row(runDoctor(), SUPERSEDED);
     expect(r).toMatch(/aidlc-runtime-compile\.json/);
-    expect(r).toMatch(/twice/);
+    expect(r).toMatch(/renamed upstream/);
     rmSync(join(hooksDir, "aidlc-runtime-compile.json"), { force: true });
   });
 

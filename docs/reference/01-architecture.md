@@ -160,11 +160,11 @@ If any of the three is false, default to per-workflow-only.
 
 **Inline stages** -- The conductor reads the lead agent's flat file (e.g., `agents/aidlc-architect-agent.md`) and knowledge from `knowledge/[agent]/` for persona framing, then executes the stage directly in conversation. This allows real-time user interaction: asking questions, resolving ambiguity, and iterating on artifacts before approval.
 
-Twenty-eight stages use inline execution, including all three Initialization stages (Workspace Scaffold, Workspace Detection, State Init — all run deterministically inside `aidlc-utility intent-birth`), all Ideation stages, five Inception stages (Requirements Analysis, Refined Mockups, Application Design, Units Generation, Delivery Planning), six Construction stages (Functional Design, NFR Requirements, NFR Design, Infrastructure Design, Build and Test, CI Pipeline), and all Operation stages. Note: Build and Test (3.6) runs once after all units are complete, not per-unit.
+Twenty-eight stages use inline execution, including all three Initialization stages (Workspace Scaffold, Workspace Detection, State Init — all run deterministically inside `aidlc-utility intent-create`), all Ideation stages, five Inception stages (Requirements Analysis, Refined Mockups, Application Design, Units Generation, Delivery Planning), six Construction stages (Functional Design, NFR Requirements, NFR Design, Infrastructure Design, Build and Test, CI Pipeline), and all Operation stages. Note: Build and Test (3.6) runs once after all units are complete, not per-unit.
 
 **Subagent stages** -- The conductor prepares context (prior artifacts, project description, workspace findings) and delegates to a Claude Code Task tool subagent. The subagent executes autonomously and returns a structured summary. This is used for stages that benefit from focused, independent work without user interaction during execution. If a subagent call fails, the conductor retries once with a reduced-context prompt, then offers the user inline execution or skip-and-revisit as fallback options.
 
-Four stages use dispatched execution: Reverse Engineering (2.1, `mode: pipeline` — developer scan then architect synthesis-and-write), Practices Discovery (2.2, `mode: subagent` — pipeline-deploy lead draft, mutually blind quality/developer/devsecops spokes, human interview, lead integration), User Stories (2.4, `mode: mob` — product lead draft plus design/developer/quality contribution rounds), and Code Generation (3.5, focused developer subagent). The complete topology is 28 inline / 2 subagent / 1 pipeline / 1 mob. Workspace Detection (0.2) runs deterministically inside `aidlc-utility intent-birth`, not as a subagent.
+Four stages use dispatched execution: Reverse Engineering (2.1, `mode: pipeline` — developer scan then architect synthesis-and-write), Practices Discovery (2.2, `mode: subagent` — pipeline-deploy lead draft, mutually blind quality/developer/devsecops spokes, human interview, lead integration), User Stories (2.4, `mode: mob` — product lead draft plus design/developer/quality contribution rounds), and Code Generation (3.5, focused developer subagent). The complete topology is 28 inline / 2 subagent / 1 pipeline / 1 mob. Workspace Detection (0.2) runs deterministically inside `aidlc-utility intent-create`, not as a subagent.
 
 ```mermaid
 flowchart LR
@@ -292,8 +292,8 @@ dist/claude/.claude/
 +-- CLAUDE.md
 +-- settings.json
 +-- hooks/
-|   +-- aidlc-audit-logger.ts
-|   +-- aidlc-sync-statusline.ts
+|   +-- aidlc-write-audit-log.ts
+|   +-- aidlc-sync-workflow-state.ts
 |   +-- aidlc-validate-state.ts
 |   +-- aidlc-log-subagent.ts
 |   +-- aidlc-session-start.ts
@@ -472,7 +472,7 @@ appends — there is intentionally no `merge=union` attribute.
 
 11. **Phase boundary verification** -- Traceability checks run automatically at phase transitions (Initialization->Ideation auto-proceed, Ideation->Inception, Inception->Construction, Construction->Operation). This catches missing requirements-to-design links, orphaned artifacts, and inconsistencies before downstream stages build on incomplete foundations.
 
-12. **Hook-based audit logging** -- A PostToolUse hook on Write/Edit operations automatically logs artifact creation and modification to the intent's `audit/` shards. A PreCompact hook validates state file structure before context compaction. A SubagentStop hook logs subagent completions. The 74-event taxonomy (defined in `knowledge/aidlc-shared/audit-format.md`; see [State Machine](12-state-machine.md) for the emitter registry) enables post-hoc analysis -- key events include `STAGE_STARTED`, `STAGE_COMPLETED`, `DECISION_RECORDED`, `SCOPE_CHANGED`, and `RULE_LEARNED`.
+12. **Hook-based audit logging** -- A PostToolUse hook on Write/Edit operations automatically logs artifact creation and modification to the intent's `audit/` shards. A PreCompact hook validates state file structure before context compaction. A SubagentStop hook logs subagent completions. The 82-event taxonomy (defined in `knowledge/aidlc-shared/audit-format.md`; see [State Machine](12-state-machine.md) for the emitter registry) enables post-hoc analysis -- key events include `STAGE_STARTED`, `STAGE_COMPLETED`, `DECISION_RECORDED`, `SCOPE_CHANGED`, and `RULE_LEARNED`.
 
 13. **No nested delegation** -- The conductor (SKILL.md) performs every agent Task call. Agents never invoke each other or spawn subagents. This keeps the delegation graph flat and debuggable.
 
@@ -521,7 +521,7 @@ introduce regressions.
 | Level | Directory | What It Covers |
 |-------|-----------|----------------|
 | **Smoke** (L1) | `tests/smoke/` | File existence, agent/stage/protocol structure, SKILL.md graph consistency, settings.json schema. Fast structural checks that catch missing or misnamed files. No LLM. |
-| **Unit** (L1) | `tests/unit/` | The 14 hooks, CLI tools, stage/agent frontmatter, knowledge inventory, the orchestration-engine handlers, and other single-component contracts. Each test isolates one component. No LLM. |
+| **Unit** (L1) | `tests/unit/` | The 16 hooks, CLI tools, stage/agent frontmatter, knowledge inventory, the orchestration-engine handlers, and other single-component contracts. Each test isolates one component. No LLM. |
 | **Integration** (L2) | `tests/integration/` | Cross-component contracts (scope-to-stage mapping, stage-agent cross-checks, protocol compliance, audit/runtime-graph end-to-end) and the live stage/CLI utilities driven through the `claude` CLI or SDK. The live files skip cleanly when `claude` is absent. |
 | **E2E** (L3) | `tests/e2e/` | Full lifecycle and worktree primitives, plus the rendered-terminal (`tui-drive.ts`) journeys that prove answering real AskUserQuestion gates advances disk state. The live journeys require `claude` + Bedrock creds and are gated behind `AIDLC_TUI_LIVE=1`. |
 

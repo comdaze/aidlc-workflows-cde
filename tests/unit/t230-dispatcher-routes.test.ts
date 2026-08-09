@@ -1,4 +1,4 @@
-// covers: tool:aidlc, tool:aidlc-sensor, tool:aidlc-swarm, hook:aidlc-validate-state, hook:aidlc-statusline
+// covers: tool:aidlc, tool:aidlc-sensor, tool:aidlc-swarm, hook:aidlc-validate-state, hook:aidlc-review-freeze, hook:aidlc-statusline
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
@@ -266,10 +266,10 @@ describe("t230 dispatcher route parity", () => {
       fixture: true,
     },
     {
-      name: "intent birth maps through workspace parser",
-      routerArgs: ["intent", "birth"],
+      name: "intent create maps through workspace parser",
+      routerArgs: ["intent", "create"],
       tool: "aidlc-utility.ts",
-      toolArgs: ["intent-birth"],
+      toolArgs: ["intent-create"],
     },
     {
       name: "space list maps through workspace parser",
@@ -329,6 +329,13 @@ describe("t230 dispatcher route parity", () => {
       routerArgs: ["config", "set", "test-strategy", "standard"],
       tool: "aidlc-utility.ts",
       toolArgs: ["config-change", "--test-strategy", "standard"],
+      fixture: true,
+    },
+    {
+      name: "config review maps to config-change",
+      routerArgs: ["config", "set", "review", "advisory"],
+      tool: "aidlc-utility.ts",
+      toolArgs: ["config-change", "--review", "advisory"],
       fixture: true,
     },
     {
@@ -631,6 +638,18 @@ describe("t230 dispatcher help and errors", () => {
     expect(res.stderr.toString("utf-8")).toBe("aidlc: unknown verb 'bogus' for noun 'state'; try 'aidlc help --all'\n");
   });
 
+  test("plugin help and invalid plugin verbs use the shared noun grammar", () => {
+    const help = viaDispatcher(["plugin", "help"], REPO_ROOT);
+    expect(help.exitCode).toBe(0);
+    expect(help.stdout.toString("utf-8")).toContain("plugin select [names]");
+
+    const invalid = viaDispatcher(["plugin", "remove"], REPO_ROOT);
+    expect(invalid.exitCode).toBe(1);
+    expect(invalid.stderr.toString("utf-8")).toBe(
+      "aidlc: unknown verb 'remove' for noun 'plugin'; try 'aidlc help --all'\n",
+    );
+  });
+
   test("formerly stubbed routes now reach utility handlers", () => {
     const projectDir = makeProject();
     writeMinimalState(projectDir);
@@ -702,6 +721,19 @@ describe("t230 dispatcher hook routing", () => {
     expect(res.exitCode).toBe(0);
     expect(res.stderr.toString("utf-8")).toBe("");
     const heartbeat = "validate-state.last";
+    expect(
+      existsSync(join(seededRecordDir(projectDir), ".aidlc-hooks-health", heartbeat)) ||
+        existsSync(join(dirname(seededRecordDir(projectDir)), ".aidlc-hooks-health", heartbeat)),
+    ).toBe(true);
+  });
+
+  test("hook review-freeze dispatches to run(input) and writes heartbeat", () => {
+    const projectDir = makeProject();
+    const res = viaDispatcher(["hook", "review-freeze"], projectDir, {}, "{}");
+
+    expect(res.exitCode).toBe(0);
+    expect(res.stderr.toString("utf-8")).toBe("");
+    const heartbeat = "review-freeze.last";
     expect(
       existsSync(join(seededRecordDir(projectDir), ".aidlc-hooks-health", heartbeat)) ||
         existsSync(join(dirname(seededRecordDir(projectDir)), ".aidlc-hooks-health", heartbeat)),

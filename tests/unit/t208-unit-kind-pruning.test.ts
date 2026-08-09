@@ -33,13 +33,13 @@ import {
   seededRecordDir,
   seededStateFile,
 } from "../harness/fixtures.ts";
+import { appendAuditEntry } from "../../dist/claude/.claude/tools/aidlc-audit.ts";
 
 resetAidlcEnv();
 
 const BUN = process.execPath;
 const ORCH = join(AIDLC_SRC, "tools", "aidlc-orchestrate.ts");
 const LOG = join(AIDLC_SRC, "tools", "aidlc-log.ts");
-const AUDIT = join(AIDLC_SRC, "tools", "aidlc-audit.ts");
 const RP = `aidlc/spaces/${DEFAULT_SPACE}/intents/${DEFAULT_RECORD_DIR}`;
 
 // nfr-requirements produces[] and their per-kind applicability (verified against
@@ -154,8 +154,8 @@ function runReport(proj: string, args: string[], enforceGuard = false): Directiv
   }
 }
 
-function logReviewReady(proj: string, unit: string): void {
-  const r = spawnSync(BUN, [
+function logReviewReady(proj: string, unit: string, iteration = 1): void {
+  const args = [
     LOG,
     "review",
     "--stage",
@@ -165,14 +165,15 @@ function logReviewReady(proj: string, unit: string): void {
     "--unit",
     unit,
     "--iteration",
-    "1",
-    "--verdict",
-    "READY",
+    String(iteration),
     "--project-dir",
     proj,
-  ], { encoding: "utf-8" });
-  if ((r.status ?? -1) !== 0) {
-    throw new Error(`review log failed: ${r.stdout ?? ""}${r.stderr ?? ""}`);
+  ];
+  for (const suffix of [[], ["--verdict", "READY"]]) {
+    const r = spawnSync(BUN, [...args, ...suffix], { encoding: "utf-8" });
+    if ((r.status ?? -1) !== 0) {
+      throw new Error(`review log failed: ${r.stdout ?? ""}${r.stderr ?? ""}`);
+    }
   }
 }
 
@@ -184,22 +185,11 @@ function logArtifactUpdated(proj: string, unit: string): void {
     "functional-design",
     "business-rules.md",
   );
-  const r = spawnSync(BUN, [
-    AUDIT,
-    "append",
-    "ARTIFACT_UPDATED",
-    "--field",
-    "Tool=Edit",
-    "--field",
-    `File=${file}`,
-    "--field",
-    `Context=construction > ${unit} > functional-design > business-rules.md`,
-    "--project-dir",
-    proj,
-  ], { encoding: "utf-8" });
-  if ((r.status ?? -1) !== 0) {
-    throw new Error(`artifact log failed: ${r.stdout ?? ""}${r.stderr ?? ""}`);
-  }
+  appendAuditEntry("ARTIFACT_UPDATED", {
+    Tool: "Edit",
+    File: file,
+    Context: `construction > ${unit} > functional-design > business-rules.md`,
+  }, proj);
 }
 
 function seedDependencyArtifact(
@@ -398,7 +388,7 @@ describe("t208 engine unit-kind pruning", () => {
     expect(refused.message).toContain("1 of 2 applicable units");
     expect(refused.message).toContain("(beta)");
 
-    logReviewReady(proj, "beta");
+    logReviewReady(proj, "beta", 2);
     const accepted = runReport(
       proj,
       ["--stage", "functional-design", "--result", "approved"],

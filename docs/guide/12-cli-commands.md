@@ -34,14 +34,16 @@ All AI-DLC commands start with the orchestrator invocation. This chapter is a co
 | `/aidlc --scope <name>` | Change the active scope |
 | `/aidlc --depth <level>` | Override depth level (minimal, standard, comprehensive) |
 | `/aidlc --test-strategy <level>` | Override test strategy (minimal, standard, comprehensive) |
-| `/aidlc config get <key>` | Print active workflow config (`depth`, `test-strategy`) |
-| `/aidlc config set <key> <value>` | Change active workflow config (`depth`, `test-strategy`) |
+| `/aidlc --review <class>` | Cap stage reviews for this run (adversarial, advisory, none) |
+| `/aidlc config get <key>` | Print active workflow config (`depth`, `test-strategy`, `review`) |
+| `/aidlc config set <key> <value>` | Change active workflow config (`depth`, `test-strategy`, `review`) |
 | `/aidlc config list` | List active workflow config (`--json` for structured output) |
+| `/aidlc plugin select [names]` | Show or set the enabled plugin list for this install |
 | `/aidlc plugin list` | List installed plugins and enabled state |
 | `/aidlc plugin sync` | Compose installed plugin roots into the current install |
 | `/aidlc --version` | Print the framework version |
 | `/aidlc --help` | Display usage information |
-| `bun .claude/tools/aidlc-utility.ts select-plugins [names]` | Direct-only: show or set the enabled plugin list for this install |
+| `bun .claude/tools/aidlc-utility.ts select-plugins [names]` | Direct utility form of plugin selection |
 
 ---
 
@@ -175,8 +177,8 @@ and the engine **auto-births** the first intent on your first `/aidlc` (or when
 you describe what to build). Birth runs the three Initialization stages
 (Workspace Scaffold, Workspace Detection, State Init) as a single deterministic
 tool call: it creates the intent's record dir at
-`aidlc/spaces/<space>/intents/<YYMMDD>-<label>/` (the `audit/` shard dir, the
-per-phase artifact dirs, `verification/`) and the empty space-level
+`aidlc/spaces/<space>/intents/<YYMMDD>-<label>/` (the `audit/` shard dir, an
+artifact dir for each phase the scope runs, `verification/`) and the empty space-level
 `aidlc/knowledge/` directory, runs a rule-based workspace scan, and writes that
 intent's `aidlc-state.md` with the scope plan.
 It logs the init-sequence events (`WORKFLOW_STARTED`, `WORKSPACE_SCAFFOLDED`,
@@ -195,7 +197,7 @@ code repo (each an immediate child directory with a `.git`), the birth step
 records the set of repos the intent touches in its `intents.json` row. By default
 it **auto-discovers** every sibling repo; to scope an intent to a specific subset,
 the birth tool accepts `--repos a,b` (a comma-separated list of repo directory
-names). These are flags of the deterministic `aidlc-utility intent-birth` step the
+names). These are flags of the deterministic `aidlc-utility intent-create` step the
 engine runs for you — not `/aidlc` flags you type. During Construction, each git
 operation (worktree, swarm, Bolt) targets one repo; the conductor passes
 `--repo <name>` to anchor it, required only when an intent spans more than one
@@ -259,7 +261,7 @@ When a workflow has issues, `--doctor` also prints a **Workflow diagnosis** sect
 | Check | What it validates |
 |-------|-------------------|
 | Prerequisites | `bun` is installed and on PATH |
-| Hook presence | Every hook `settings.json` wires (its `hooks` blocks + the `statusLine` command — all 14 framework hooks) exists in `.claude/hooks/`; a wired-but-missing hook fails loudly. Sourcing the expected roster from `settings.json` means adding a hook there auto-checks it |
+| Hook presence | Every hook `settings.json` wires (its `hooks` blocks + the `statusLine` command — all 16 framework hooks) exists in `.claude/hooks/`; a wired-but-missing hook fails loudly. Sourcing the expected roster from `settings.json` means adding a hook there auto-checks it |
 | Project structure | `.claude/settings.json` exists (file presence only, no content validation) |
 | Workspace shell | `.claude/` + `aidlc/spaces/default/memory/` are present (the shipped shell) |
 | Submodules | If a `.gitmodules` is present, reports how many submodule paths are declared and how many are uninitialized, naming `git submodule update --init --recursive` when any are (advisory - never fails) |
@@ -277,13 +279,16 @@ When a workflow has issues, `--doctor` also prints a **Workflow diagnosis** sect
 | Keyword overlap | No keyword is claimed by >1 scope |
 | Rule drift | Surfaces any team or project rule heading that overlaps a populated org-policy heading, so you can review it for contradiction (advisory — never fails) |
 | Paired sensor coverage | Confirms every rule that names a paired Sensor resolves to a Sensor some stage actually fires (advisory — never fails) |
+| Workspace records | Reports uncommitted changes under `aidlc/` so shared records are not left only in one checkout (advisory - never fails) |
+| Declared workspace repos | When `repos.json` exists, compares its declared set with the sibling repos runtime discovery sees on disk (advisory - never fails) |
+| Workspace gitignore | When `repos.json` exists, checks that the managed `.gitignore` block matches the declared repo set (advisory - never fails) |
 
 **Example output:**
 
 ```
 ✓ bun installed (required for CLI tools and hooks)
-✓ aidlc-audit-logger.ts present
-✓ aidlc-sync-statusline.ts present
+✓ aidlc-write-audit-log.ts present
+✓ aidlc-sync-workflow-state.ts present
 ✓ aidlc-validate-state.ts present
 ✓ aidlc-log-subagent.ts present
 ✓ aidlc-session-start.ts present
@@ -446,7 +451,7 @@ Change the active scope of a running workflow.
 /aidlc --scope enterprise
 ```
 
-**Behavior:** Updates the scope configuration in `aidlc-state.md`, recalculates which stages should execute and which should be skipped, and logs a `SCOPE_CHANGED` audit event. Can be combined with `--depth` to override the new scope's default depth.
+**Behavior:** Updates the scope configuration in `aidlc-state.md`, recalculates which stages should execute and which should be skipped, and logs a `SCOPE_CHANGED` audit event. Can be combined with `--depth`, `--test-strategy`, and `--review`; all supplied overrides are applied in the same change.
 
 Refused under autonomous Construction (`Construction Autonomy Mode: autonomous`), the same rule as `recompose`: re-shaping the plan needs a human at the gate, and an unattended run has none. Switch to gated Construction first (`aidlc-bolt set-autonomy --mode gated`) or let the swarm finish.
 
@@ -513,6 +518,48 @@ See [Scopes, Depth, and Test Strategy](05-scopes-and-depth.md#the-3-test-strateg
 
 ---
 
+### `/aidlc --review <class>` — Cap stage reviews for this run
+
+Set the per-run review override: a ceiling on how heavyweight the §12a stage
+reviews run for the active workflow.
+
+**Syntax:**
+
+```
+/aidlc --review adversarial
+/aidlc --review advisory
+/aidlc --review none
+```
+
+**Behavior:** Each reviewer-bearing stage declares a review class in its
+frontmatter — `adversarial` (the reviewer refutes the artifact and the lead
+fixes findings across up to `reviewer_max_iterations` passes) or `advisory`
+(one review pass; findings are quoted verbatim at the approval gate for you to
+triage). The effective class per stage is the LOWEST of the stage's
+declaration, the scope's `review_cap` (bugfix, poc, and workshop cap to
+`advisory`), and this override — so `--review advisory` turns every remaining
+adversarial loop into a single decision-support pass, `--review none` skips
+reviewer dispatch entirely, and `--review adversarial` clears the override
+(it cannot raise a class above the stage declaration or the scope cap).
+Autonomous swarm construction is exempt: inside a Bolt the reviewer is the
+only pre-merge verification, so the declared class always applies there.
+Updates the `Review Override` field in `aidlc-state.md` and logs a
+`REVIEW_CLASS_CHANGED` audit event. It can be supplied when a workflow is
+born or alongside `--scope`; a same-as-current scope applies the review
+override as a config change instead of discarding it.
+
+**Valid values:** `adversarial`, `advisory`, `none` (case-insensitive).
+
+**Examples:**
+
+```
+/aidlc --review advisory              Single-pass reviews, findings at the gate
+/aidlc --review none                  No stage reviews this run
+/aidlc --review adversarial           Clear the override (stage defaults apply)
+```
+
+---
+
 ### `/aidlc --version` — Framework version
 
 Print the framework version (`aidlc <X.Y.Z>`) and exit. Read-only — works without a workflow and never prompts to resume one.
@@ -563,14 +610,108 @@ It prints the active space's deterministic
 no audit event; reverse-engineering stage prose invokes it directly so paths
 are never derived by hand.
 
+### `aidlc-utility codekb-scope-diff` - check the code knowledge base before a rerun
+
+This is a **direct utility invocation**, not an `/aidlc codekb-scope-diff` command:
+
+```bash
+bun .claude/tools/aidlc-utility.ts codekb-scope-diff --repo <repo>
+bun .claude/tools/aidlc-utility.ts codekb-scope-diff --repo <repo> --compare <timestamp.md>
+bun .claude/tools/aidlc-utility.ts codekb-scope-diff --repo <repo> --mint --paths src/payments/,src/billing/
+```
+
+The reverse-engineering rerun guard. The codekb store is space-level and
+shared across intents; a rerun replaces it, so the stage checks first:
+
+- **Status mode** (default) reads the store's
+  `reverse-engineering-timestamp.md` Scope of Analysis block and recomputes a
+  content fingerprint over its analyzed paths. Verdicts: `NO_STORE` (first
+  scan), `CURRENT` (analyzed paths unchanged - reuse is safe), `STALE`
+  (analyzed paths changed), `UNVERIFIED` (no computable fingerprint - e.g.
+  not a git work tree), `UNKNOWN_SCOPE` (store predates scope tracking).
+- **Compare mode** (`--compare <incoming timestamp.md>`) answers whether the
+  incoming run's scope covers the store's: `COVERS`, or `NARROWER` plus the
+  exact paths and components an overwrite discards. A `kind: full` scope must
+  include repository root (`./`), and only another full scope can replace a
+  full store without a `NARROWER` warning.
+- **Mint mode** (`--mint --paths <a,b,...>`) prints the fingerprint the
+  architect pastes into the scope block at synthesis time (`unknown` outside
+  a git work tree or when a pathspec is invalid).
+
+Add `--json` for the structured shape. Always exits 0 with the verdict in the
+output (except usage errors); writes nothing, no audit event. The fingerprint
+is a `git write-tree` over a temporary index restricted to the analyzed paths,
+excluding the framework-owned `aidlc/` tree when the workspace root is the
+repository root. It tracks source working-tree content without invalidating
+itself when codekb/state artifacts are written; rebases or squashes that
+rewrite history do not fool it, and reverting an edit restores the original
+fingerprint.
+
 ### `aidlc-utility detect` - read-only workspace scan
 
 `bun .claude/tools/aidlc-utility.ts detect --json` prints the workspace scan (project type, languages, frameworks, build system, and a `submodules` array of any declared git submodules with their initialized state) plus the resolved scopes dir and scope-grid path. Pure read; the composer runs it to learn where scope data lives on the current harness.
 
+### `aidlc-workspace-sync` - clone and reconcile the declared repo set
+
+This is a **direct tool invocation**, not an `/aidlc workspace-sync` command. It
+reconciles a multi-repo workspace against the optional `repos.json` manifest at
+the workspace root (see
+[Declaring the repo set](03-spaces-and-intents.md#declaring-the-repo-set-optional-manifest)):
+
+```bash
+bun .claude/tools/aidlc-workspace-sync.ts [--force]
+bun .kiro/tools/aidlc-workspace-sync.ts [--force]
+bun .codex/tools/aidlc-workspace-sync.ts [--force]
+bun .aidlc/tools/aidlc-workspace-sync.ts [--force]
+```
+
+It serializes reconciles with a workspace lock whose live owner is never reaped
+for age, then runs a read-only preflight before staging clones and generated
+files. Generated outputs are installed with no-replace links and reversible
+same-filesystem renames. If `.gitignore` or `aidlc.code-workspace` changes during
+staging, or if `repos.json` changes after the plan is read, sync aborts rather
+than applying stale state or overwriting the edit. Prior generated files that
+are replaced successfully remain under the ignored
+`.aidlc-workspace-sync-recovery-*` directory for inspection. The tool clones
+repos declared in `repos.json` but missing on disk, rewrites the managed block
+in the workspace `.gitignore` to one `/{name}/` line per repo, and writes an
+`aidlc.code-workspace` VSCode multi-root file listing the root plus each child
+repo. A declared `branch` is checked out for a new clone. Repos already on disk
+are never re-cloned or switched; a mismatch there remains an advisory.
+
+An orphan checkout (on disk but not in `repos.json`) blocks the run and is
+removed from the active sibling set only when you pass `--force` and the tool
+can prove it has no local-only state. That proof overrides configurable status
+defaults, includes untracked and ignored files and directories (including empty
+directories), hidden index state, stashes, refs and reflogs, unreachable Git
+objects, linked worktrees, submodules, and LFS object stores. It queries each
+real remote instead of trusting cached remote-tracking refs, then fetches
+matching object graphs into an isolated probe so an advertised-but-unservable
+OID cannot authorize removal. A local remote whose storage or object alternates
+depend on the checkout cannot count as recovery.
+
+After the live-remote proof, the checkout moves into transaction quarantine and
+receives the full local and live-remote proof again. Its quarantined copy is
+retained under an ignored `.aidlc-workspace-sync-recovery-*` directory rather
+than recursively deleted, so a process that already holds the directory open
+cannot lose a late write between proof and cleanup. Inspect retained checkout
+and generated-file backups, then delete the recovery directory manually when it
+is no longer needed. Any uncertainty blocks for manual review. Exit codes: `0`
+fully in sync, `1` blocked or error (live paths unchanged), `2` synced but
+advisory warnings remain (e.g. an existing checkout's branch mismatch).
+
+The manifest is optional and never overrides disk: intent birth still
+auto-discovers whatever sibling repos are actually present, so this tool only
+reproduces and tidies the declared set. `--doctor` carries three advisory rows
+about it (uncommitted `aidlc/` records, `repos.json` vs on-disk drift, and a
+stale managed `.gitignore` block); like all advisory rows they never change the
+doctor exit code.
+
 ### `aidlc-utility select-plugins` - install plugin selection
 
 `/aidlc plugin list` prints installed plugin names and whether each is enabled.
-`select-plugins` is a **direct utility invocation**, not an `/aidlc select-plugins` command.
+`/aidlc plugin select [names]` is the public command. `select-plugins` is its
+direct utility form; it is not an `/aidlc select-plugins` command.
 `bun .claude/tools/aidlc-utility.ts select-plugins` prints the current selection
 (`all enabled (no selection)` when the `plugins` key is absent) and the known
 plugin names. Pass a comma-separated list to set it:

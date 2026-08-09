@@ -10,6 +10,11 @@ directory structure, per-artifact descriptions, lifecycle, and git policy.
 
 ## Directory Tree
 
+This is the complete set of places an artifact can land, not what a fresh record
+looks like. Intent creation makes one folder per phase your scope runs (plus
+`verification/`); the rest appear as work happens, and a per-stage folder is
+created the first time that stage writes.
+
 ```
 aidlc/spaces/<space>/intents/<YYMMDD>-<label>/   # one record dir per intent
   aidlc-state.md                    # Workflow state (commit)
@@ -75,9 +80,10 @@ aidlc/spaces/<space>/intents/<YYMMDD>-<label>/   # one record dir per intent
 (`architecture.md`, `code-structure.md`, `technology-stack.md`, …) land one
 level up, in the space-level per-repo CodeKB —
 `aidlc/spaces/<space>/codekb/<repo>/` — one store per repo rather than a copy
-per intent. It is not a snapshot: the stage condition is "Always rerun for
-freshness", so every applicable brownfield intent reruns the scan and
-overwrites those nine files, last write wins
+per intent. On each applicable brownfield intent, the stage checks the store's
+recorded scope and working-tree fingerprint first. A verified-current store
+whose coverage fits the intent may be reused by human choice; otherwise a full
+or focused scan overwrites those nine files
 (`reverse-engineering-timestamp.md` records when the last scan ran and what
 it covered). Intents therefore read the newest scan of the repo, not the one
 taken when their own record dir was created. What the record dir does get is
@@ -150,7 +156,7 @@ flowchart LR
 
 | Stage | Artifacts | Notes |
 |-------|-----------|-------|
-| 0.1 Workspace Scaffold | `scaffold-report.md` | Deterministic (runs inside `aidlc-utility intent-birth`) |
+| 0.1 Workspace Scaffold | `scaffold-report.md` | Deterministic (runs inside `aidlc-utility intent-create`) |
 | 0.2 Workspace Detection | `workspace-findings.md`, updates `aidlc-state.md` | Deterministic rule-based scanner |
 | 0.3 State Init | `state-init-summary.md` | Deterministic |
 
@@ -172,7 +178,7 @@ The welcome message is rendered at session start via `companyAnnouncements` in `
 
 | Stage | Key Artifacts | Condition |
 |-------|--------------|-----------|
-| 2.1 Reverse Engineering | 9 files including `architecture.md`, `code-structure.md`, `technology-stack.md` (written to the space-level `aidlc/spaces/<active-space>/codekb/<repo>/` — one store per repo, overwritten by each brownfield rerun; only the stage's `memory.md` diary lands in the intent record) | Brownfield only |
+| 2.1 Reverse Engineering | 9 files including `architecture.md`, `code-structure.md`, `technology-stack.md` (written to the space-level `aidlc/spaces/<active-space>/codekb/<repo>/` — one shared store per repo, reused when verified current or replaced by a human-selected rescan; only the stage's `memory.md` diary lands in the intent record) | Brownfield only |
 | 2.2 Practices Discovery | `team-practices.md`, `discovered-rules.md`, `evidence.md`, `practices-discovery-timestamp.md`, plus quality/developer/devsecops contribution files (promoted to `aidlc/spaces/<active-space>/memory/team.md` and `project.md` after approval) | Conditional |
 | 2.3 Requirements Analysis | `requirements.md` | Always |
 | 2.4 User Stories | `stories.md`, `personas.md` | User-facing features |

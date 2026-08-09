@@ -24,7 +24,7 @@ export const BLOCKED_STATE_TRANSITIONS = new Set([
   "park",
 ]);
 
-function maskMultilineQuotedStrings(command: string): string {
+function maskQuotedCommandSeparators(command: string): string {
   const chars = [...command];
   for (let i = 0; i < chars.length; i++) {
     const quote = chars[i];
@@ -41,9 +41,41 @@ function maskMultilineQuotedStrings(command: string): string {
       escaped = false;
     }
     if (end >= chars.length) end = chars.length - 1;
-    if (chars.slice(i, end + 1).includes("\n")) {
-      for (let j = i; j <= end; j++) {
+    const multiline = chars.slice(i, end + 1).includes("\n");
+    let commandSubDepth = 0;
+    for (let j = i; j <= end; j++) {
+      const startsCommandSub =
+        quote === '"' &&
+        chars[j] === "$" &&
+        chars[j + 1] === "(" &&
+        (j === 0 || chars[j - 1] !== "\\");
+      if (startsCommandSub) {
+        commandSubDepth++;
+        j++;
+        continue;
+      }
+      if (
+        quote === '"' &&
+        commandSubDepth > 0 &&
+        chars[j] === ")" &&
+        (j === 0 || chars[j - 1] !== "\\")
+      ) {
+        commandSubDepth--;
+        continue;
+      }
+      if (commandSubDepth > 0) {
+        // Double-quoted $(...) content is executable shell, not prose. Preserve
+        // its opening `(` anchor and body so lifecycle calls inside it remain
+        // visible to the command-position detector.
+        continue;
+      }
+      if (multiline) {
         if (chars[j] !== "\n") chars[j] = " ";
+      } else if (/[&|;({]/.test(chars[j])) {
+        // Keep ordinary quoted path/text characters so real invocations with a
+        // quoted script path still match, but quoted shell separators must
+        // never create a synthetic command-position anchor.
+        chars[j] = " ";
       }
     }
     i = end;
@@ -130,7 +162,7 @@ function maskFunctionDefinitions(command: string): string {
 
 function executableShellText(command: string): string {
   return maskFunctionDefinitions(
-    maskHeredocBodies(maskMultilineQuotedStrings(command)),
+    maskHeredocBodies(maskQuotedCommandSeparators(command)),
   );
 }
 
@@ -156,6 +188,24 @@ export function directStateTransition(command: string): string | null {
   return null;
 }
 
+// True only for an executable command that can cross a stage/workflow lifecycle
+// boundary. Unlike isEngineToolCall(), this parser deliberately ignores command
+// text passed to echo/rg, heredoc bodies, multiline strings, and function
+// definitions: flushing subagent holdback is destructive if the apparent
+// lifecycle command is only prose.
+export function isLifecycleBoundaryCommand(command: string): boolean {
+  const invocation =
+    /(?:^|&&|\|\||[;|(\n{])[ \t]*(?:(?:command|exec)\s+)?(?:env(?:\s+-[^\s]+)*\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"\n]*"|'[^'\n]*'|[^\s;&|]+)\s+)*(?:[^\s"';&|({]+\/)?bun(?:\.exe)?(?:\s+run)?\s+(?:"[^"\n]*aidlc-(orchestrate|state|jump)\.ts"|'[^'\n]*aidlc-(orchestrate|state|jump)\.ts'|[^\s;&|]*aidlc-(orchestrate|state|jump)\.ts)\s+([a-z][a-z0-9-]*)\b/g;
+  for (const match of executableShellText(command).matchAll(invocation)) {
+    const tool = match[1] ?? match[2] ?? match[3];
+    const verb = match[4];
+    if (tool === "orchestrate" && verb === "report") return true;
+    if (tool === "state" && BLOCKED_STATE_TRANSITIONS.has(verb)) return true;
+    if (tool === "jump" && verb === "execute") return true;
+  }
+  return false;
+}
+
 async function main(): Promise<void> {
   if (process.stdin.isTTY) return;
   let parsed: ClaudeCodeHookInput;
@@ -171,10 +221,11 @@ async function main(): Promise<void> {
   if (verb === null) return;
 
   process.stderr.write(
-    `Direct aidlc-state.ts ${verb} is blocked: workflow lifecycle transitions are engine-owned. ` +
-      "Use aidlc-orchestrate.ts report --stage <slug> --result " +
+    `[aidlc] Direct aidlc-state.ts ${verb} is blocked: stage status is changed by the workflow ` +
+      "tools, not by hand, so that the state file, the audit log, and the compiled stage graph " +
+      "stay in agreement. Use aidlc-orchestrate.ts report --stage <slug> --result " +
       "<awaiting-approval|approved|rejected|revised|completed|skipped>; use " +
-      "aidlc-orchestrate.ts park to park, and next/jump for routing changes.\n",
+      "aidlc-orchestrate.ts park to pause the workflow, and next/jump to change routing.\n",
   );
   process.exit(2);
 }

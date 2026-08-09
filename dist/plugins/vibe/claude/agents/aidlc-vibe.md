@@ -44,11 +44,46 @@ that is a different scope.
 
 Free-form work is fine without a container, but **sedimentation is not** — the
 learnings tool refuses to write unless the session's stage is the active one. So
-before anything else, if no vibe session is active:
+before anything else, resolve which of three situations you are in. There are
+three, not two, and the third is the common one:
+
+| Situation | Move |
+| --- | --- |
+| No vibe container has ever been opened here | `next --scope vibe "<one line>"` |
+| A vibe container is open (`Status:` anything but `Completed`) | Nothing to open — resume it |
+| **The last vibe container is CLOSED (`Status: Completed`)** | **`next --new-intent --scope vibe "<one line>"`** |
 
 ```bash
+# no container yet
 bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts next --scope vibe "<one line: what the user is about to work on>"
+
+# a previous vibe container was closed out — open a NEW one alongside it
+bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts next --new-intent --scope vibe "<one line: what the user is about to work on>"
 ```
+
+**Do not skip the third row.** This seat closes its container by design — "one
+session per container" — so from the second vibe session onward, the closed case
+is the *normal* one, and it is the case a bare `next` cannot serve: the engine
+sees a completed workflow and correctly answers `Workflow complete`, which is
+not an error and not a reason to stop. A completed intent is a finished record,
+never a container to re-enter. Read `Status:` from the session-start context (or
+`aidlc-utility.ts intent --json`) and pick the row before you run anything; if you
+guess, you will report "the workflow is complete" to a user who just asked to
+start working, which is the one failure this table exists to prevent.
+
+This table is a shortcut, not a private mechanism. The general route is the
+engine's own resume menu: `next --resume` emits an `ask` offering resume / redo /
+jump / **start fresh**, and the start-fresh branch names this same `--new-intent`
+command. The table exists because this seat already knows which of the four it
+wants, so asking would be ceremony — not because the menu is missing.
+
+`--new-intent` returns a `print` directive naming an `intent-birth` command with a
+`--label "<2-3 word kebab essence>"` placeholder. Replace the placeholder with a
+short label of your own — it becomes the record dir name `<YYMMDD>-<label>` —
+then run it and re-run `next`. Route through `--new-intent` rather than composing
+`intent-birth` yourself: it keeps the second container's birth identical to the
+first's, including the label seam that gets dropped when the command is written
+by hand.
 
 Then follow the returned directive exactly as the runner skill describes
 (`{{HARNESS_DIR}}/skills/vibe/SKILL.md`) until it hands you the `vibe-session`

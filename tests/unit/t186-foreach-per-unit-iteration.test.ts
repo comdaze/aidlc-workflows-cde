@@ -85,7 +85,7 @@ afterEach(() => {
 });
 
 function logReviewReady(proj: string, stage: string, unit: string): void {
-  const res = spawnSync(BUN, [
+  const args = [
     LOG,
     "review",
     "--stage",
@@ -96,13 +96,14 @@ function logReviewReady(proj: string, stage: string, unit: string): void {
     unit,
     "--iteration",
     "1",
-    "--verdict",
-    "READY",
     "--project-dir",
     proj,
-  ], { encoding: "utf-8" });
-  if ((res.status ?? -1) !== 0) {
-    throw new Error(`review log failed: ${res.stdout ?? ""}${res.stderr ?? ""}`);
+  ];
+  for (const suffix of [[], ["--verdict", "READY"]]) {
+    const res = spawnSync(BUN, [...args, ...suffix], { encoding: "utf-8" });
+    if ((res.status ?? -1) !== 0) {
+      throw new Error(`review log failed: ${res.stdout ?? ""}${res.stderr ?? ""}`);
+    }
   }
 }
 
@@ -199,9 +200,12 @@ function seedProject(current: string, skeletonStance?: string): string {
 }
 
 /** Run `aidlc-orchestrate.ts next` and parse the emitted directive. */
-function runNext(proj: string): Directive {
+function runNext(proj: string, enforceSummary = false): Directive {
   const env = { ...process.env };
   delete env.AWS_AIDLC_DEFAULT_SCOPE;
+  if (enforceSummary) {
+    delete env.AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD;
+  }
   const r = runOrchestrateNext(ORCH, proj, [], { env });
   if (r.directive === null) {
     throw new Error(
@@ -375,6 +379,16 @@ describe("t186 engine-driven per-unit for_each iteration (issue #368)", () => {
     expect(d.stage).toBe("functional-design");
     expect(d.unit).toBe("beta"); // the last unit in topo order
     expect(d.gate).toBe(true);
+  }, 30000);
+
+  test("9a: a covered gate:false unit without confirmation stops per-unit progression", () => {
+    const proj = seedProject("functional-design", "on");
+    seedBoltDag(proj, ["alpha", "beta"]);
+    coverUnit(proj, "alpha", "functional-design", FD_REQUIRED_PRODUCES);
+    const d = runNext(proj, true);
+    expect(d.kind).toBe("error");
+    expect(d.message).toContain("alpha");
+    expect(d.message).toContain("has no functional-design-questions.md");
   }, 30000);
 
   // 9b: with every unit covered, the approve is ALLOWED (the guard passes) and

@@ -76,7 +76,7 @@ upstream `9c9201b8`:
 | `dist/` | 256 | **Not a conflict** — generated. Never merge it; regenerate (§3). |
 | `core/` | 4 | Low. See A1, A2 (small, policy-driven), A11 (Stop-hook message ordering), A13 (learnings identity) and A14 (a doctor row). |
 | `harness/` | 7 | **One real risk**, the Kiro IDE adapter. See B1; also A12 (one hook matcher). |
-| `tests/` | 5 | Low. One new file, one ratchet entry, three files with appended guards. See A5, A10, A11, A13. |
+| `tests/` | 5 | Low. One new file, one ratchet entry, three files with appended guards. See A5, A10, A11, A13 — and D1 for the two derived coverage files, which are not a divergence at all but do conflict on every sync. |
 | root files | 6 | Low. No longer includes `CHANGELOG.md` or the version — see A3. |
 
 The plugin mechanism is doing its job: the majority of this fork's work lives in
@@ -450,37 +450,48 @@ causes, three fixes:
 > row on purpose: a crash mid-fire must leave the pair fireable, not
 > falsely-verified.
 
-### A8 — Kiro IDE: one PostToolUse(execute_bash) hook, not two (3 files) — **upstream-bound**
-
+### A8 — DROPPED 2026-08-09 at the 2.5.59 sync — upstream's split adopted
 | | |
 | --- | --- |
-| Files | `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` (+~40) · `harness/kiro-ide/hooks/aidlc-shell-post.json` (new) · `harness/kiro-ide/manifest.ts` · `docs/guide/harnesses/kiro-ide.md`. Deletes `hooks/aidlc-{runtime-compile,sync-statusline}.json`. |
-| Class | **B — general, not CDE-specific.** |
-| Upstream | **Offer it** together with A7 — same run produced both findings. |
-| On conflict | Keep ours. If upstream has since edited either superseded `.json`, that edit is moot: re-apply the merge and carry their description text into `aidlc-shell-post.json`. |
+| Files | **None. The divergence is gone.** `harness/kiro-ide/hooks/aidlc-shell-post.json` deleted; the adapter, manifest, `docs/guide/harnesses/kiro-ide.md` and `t245` resolved to upstream. `core/tools/aidlc-utility.ts`'s superseded-registration doctor row survives, rewritten to stand on its own (see below). |
+| Class | — |
+| Upstream | **Nothing to offer.** The optimisation could still be offered as a fresh PR against upstream's current shape, on its own merits, by someone who wants it. |
+| On conflict | Nothing to resolve. |
 
-`aidlc-runtime-compile` and `aidlc-sync-statusline` were two registrations sharing
-the `execute_bash` matcher, and both are payload-independent on the IDE — so every
-shell command paid two `bun` startups to run two hooks that need nothing from the
-event. `aidlc-shell-post` runs both in one process via a `__shell_post__` fan-out
-in the adapter, mirroring the existing `__audit_and_sensors__` pattern. The core
-hook files are untouched and still run in the same order.
+The row asked for ONE `PostToolUse(execute_bash)` registration instead of two,
+saving one `bun` startup (~80ms) per shell command on Kiro IDE. At 2.5.59 upstream
+renamed **both** hooks it merged, which would have left the fork's merged target
+calling `runCore("aidlc-runtime-compile.ts")` and `runCore("aidlc-sync-statusline.ts")`
+— two files that no longer exist. A silently dead hook layer, which this fork has
+shipped once before (§7).
 
-Also in the adapter: failed writes are no longer recorded as hook drops. A
-permission denial or a `str_replace` whose anchor never matched has no artifact to
-audit, so declining is correct — but recording it made
-`.aidlc-hooks-health/kiro-adapter.drops` read like lost data (7 of 7 drops in the
-measured run were failures, not decay). Unknown wordings still record a drop,
-because an unrecognised *success* wording is exactly the decay the drop file
-exists to catch.
+Dropped rather than repaired because it was **six surfaces, not one**: the merged
+registration, the adapter target, the manifest entry, `t245`'s one-matcher assertion
+and pinned filename set, U2's doctor row, and `t259`. A fork-only subsystem that has
+now broken once on an upstream rename buys ~80ms on one harness.
 
-> [!WARNING]
-> **Copying a tree over an install merges; it never prunes.** An install upgraded
-> in place keeps its old `aidlc-runtime-compile.json` / `aidlc-sync-statusline.json`
-> and runs the same two hooks twice per shell command. Harmless (idempotent,
-> advisory) but pure overhead — `--doctor` reports it under **Superseded hook
-> registrations**. The legacy `.kiro.hook` pair is deliberately left split: pre-1.0
-> IDE has no v2 reader.
+What changed with it, so nothing is left dangling:
+
+- `t245` — the "exactly one v2 registration carries the `execute_bash` matcher"
+  assertion is retired for "**every** execute_bash registration resolves". The
+  weaker claim is the true one now, and it still catches a registration pointing at
+  a missing matcher.
+- `t259` — the shipped v2 count moves 7 → 8, and the superseded-row assertion now
+  matches on `renamed upstream` rather than the old `twice` wording.
+- **U2's doctor row was kept and made independent.** It used to fire only when
+  `aidlc-shell-post.json` was present, hunting for the two files A8 superseded — so
+  dropping A8 would have silently killed it. It now checks a flat list of
+  **upstream's own renamed-away registrations** (`aidlc-runtime-compile.json`,
+  `aidlc-sync-statusline.json`, `aidlc-stop.json`, `aidlc-mint.json`,
+  `aidlc-audit-logger.json`, `aidlc-block.json`), which is a real hazard for anyone
+  upgrading in place: `cp` merges and never prunes, so every one of those keeps
+  firing at a core hook file that no longer ships.
+
+> [!NOTE]
+> **Dropping a row is a fork-behaviour change, so it is the owner's call, not the
+> resolver's.** A first attempt at this sync took upstream's split unilaterally on a
+> cost argument; `t245` and `t259` reddened within minutes and the merge was aborted.
+> The second attempt began with the decision already made.
 
 ### A9 — Plugin parity across all five harnesses (4 files) — **upstream-bound**
 
@@ -565,13 +576,13 @@ stakes (A1's doctor hint, U2's +92 doctor lines, and this line). It is upstream'
 25-edits-in-60-days file, so pricing this as "one line" understates it — the
 merge cost is per-file, not per-line.
 
-### A11 — Load-steering continuations were unfollowable under output truncation (2 files) — **upstream-bound**
+### A11 — Load-steering continuations were unfollowable under output truncation (2 files) — **submitted upstream**
 | | |
 | --- | --- |
-| Files | `core/hooks/aidlc-stop.ts` (`continuationReason`, load-steering branch) · `tests/integration/t121-stop-hook-enforce.test.ts` (ordering assertion, appended to the existing case) |
+| Files | `core/hooks/aidlc-stop.ts` (`continuationReason`, load-steering branch) · `tests/integration/t121-stop-hook-enforce.test.ts` (ordering assertion, appended to the existing case). **Upstream renamed the file: after the next sync the target is `core/hooks/aidlc-continue-workflow.ts`** (R079). The function survives unchanged — same name, same signature, same `load-steering && continueToken` branch, same `exactContent` binding — so this is a two-clause reorder, not a re-implementation. |
 | Class | **B — general, not CDE-specific.** A message-ordering defect in upstream's Stop hook. Nothing here knows about CDE or any fork plugin. |
-| Upstream | **Offer it.** Reordering two clauses plus one assertion; it makes the steering chain survive any harness that truncates hook output. |
-| On conflict | Keep ours. If upstream rewrites the message, re-apply the *property* — actionable instruction before bulk payload — rather than the exact wording. |
+| Upstream | **Submitted: [awslabs/aidlc-workflows#729](https://github.com/awslabs/aidlc-workflows/pull/729)** (opened 2026-08-09 against `v2` at 2.5.59, submitted as 2.5.60). The defect was proven **by a run, not a read**: the fork's ordering assertion planted on an unmodified `v2` worktree failed with token at offset 332 and payload at 160, then passed after the reorder. Upstream had no test pinning the order (`t121` there carried zero `indexOf` assertions). |
+| On conflict | **Take upstream's clauses, then check the order.** Upstream rewrote every clause of this message since the merge base ("still has rules to load" for "has pending rule delivery", "each load-steering step it returns" for "load-steering continuations — chaining each response's own token", "Do not summarise or narrate these rule chunks to the user" for "Do not report or narrate steering chunks"), so #729 deliberately carries **upstream's** wording with only the order changed. The fork's older phrasing is not worth preserving; the *property* is — actionable instruction before bulk payload. If #729 has merged by sync time, take theirs wholesale and the row closes. If not, take theirs and re-apply the reorder, and update the fork's `t121` `toContain` assertions to upstream's clause text at the same time (they currently pin the fork's older wording). |
 The load-steering continuation inlined the whole rules bundle into the hook's
 `reason` and put the `continue` token **after** it. Measured on a stock install:
 **16,583 chars across 37 entries**. Kiro IDE truncates hook output, so every
@@ -600,10 +611,10 @@ truncated token is unrecoverable.
 ### A12 — `aidlc-block` fired on every tool call (1 file) — **upstream-bound**
 | | |
 | --- | --- |
-| Files | `harness/kiro-ide/hooks/aidlc-block.json` (adds a `matcher`) · `tests/unit/t245-kiro-ide-hook-registrations.test.ts` (the pinned registration table) |
+| Files | `harness/kiro-ide/hooks/aidlc-block.json` (adds a `matcher`) · `tests/unit/t245-kiro-ide-hook-registrations.test.ts` (the pinned registration table). **After the next sync the target is `aidlc-enforce-approval-gate.json`** — see the on-conflict cell. |
 | Class | **B — general.** A registration-scope fix in upstream's Kiro IDE hook set; nothing CDE-specific. |
-| Upstream | **Offer it.** One field, and it makes the hook's cost proportional to what it can actually act on. |
-| On conflict | Keep ours. If upstream adds new mutating tool names, extend the alternation — the matcher must stay a superset of the mutation surface `aidlc-audit-logger` and `aidlc-shell-post` recognise. |
+| Upstream | **Offer it**, against the renamed file. One field, and it makes the hook's cost proportional to what it can actually act on. Still live at upstream tip 2.5.59: `aidlc-enforce-approval-gate.json` is a bare `PreToolUse` with **no `matcher`** — verified 2026-08-08. |
+| On conflict | **NOT "keep ours".** Upstream **deleted** `aidlc-block.json` in 2.5.57 (`3cb39c64`) — but as a **rename, not a removal**: the successor is `harness/kiro-ide/hooks/aidlc-enforce-approval-gate.json`, same `PreToolUse` trigger, same adapter, verb `block` → `enforce-approval-gate`. So git presents a delete/modify conflict, and keeping ours resurrects a path nothing dispatches to — a dead registration, which is [the exact failure §7 records](#7-what-the-merges-taught-us) (the fork shipped an inert IDE hook layer for months). **Take upstream's deletion, then re-add the `matcher` to the successor file.** If upstream adds new mutating tool names, extend the alternation — the matcher must stay a superset of the mutation surface `aidlc-write-audit-log` and `aidlc-shell-post` recognise (both also renamed; re-check their matchers at the same time). |
 The hook was registered as `PreToolUse` with **no matcher**, so it ran on every
 tool call — every read, every grep — at ~80ms of bun startup each, measured. Its
 first two carve-outs return 0 immediately under autonomous Construction or with no
@@ -615,6 +626,15 @@ gate a read, and this leaves the floor's actual purpose (blocking *changes* whil
 gate is open) untouched.
 The legacy `aidlc-block.kiro.hook` is deliberately left unmatched: its 1.0-era
 schema has no matcher field, and it is inert on IDE ≥ 1.0 anyway.
+> [!WARNING]
+> **A deletion on the upstream side is not evidence the row is closed.** During the
+> 2026-08-08 sync assessment this row was twice read as "resolved by deletion"
+> because `aidlc-block.json` is gone at upstream tip. It is gone because it was
+> **renamed**, and the defect travelled with the new name — the successor is still a
+> bare `PreToolUse`. A rename presents to `git status` as delete-plus-add, so the
+> only way to tell the two apart is to look for the successor: same trigger, same
+> adapter target, new verb. Do that before closing any row on the strength of a
+> missing file.
 
 ### A13 — `persist` keyed learning identity on `candidate_id` (2 files) — **upstream-bound**
 | | |
@@ -679,6 +699,85 @@ when present (44/0).
 > tested in an environment that was not the failing one. When diagnosing an
 > environment problem, the probe has to run where the failure lives; a
 > stripped-*looking* shell is not the same as the shell the hook gets.
+
+### A15 — RETRACTED 2026-08-09: the premise was false, the mechanism already existed
+| | |
+| --- | --- |
+| Files | **None. Reverted.** `core/tools/aidlc-orchestrate.ts` and `core/hooks/aidlc-session-start.ts` are restored to their pre-A15 state; `tests/unit/t275-completed-workflow-new-intent-path.test.ts` is deleted. The one surviving piece is the `intent birth` line in `core/tools/aidlc-utility.ts`'s `--help` (see the residual note below). |
+| Class | — |
+| Upstream | **[#726](https://github.com/awslabs/aidlc-workflows/pull/726) was CLOSED by us**, not merged, after `apackeer` requested changes. All four of that review's findings are valid and all four trace to the single error below. |
+| On conflict | Nothing to resolve — the divergence is gone. This row is kept, rather than deleted, so the next person who greps for `Start Fresh` does not rediscover the same false conclusion. |
+
+**The claim was:** after a close-out, the path to new work (`next --new-intent` →
+the intent-creation verb) appears in no directive, no hook message and no help
+text, and the session-start hook's "Resume / Redo / Jump / Start Fresh" is a menu
+defined nowhere.
+
+**The mechanism was in the engine the whole time, in BOTH trees:**
+
+```
+core/tools/aidlc-orchestrate.ts   --resume  →  askDirective("An existing workflow
+                                  was found… Resume from last checkpoint, redo the
+                                  current stage, jump to a stage, or start fresh.")
+core/tools/aidlc-orchestrate.ts   choice.includes("fresh")  →  printDirective(
+                                  "Start-fresh accepted. … run `next --new-intent
+                                  --scope <scope> \"<description>\"` — the existing
+                                  workflow stays in place…")
+```
+
+Those four labels in the hook line are the four implemented branches, reached by
+`next --resume` → the conductor renders the `ask` → `report --result resumed` →
+a per-choice `print`. The reference never dangled.
+
+**How the error was made, because this is the part worth keeping:** the search was
+for the *display label* `"Start Fresh"`. It appears once — in the hook line asking
+for it. The code spells the choices lowercase inside `choice.includes("fresh")`, and
+the menu text reads "…or start fresh." **The label was searched for and the
+mechanism declared absent.** The irony is exact: A15's own test carried an assertion
+("every `--flag` the guidance names must exist in the engine") written to catch
+prose that names a nonexistent mechanism, and the prose named a real mechanism the
+author could not find.
+
+**The original symptom was real but was a conductor error, not a framework defect.**
+On a completed workflow the conductor ran a bare `next`, received `done`, and
+stopped — instead of offering the resume menu the session-start hook had just
+instructed it to offer. The hook did its job.
+
+**Residual, genuinely missing, deliberately kept small:** `--help` lists
+`intent list` and `intent switch` but not the creation verb, so it is undiscoverable
+from the help text although it is the public form. The fork spells the verb `birth`;
+upstream retired that for `create` (`verbOrTarget === "create"`, `createPrintDirective`,
+`intent-create`), so **this one line cannot be byte-identical across the two trees
+and must be re-spelled at the sync.** Offered to upstream only if they want it.
+
+> [!CAUTION]
+> **Grep for the mechanism, not for the label.** A display string and the code that
+> implements it are usually spelled differently — different case, different
+> phrasing, split across a menu string and a branch predicate. Finding the label
+> once proves nothing about the referent. Before writing "X is defined nowhere",
+> search for what X would *do*: the flag it would set, the branch it would take, the
+> command it would print. This row cost a wrong `core/` change in two files, a test
+> that pinned the false premise, a divergence row, and a maintainer's review cycle
+> on a public repository.
+
+### D1 — `tests/.coverage-ratchet.json` is derived — regenerate, never merge (1 file)
+| | |
+| --- | --- |
+| Files | `tests/.coverage-ratchet.json` · (companion: `tests/.coverage-registry.json`, same rule) |
+| Class | **Derived.** Not a divergence to upstream at all — a generated baseline that both sides legitimately move. |
+| Upstream | **Nothing to offer.** The numbers are a function of each tree's own test set. |
+| On conflict | **Regenerate, never merge, never hand-pick numbers** — the same rule §3 states for `dist/`. Run `bun tests/gen-coverage-registry.ts`, then `bun tests/gen-coverage-registry.ts --check` (must exit 0) and `bun test tests/unit/gen-coverage-registry.test.ts`. Both `--ours` and `--theirs` are wrong: ours drops upstream's newly covered units, theirs drops the fork's. |
+Recorded because §5's own test — "anything the both-changed command prints and this
+document does not explain is an undocumented divergence" — flagged it: the filename
+appeared **zero** times in this document while both sides had changed it. It is a
+guaranteed conflict on every sync (the fork carries `function` 107 / `subcommand` 85
+against upstream's own counts) and it is exactly the shape a tired resolver
+hand-edits: two small JSON objects full of plausible numbers, with no signal that
+picking one side silently lowers a CI ratchet.
+> [!NOTE]
+> **Outside the A-series deliberately.** `D` for derived: there is nothing to
+> upstream, so it does not belong in the sequence §6 works through — but §2 has to
+> list it, or the checklist is incomplete at exactly the moment it is being used.
 
 ### Unclassified — real divergence with no row above (found 2026-08-03)
 
@@ -832,10 +931,39 @@ and A5 all land, `core/` and `harness/` divergence goes to **zero** and the fork
 reduces to `plugins/` plus the A4 identity files — the shape §7 argues it should
 have had all along.
 
-**Open submissions.** A1 is [#701](https://github.com/awslabs/aidlc-workflows/pull/701).
-A2 (one word, inclusive language) and A5 (one 8-line rule) are still unsent and
-should go as separate PRs — they are unrelated concerns and bundling them would
-give a reviewer three reasons to hesitate instead of one to agree.
+**Open submissions.** A1 is [#701](https://github.com/awslabs/aidlc-workflows/pull/701)
+and A11 is [#729](https://github.com/awslabs/aidlc-workflows/pull/729). A2 (one word,
+inclusive language) and A5 (one 8-line rule) are still unsent and should go as
+separate PRs — they are unrelated concerns and bundling them would give a reviewer
+three reasons to hesitate instead of one to agree.
+
+> [!TIP]
+> **#729 is the shape to copy.** One behaviour, one source file, and an assertion
+> **proven red on an unmodified upstream worktree before the fix was written** —
+> offsets recorded in the PR body. Compare A15's retraction, where the claim rested
+> on a grep instead of a run. The cost difference between the two is a merge and a
+> closed PR.
+
+**Closed without merging.** A15 was submitted as
+[#726](https://github.com/awslabs/aidlc-workflows/pull/726) and **we closed it**
+after review: the premise was false and the mechanism already existed. Read A15's
+retraction before submitting anything — its lesson is about how the claim was
+verified, not about that particular row.
+
+> [!IMPORTANT]
+> **Verify the mechanism exists, or does not, before writing the PR body.** A15
+> reached a public repository asserting that a capability was absent from every user
+> surface; it was implemented in the file the PR edits. The cost was a maintainer's
+> review cycle plus a wrong `core/` change carried in this fork for a day. The check
+> that would have prevented it takes one command: grep for the branch or flag the
+> capability would use, not for the sentence that describes it.
+
+> [!CAUTION]
+> **Record a submission only against a PR number you just verified.** U2's row
+> exists because `CHANGELOG.fork.md` claimed "Submitted upstream" for a change no
+> PR ever carried, and that claim survived long enough to need a dated correction.
+> A row saying "submitted" is read as a reason not to look again — so it has to be
+> true. Both numbers above were confirmed with `gh pr view` at the time of writing.
 
 **Make the fork's text byte-identical to the submission.** This is the step that
 actually closes a row. If the fork keeps its own phrasing while the PR carries
@@ -851,6 +979,100 @@ generated trees match the source you changed.
 ## 7. What the merges taught us
 
 Recorded because each of these will recur, and none was predicted by §2.
+
+### From the 2.5.59 sync — MERGED 2026-08-09 (second attempt)
+
+The first attempt was **aborted deliberately** at 16 of 18: A8 turned out to need a
+fork-behaviour decision, and §4's opening rule is not to resolve the enforcement
+spine under pressure. The owner chose to **drop A8**, and the second attempt landed.
+The resolutions below are what worked, recorded so a future sync does not re-derive
+them.
+
+**18 non-dist conflicts, not the 20 the assessment predicted.** The A15 retraction
+removed `aidlc-orchestrate.ts` and `aidlc-session-start.ts` from the conflict set —
+a measured benefit of retracting rather than reworking.
+
+**Resolved, with the resolution that worked:**
+
+| Conflict | Resolution |
+| --- | --- |
+| A1 — 3 `onboarding.fills.ts` + 3 docs | Take **theirs** (upstream rewrote the surrounding prose in 2.5.57 and updated hook counts to 16/17), then re-apply only the install-command substitution. Exactly what A1's row prescribes. |
+| A7 — `aidlc-lib.ts`, 2 hunks | Both hunks were **both-sides-added**, not competing: ours added `readAuditShardsTail`, upstream added `readAuditShardEvents` + its interface; the import hunk needed `readSync` (ours) ∪ `linkSync`/`realpathSync` (theirs). Union both. |
+| A7 — `aidlc-sync-workflow-state.ts` | Keep the bounded-tail optimization, adopt upstream's new `hookDebug` label (`"sync-workflow-state"`). |
+| A11 — `aidlc-continue-workflow.ts` + `t121` | Resolve to **#729's exact text** — upstream's clauses, order reversed — so the row closes to a no-op if #729 merges. |
+| A12 — `aidlc-block.json` | Accept upstream's **deletion** (it is a rename), then add the `matcher` to the successor `aidlc-enforce-approval-gate.json`. Verified the matcher stays a superset of `aidlc-write-audit-log`'s and `aidlc-shell-post`'s. |
+| D1 — both coverage files | Regenerate, per D1. The ratchet list inside `gen-coverage-registry.test.ts` is a **union** (both sides appended entries). |
+
+**Three things worth carrying forward:**
+
+- **The union of two both-added hunks can still be syntactically broken.** Upstream's
+  `readAuditShardEvents` had its closing `}` on the far side of the conflict marker,
+  so a mechanical "theirs + ours" concatenation silently dropped it. `bun build` on
+  the single file named it immediately. **Syntax-check every file you resolve by
+  script**, before running anything else — `package.ts --check` will not catch it
+  (it compares bytes, it never parses).
+- **A12 survived the rename and was re-applied**: upstream deleted
+  `aidlc-block.json` as a *rename*, so the matcher moved to
+  `aidlc-enforce-approval-gate.json`, verified still a superset of the two hooks it
+  must cover.
+- **Upstream independently fixed one of the fork's divergences, better.** The
+  adapter's failed-write classification (fork: match Kiro's failure prefixes) is
+  upstream's too now, and theirs additionally treats a structured
+  `toolSuccess: true` as authoritative and only falls back to prose when the flag is
+  absent. Take theirs and close the fork's version by adoption.
+- **The version trio auto-resolved exactly as the assessment predicted** — consistent
+  at upstream's number, the fork's legacy `CHANGELOG.md` block intact.
+
+### From the 2.5.59 sync ASSESSMENT (2026-08-08) — assessed, not merged
+
+**Upstream renamed seven of the framework's hooks, which silently invalidates the
+`Files` cell of every row that names one.** Measured with
+`git diff --name-status <base>..github/v2 -- core/hooks/`:
+
+| old | new | similarity |
+| --- | --- | --- |
+| `aidlc-stop.ts` | `aidlc-continue-workflow.ts` | R079 |
+| `aidlc-dispatch-rules.ts` | `aidlc-deliver-stage-rules.ts` | R088 |
+| `aidlc-runtime-compile.ts` | `aidlc-rebuild-stage-graph.ts` | R090 |
+| `aidlc-mint-presence.ts` | `aidlc-record-human-turn.ts` | R072 |
+| `aidlc-sensor-fire.ts` | `aidlc-run-sensors.ts` | R087 |
+| `aidlc-sync-statusline.ts` | `aidlc-sync-workflow-state.ts` | R092 |
+| `aidlc-audit-logger.ts` | `aidlc-write-audit-log.ts` | R085 |
+
+Plus three new (`aidlc-fold-usage`, `aidlc-plan-approval-guard`,
+`aidlc-review-freeze`) — **17 hooks upstream against the 14 this fork's
+`AGENTS.md` documents.** The per-harness registration files moved too, mostly as
+delete-plus-add rather than detected renames, which is why four fork-modified
+registrations (`aidlc-block.json`, `aidlc-runtime-compile.json`,
+`aidlc-shell-post.json`, `aidlc-sync-statusline.json`) arrive as delete/modify
+conflicts. Keeping ours on those produces registrations pointing at hook files that
+no longer exist — the inert-hook-layer failure recorded below, again.
+
+**What the assessment got right, and wrong:**
+
+- **The feared failure did not happen.** All 15 plugin contribution anchors across
+  four plugins resolve against the *merged* stage source, strictly checked
+  (range-heading containment included — a looser first check reported `ok` and had
+  to be redone). Every anchored `### Step N` heading is byte-identical between the
+  merge base and upstream tip, and `## Learn` / `## Sensors` both survive. The
+  plugins crossed 26 upstream versions untouched, which is the argument for keeping
+  fork work in `plugins/`, now measured: **80 fork-changed files there produce 0
+  conflicts; 28 in `core/`+`harness/` produce 16.**
+- **A deletion was twice misread as a closed row** — see the warning on A12.
+- **The version freeze resolves itself.** The trio auto-merged consistently to
+  upstream's number, the fork's 17 legacy `CHANGELOG.md` entries survived, and
+  `ci-changelog-guard` passed (161 preserved, 19 new). `AGENTS.md`'s caution is
+  about not *deleting* that block, and a plain merge does not.
+- **A11 is far cheaper than the rename suggested.** R079 reads like a rewrite, but
+  `continuationReason()` survives with the same name, signature, branch and
+  `exactContent` binding; the fix is a two-clause reorder. Read the successor before
+  pricing a rename.
+
+**Upstreaming is a slow lever — never make a sync depend on it.** 11 of upstream's
+last 12 merged PRs are the maintainer's own; the one external merge is `#689`. A1
+(`#701`) has been open 7 days with 0 reviews. Send the rows anyway — §6 is right
+that it is the only thing that lowers divergence — but schedule the merge
+independently of whether they land.
 
 ### From 2.5.33 (2026-08-01)
 

@@ -37,6 +37,28 @@ import { isPlainObject } from "./aidlc-lib.ts";
 export const GATE_UNRESOLVED = "unresolved" as const;
 export type GateValue = boolean | typeof GATE_UNRESOLVED;
 
+// narration: the OPTIONAL spoken line for a directive, authored by the engine
+// and relayed by the conductor. It is a presentation field: it carries no
+// routing meaning, every kind may omit it, and dropping it changes nothing
+// about what the framework does.
+//
+// WHY THE ENGINE AUTHORS IT: the engine already knows, deterministically, which
+// stage this is, what scope resolved, what it just decided, and what comes
+// next. The conductor does not need to infer any of that to describe it, and
+// when it does infer it, it describes the mechanism it can see (the tool call,
+// the directive kind, the routing) rather than the user's project. Authoring the
+// sentence where the facts live makes the spoken line deterministic too, and
+// leaves the conductor a relay instead of an improviser - the same move the
+// framework already made for rule delivery, where prose compliance failed and
+// deterministic injection replaced it.
+//
+// This field is legal on EVERY kind (see NARRATION_FIELD in the allowed-key
+// sets) so a new emission point can carry a line without a schema change. Keep
+// values to one sentence, two at most: a load-steering directive's rule payload
+// is chunked against DIRECTIVE_MAX_BYTES with limited headroom, so narration is
+// never the thing that pushes a directive over transport budget.
+export type NarrationField = string;
+
 // The 10 kinds, keyed on the `kind` discriminator.
 export type DirectiveKind =
   | "load-steering"
@@ -57,6 +79,8 @@ export type DirectiveKind =
 // surfaced as conversational progress.
 export interface LoadSteeringDirective {
   kind: "load-steering";
+  /** Optional spoken line for the user; presentation only (see NarrationField). */
+  narration?: NarrationField;
   stage: string;
   bundle: string;
   part: number;
@@ -73,6 +97,8 @@ export interface LoadSteeringDirective {
 // paths at emit time; the conductor never re-derives them).
 export interface RunStageDirective {
   kind: "run-stage";
+  /** Optional spoken line for the user; presentation only (see NarrationField). */
+  narration?: NarrationField;
   stage: string;
   phase: string;
   lead_agent: string;
@@ -116,6 +142,14 @@ export interface RunStageDirective {
   // reviewer_max_iterations — how many review cycles before escalating to the
   // human. Default 2 when reviewer is present. Absent when no reviewer.
   reviewer_max_iterations?: number;
+  // review_class — how the §12a review runs, RESOLVED by the engine (stage
+  // declaration lowered by the scope's review_cap and any per-run Review
+  // Override): "adversarial" = refute + fix loop up to the cap; "advisory" =
+  // one pass, findings quoted verbatim at the approval gate, no fix loop
+  // (reviewer_max_iterations is 1). A "none" resolution never reaches the
+  // conductor - the engine omits the whole reviewer block instead. Absent
+  // when reviewer is absent.
+  review_class?: "adversarial" | "advisory";
   // conductor_persona — set ONLY on the first run-stage of a workflow (decision
   // D-E, SPIKE 6). The engine reads `.claude/aidlc-common/conductor.md` and bakes
   // its contents here so the conductor receives its execution-quality charter
@@ -163,6 +197,8 @@ export interface RunStageDirective {
 // run-stage field PLUS `worker` (the named worker the conductor Tasks).
 export interface DispatchSubagentDirective {
   kind: "dispatch-subagent";
+  /** Optional spoken line for the user; presentation only (see NarrationField). */
+  narration?: NarrationField;
   stage: string;
   phase: string;
   lead_agent: string;
@@ -191,11 +227,18 @@ export interface DispatchSubagentDirective {
 // includes them whenever the swarm stage declares a reviewer.
 export interface InvokeSwarmDirective {
   kind: "invoke-swarm";
+  /** Optional spoken line for the user; presentation only (see NarrationField). */
+  narration?: NarrationField;
   units: string[];
   stage?: string;
   stage_file?: string;
   reviewer?: string;
   reviewer_max_iterations?: number;
+  // review_class — the stage's DECLARED class, carried for observability.
+  // Swarm reviews are exempt from scope caps and run overrides (the reviewer
+  // is the only pre-merge verification inside a Bolt), so unlike run-stage
+  // this is not a resolved value.
+  review_class?: "adversarial" | "advisory";
   // repo — OPTIONAL. The sibling repo NAME this batch targets, present only when
   // the engine can resolve it deterministically: the intent records exactly one
   // repo (the lone sibling). Absent for a legacy/single-projectDir intent (no
@@ -211,6 +254,8 @@ export interface InvokeSwarmDirective {
 // approval gate. The conductor surfaces judgement to the human here.
 export interface PresentGateDirective {
   kind: "present-gate";
+  /** Optional spoken line for the user; presentation only (see NarrationField). */
+  narration?: NarrationField;
   stage: string;
   phase: string;
   memory_path: string;
@@ -222,12 +267,16 @@ export interface PresentGateDirective {
 // answer back via report.
 export interface AskDirective {
   kind: "ask";
+  /** Optional spoken line for the user; presentation only (see NarrationField). */
+  narration?: NarrationField;
   question: string;
 }
 
 // print — print verbatim and stop (status / help / doctor / version).
 export interface PrintDirective {
   kind: "print";
+  /** Optional spoken line for the user; presentation only (see NarrationField). */
+  narration?: NarrationField;
   message: string;
 }
 
@@ -235,6 +284,8 @@ export interface PrintDirective {
 // guard, malformed stage file). The message is shown to the user verbatim.
 export interface ErrorDirective {
   kind: "error";
+  /** Optional spoken line for the user; presentation only (see NarrationField). */
+  narration?: NarrationField;
   message: string;
 }
 
@@ -242,6 +293,8 @@ export interface ErrorDirective {
 // why the loop ended.
 export interface DoneDirective {
   kind: "done";
+  /** Optional spoken line for the user; presentation only (see NarrationField). */
+  narration?: NarrationField;
   reason: string;
 }
 
@@ -253,6 +306,8 @@ export interface DoneDirective {
 // `done` (issue #367). `stage` names the slug the workflow parked at.
 export interface ParkedDirective {
   kind: "parked";
+  /** Optional spoken line for the user; presentation only (see NarrationField). */
+  narration?: NarrationField;
   reason: string;
   stage: string;
 }
@@ -295,6 +350,7 @@ export const VALID_KINDS = [
 // aidlc-stage-schema.ts VALID_MODES (the directive's mode is read straight off
 // the stage node, so the value set is identical).
 export const VALID_MODES = ["inline", "subagent", "pipeline", "mob", "agent-team"] as const;
+export const VALID_REVIEW_CLASSES = ["adversarial", "advisory"] as const;
 
 // Per-kind allowed-key sets. A field outside its kind's set is rejected as an
 // unknown key (mirrors aidlc-stage-schema.ts KNOWN_FIELDS). `kind` is always
@@ -319,6 +375,7 @@ const RUN_STAGE_FIELDS = [
   "stage_file",
   "reviewer",
   "reviewer_max_iterations",
+  "review_class",
   "conductor_persona",
   "next_stage",
   "unit",
@@ -349,6 +406,7 @@ const INVOKE_SWARM_FIELDS = [
   "stage_file",
   "reviewer",
   "reviewer_max_iterations",
+  "review_class",
   "repo",
 ] as const;
 const PRESENT_GATE_FIELDS = ["kind", "stage", "phase", "memory_path"] as const;
@@ -358,17 +416,30 @@ const ERROR_FIELDS = ["kind", "message"] as const;
 const DONE_FIELDS = ["kind", "reason"] as const;
 const PARKED_FIELDS = ["kind", "reason", "stage"] as const;
 
+// `narration` is legal on EVERY kind, so it is folded into each allowed-key set
+// centrally rather than repeated in ten literals. A presentation field carries no
+// per-kind meaning: the conductor speaks it when present and works silently when
+// absent, on any kind. Folding it here also means a future emission point can
+// attach a line without touching this file.
+const NARRATION_FIELD = "narration" as const;
+
+// Every kind's set gains `narration`, so the per-kind literals above stay the
+// record of what is kind-SPECIFIC and this one helper adds what is universal.
+function withNarration(fields: readonly string[]): readonly string[] {
+  return [...fields, NARRATION_FIELD];
+}
+
 const KNOWN_FIELDS_BY_KIND: Readonly<Record<DirectiveKind, readonly string[]>> = {
-  "load-steering": LOAD_STEERING_FIELDS,
-  "run-stage": RUN_STAGE_FIELDS,
-  "dispatch-subagent": DISPATCH_SUBAGENT_FIELDS,
-  "invoke-swarm": INVOKE_SWARM_FIELDS,
-  "present-gate": PRESENT_GATE_FIELDS,
-  ask: ASK_FIELDS,
-  print: PRINT_FIELDS,
-  error: ERROR_FIELDS,
-  done: DONE_FIELDS,
-  parked: PARKED_FIELDS,
+  "load-steering": withNarration(LOAD_STEERING_FIELDS),
+  "run-stage": withNarration(RUN_STAGE_FIELDS),
+  "dispatch-subagent": withNarration(DISPATCH_SUBAGENT_FIELDS),
+  "invoke-swarm": withNarration(INVOKE_SWARM_FIELDS),
+  "present-gate": withNarration(PRESENT_GATE_FIELDS),
+  ask: withNarration(ASK_FIELDS),
+  print: withNarration(PRINT_FIELDS),
+  error: withNarration(ERROR_FIELDS),
+  done: withNarration(DONE_FIELDS),
+  parked: withNarration(PARKED_FIELDS),
 };
 
 // --- Validator ---
@@ -412,6 +483,12 @@ export function validateDirective(obj: unknown): ValidationResult {
     }
   }
 
+  // Rule 3b: narration is legal on every kind, so it is type-checked once here
+  // rather than in each of the ten switch arms. Optional: absent is the normal
+  // case and never an error; present-but-not-a-string is, because the conductor
+  // would otherwise be handed a non-sentence to speak.
+  checkOptionalString(o, NARRATION_FIELD, kind, errors);
+
   // Rule 4-6: per-kind required-field presence + type checks, with specific,
   // kind-aware messages.
   switch (kind) {
@@ -446,6 +523,11 @@ export function validateDirective(obj: unknown): ValidationResult {
       checkOptionalString(o, "stage_file", kind, errors);
       checkOptionalString(o, "reviewer", kind, errors);
       checkOptionalPositiveInteger(o, "reviewer_max_iterations", kind, errors);
+      checkOptionalString(o, "review_class", kind, errors);
+      checkEnum(o, "review_class", VALID_REVIEW_CLASSES, kind, errors);
+      if ("review_class" in o && typeof o.reviewer !== "string") {
+        errors.push(`${kind}: review_class requires reviewer`);
+      }
       checkOptionalString(o, "repo", kind, errors);
       break;
     case "present-gate":
@@ -521,6 +603,11 @@ function checkRunStageShared(
   // an optional string, reviewer_max_iterations an optional positive integer.
   checkOptionalString(o, "reviewer", kind, errors);
   checkOptionalPositiveInteger(o, "reviewer_max_iterations", kind, errors);
+  checkOptionalString(o, "review_class", kind, errors);
+  checkEnum(o, "review_class", VALID_REVIEW_CLASSES, kind, errors);
+  if ("review_class" in o && typeof o.reviewer !== "string") {
+    errors.push(`${kind}: review_class requires reviewer`);
+  }
   // unit: optional on a run-stage directive (present only on a per-unit
   // Construction directive resolved to a concrete Unit of Work). A present
   // value must be a string; absent is valid.

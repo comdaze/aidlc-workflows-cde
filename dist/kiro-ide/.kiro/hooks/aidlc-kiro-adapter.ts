@@ -36,7 +36,7 @@
 //   - audit-and-sensors: scrape the written file path from toolResult prose
 //     (strict patterns, fail-open) and feed the core hooks the Claude-shaped
 //     {tool_input:{file_path}}.
-//   - runtime-compile: the command is unrecoverable, so drop the command
+//   - rebuild-stage-graph: the command is unrecoverable, so drop the command
 //     filter and always forward — the core hook self-gates on the audit tail.
 //   - state-sync: payload-independent — the core hook reads the latest
 //     STAGE_STARTED slug from the audit tail (no task payload needed).
@@ -52,8 +52,9 @@
 // Usage (registered in .kiro/hooks/aidlc-*.json — the IDE's v2 hook schema,
 // {"version":"v1","hooks":[{name,trigger,matcher,action}]}):
 //   bun .kiro/hooks/aidlc-kiro-adapter.ts <target>
-// where <target> ∈ mint | block | session-start | audit-and-sensors |
-//                  runtime-compile | state-sync | log-subagent | stop |
+// where <target> ∈ record-human-turn | enforce-approval-gate | session-start |
+//                  audit-and-sensors | rebuild-stage-graph |
+//                  sync-workflow-state | log-subagent | continue-workflow |
 //                  session-end
 
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -64,6 +65,7 @@ import {
   humanActedSinceGate,
   humanPresenceGuardDisabled,
   isAutonomousMode,
+  markHumanTurn,
   recordHookDrop,
   resolveProjectDirFromHook,
   stateFilePath,
@@ -102,7 +104,7 @@ export async function run(
 ): Promise<number> {
 // LOAD-BEARING (not debug-only): this is the base dir for resolve(projectDir,
 // rawPath) that turns the IDE's workspace-relative write path into the absolute
-// path the core audit-logger's record-root check needs — the core fix of this
+// path the core write-audit-log's record-root check needs — the core fix of this
 // harness. It also feeds hookDebug/recordHookDrop. Do not remove it.
 const projectDir = resolveProjectDirFromHook(import.meta.url);
 
@@ -178,11 +180,19 @@ hookDebug(projectDir, "kiro-adapter", "invoked", {
 // prompt in a project that never ran the framework does not scaffold audit
 // shards. Fail-open (try/catch, exit 0) so a mint failure never blocks the
 // human's turn.
-if (target === "mint") {
+//
+// The seam ALSO touches the .aidlc-human-turn marker (markHumanTurn), which is
+// what makes the Stop hook's conversational carve-out work on this harness. The
+// IDE delivers no `transcript_path`, so the carve-out cannot read the turn
+// history; it compares this marker's mtime against .aidlc-engine-touch instead.
+// Both writes ride this one seam so the ledger and the marker can never
+// disagree about when a human spoke. See the marker family in aidlc-lib.ts.
+if (target === "record-human-turn") {
   try {
     const pd = process.cwd();
     if (existsSync(stateFilePath(pd))) {
       appendAuditEntry("HUMAN_TURN", {}, pd);
+      markHumanTurn(pd);
     }
   } catch {
     /* advisory - mint never blocks the turn */
@@ -202,7 +212,7 @@ if (target === "mint") {
 // Construction (swarm/Bolt has no human at the gate) and the deterministic
 // off-switch. The IDE gives no cwd payload, so the project dir is process.cwd().
 // All read from disk. Fail-open on any read/parse error (advisory).
-if (target === "block") {
+if (target === "enforce-approval-gate") {
   try {
     const pd = process.cwd();
     const sp = stateFilePath(pd);
@@ -248,36 +258,45 @@ function extractWrittenPath(toolResult: string): string {
   return "";
 }
 
-// A write that FAILED has no path to extract and nothing to audit — declining it
-// is the correct outcome, not decay. Recording those as hook drops made the
-// health file read like lost data: a real run collected 7 drops, every one of
-// them a permission denial or a `str_replace` that never applied. Classify the
-// known failure wordings so `--doctor` keeps surfacing genuine
-// unrecognised-success prose (the decay this harness exists to catch) without
-// the noise.
+// Does this toolResult describe a write that FAILED? Used only to keep the drop
+// log honest: a failed write has no artifact to audit, so not forwarding it is
+// correct behaviour and must NOT be recorded as harness decay (see the call
+// site). The 1.x stdin channel carries no success flag, so error prose is the
+// only signal available.
 //
-// Deliberately narrow: only Kiro's own failure prefixes. Anything else still
-// records a drop, because an unknown wording might be a SUCCESSFUL write whose
-// path we failed to parse — and that one must stay loud.
-const WRITE_FAILURE_PREFIXES = [
-  // "Tool call denied by user's permissions. Rule: deny …" — trimmed to the
-  // stable head so a possessive/wording drift does not reopen the noise.
-  "Tool call denied",
-  "Caught an error while replacing string",
-  "Failed to",
-  "Error:",
-  "InvalidToolUse:",
-  "The provided path",
-] as const;
-
+// EVIDENCE GRADING — only the first pattern is grounded in a capture:
+//   ^Caught an error while   OBSERVED live on IDE 1.x (a str_replace whose old
+//                            string matched multiple times). This is the case
+//                            that motivated the fix.
+//   ^Error:                  DEFENSIVE GUESS. Not observed; no capture in this
+//   ^Failed to               repo or in docs/reference/kiro-ide-hook-payload.md
+//   ^An error occurred       backs these three shapes.
+// They are kept because the risk direction is mild and one-way: a match only
+// suppresses a drop when path extraction has ALREADY failed and the payload has
+// no structured success flag. Explicit `toolSuccess: true` remains authoritative.
+// Masking real decay would therefore require a new flagless SUCCESS wording that
+// begins with error prose — and the known success wordings ("Created the …",
+// "Replaced text in …", "Appended the text to …") cannot collide with any of
+// them. If a capture ever contradicts one, delete it rather than widening the set.
+//
+// Every pattern is start-anchored on purpose: a loose "contains 'error'" test
+// would swallow a successful write to a file whose NAME mentions an error, which
+// would hide exactly the decay this log exists to surface. Anything unrecognised
+// is treated as a success and still earns a visible drop — the default stays
+// biased toward reporting, not toward silence.
 function isFailedWriteResult(toolResult: string): boolean {
   const s = toolResult.trim();
-  return WRITE_FAILURE_PREFIXES.some((p) => s.startsWith(p));
+  return (
+    /^Caught an error while /i.test(s) ||
+    /^Error:/i.test(s) ||
+    /^Failed to /i.test(s) ||
+    /^An error occurred/i.test(s)
+  );
 }
 
 // Map the IDE tool name to the canonical name the core hooks match on. Write
 // creates a (possibly new) file; str_replace/fs_append always target an
-// existing file → Edit (forces ARTIFACT_UPDATED in the core audit-logger).
+// existing file → Edit (forces ARTIFACT_UPDATED in the core write-audit-log).
 function canonicalWriteTool(name: string): "Write" | "Edit" | "" {
   if (name === "fs_write") return "Write";
   if (name === "str_replace" || name === "fs_append") return "Edit";
@@ -334,7 +353,7 @@ function buildForward(): Forward {
       };
 
     case "audit-and-sensors": {
-      // postToolUse(write) → audit-logger THEN sensor-fire (both ship core).
+      // postToolUse(write) → write-audit-log THEN run-sensors (both ship core).
       // Captured PostToolUse write inputs are empty, so the file path comes
       // from the toolResult prose.
       //
@@ -365,19 +384,26 @@ function buildForward(): Forward {
       if (canon === "") return null;
       const rawPath = extractWrittenPath(ide.toolResult ?? "");
       if (!rawPath) {
-        // A write-class tool ran but its toolResult wording did not match any
-        // known pattern. Two very different reasons for that:
-        //
-        //   - The write FAILED (permission denial, a str_replace whose anchor
-        //     did not match). There is no artifact and nothing to audit, so
-        //     declining is correct — log it at debug level and move on.
-        //   - The write SUCCEEDED and the IDE's success wording changed. That is
-        //     real decay: the artifact exists but no audit row or sensor fire
-        //     covers it. Record a visible drop so `--doctor` surfaces it.
-        if (isFailedWriteResult(ide.toolResult ?? "")) {
+        // TWO DISTINCT CASES REACH HERE, and conflating them is what made the
+        // drop log useless as a health signal:
+        //   (a) The write FAILED. There is no artifact to audit, so not
+        //       forwarding is CORRECT, not decay. The 1.x stdin channel carries
+        //       no success flag (so the `toolSuccess === false` guard above
+        //       cannot catch it), and the failure arrives only as error prose —
+        //       e.g. a str_replace whose old string matched multiple times.
+        //   (b) The write SUCCEEDED but its result wording matched no known
+        //       pattern. THIS is the invisible decay this harness exists to
+        //       eliminate, and the only case that belongs in the drop log.
+        // Recording (a) as a drop made `--doctor` report decay on a workspace
+        // whose hooks were working perfectly, which trains the reader to ignore
+        // the channel that matters. So classify flagless payloads first: log (a)
+        // at debug level and reserve the visible drop for (b). A structured
+        // `toolSuccess: true` is authoritative and must never be overridden by
+        // defensive prose guesses.
+        if (ide.toolSuccess === undefined && isFailedWriteResult(ide.toolResult ?? "")) {
           hookDebug(projectDir, "kiro-adapter", "audit-and-sensors: write failed, nothing to audit", {
-            tool: ide.toolName ?? "?",
-            result: (ide.toolResult ?? "").slice(0, 120),
+            toolName: ide.toolName ?? "?",
+            toolResult: (ide.toolResult ?? "").slice(0, 160),
           });
           return null;
         }
@@ -402,14 +428,14 @@ function buildForward(): Forward {
       };
     }
 
-    case "runtime-compile": {
+    case "rebuild-stage-graph": {
       // The IDE does not surface the shell command (toolResult is only
       // stdout+exit), so the command filter cannot run here. The
       // ide-audit-sync marker tells the core hook to skip the command filter
       // and gate purely on the audit tail (idempotent + cheap); its own
       // MEMORY_EMPTY emit is not in the transition regex (no recursion).
       return {
-        hook: "aidlc-runtime-compile.ts",
+        hook: "aidlc-rebuild-stage-graph.ts",
         input: {
           hook_event_name: "PostToolUse",
           tool_name: "Bash",
@@ -418,30 +444,14 @@ function buildForward(): Forward {
       };
     }
 
-    case "shell-post": {
-      // The merged PostToolUse(execute_bash) target: runtime-compile +
-      // state-sync in ONE process. Both are payload-independent on the IDE (see
-      // the two cases below, kept for direct invocation and for an install that
-      // still carries the older split registrations), so nothing needs deriving
-      // here — the fan-out happens at the forward site.
-      return {
-        hook: "__shell_post__",
-        input: {
-          hook_event_name: "PostToolUse",
-          tool_name: "Bash",
-          tool_input: { command: "", source: "ide-audit-sync" },
-        },
-      };
-    }
-
-    case "state-sync": {
+    case "sync-workflow-state": {
       // Payload-independent. The IDE gives no task payload (toolArgs is empty),
       // so instead of extracting a slug from the tool call, the core hook reads
       // the latest STAGE_STARTED slug from the audit tail and reconciles the
       // state file's Current Stage. The IDE_AUDIT_SYNC marker tells the core
       // hook to take that audit-tail path rather than parse a TaskUpdate.
       return {
-        hook: "aidlc-sync-statusline.ts",
+        hook: "aidlc-sync-workflow-state.ts",
         input: {
           hook_event_name: "PostToolUse",
           tool_name: "TaskUpdate",
@@ -511,12 +521,43 @@ function buildForward(): Forward {
       };
     }
 
-    case "stop":
-      // Kiro provides no stop_hook_active signal; the core hook's own
-      // 8-block no-progress ceiling is the loop guard (it defaults the flag
-      // to false). The {"decision":"block"} stdout contract is identical.
+    case "continue-workflow":
+      // ADVISORY ONLY ON THIS HARNESS. The IDE's `Stop` trigger cannot block and
+      // does not forward the hook's output — matching what
+      // aidlc-continue-workflow.json and the kiro-ide guide have always said.
+      // Measured live on IDE 1.x with a probe hook: the command RAN (witness
+      // file written), and neither its stdout nor its stderr reached the
+      // agent's context. The Stop payload is only
+      // `{session_id, hook_event_name, cwd}` — no transcript, no turn id. Kiro
+      // documents `Stop` outside the blockable set (only PreToolUse,
+      // UserPromptSubmit and PreTaskExec can block) and forwards stdout only for
+      // SessionStart and UserPromptSubmit. There is no `{"decision":"block"}`
+      // contract in Kiro for any trigger; that shape is Claude Code's.
+      //
+      // So the core hook still runs and its side effects are what matter here:
+      // the `continue-workflow.drops` carve-out record and the no-progress
+      // counter under `.aidlc-stop-hook/`. Its `{"decision":"block"}` stdout is
+      // produced and then discarded by the host. Forwarding-loop enforcement on
+      // the IDE therefore rests on the conductor's own Stop protocol, NOT on
+      // this hook. (An earlier revision of this comment claimed the block
+      // contract was "identical to Claude's". It never was; the probe above
+      // settles it.)
+      //
+      // Kiro also provides no `stop_hook_active`, so the flag defaults to false.
+      // That makes decideBlock's `prior === null && stopHookActive` seeding branch
+      // unreachable here: a hook joining an already-in-flight block sequence
+      // starts its count at 1 instead of 2, i.e. one extra counted block before
+      // releasing. The ceiling is run-mode aware (INTERACTIVE_BLOCK_CAP=2,
+      // AUTONOMOUS_BLOCK_CAP=8), not the fixed 8 a still earlier revision promised.
+      //
+      // The absent transcript no longer leaves the conversational carve-out inert:
+      // the core hook falls back to the `.aidlc-human-turn` / `.aidlc-engine-touch`
+      // mtime comparison, and the `record-human-turn` target above writes the
+      // former. On this harness that changes which record
+      // `continue-workflow.drops` gets and whether the counter advances — not
+      // what the human sees.
       return {
-        hook: "aidlc-stop.ts",
+        hook: "aidlc-continue-workflow.ts",
         input: { hook_event_name: "Stop", stop_hook_active: false },
       };
 
@@ -561,8 +602,8 @@ hookDebug(projectDir, "kiro-adapter", "forward", {
 if (fwd.hook === "__audit_and_sensors__") {
   // Two core hooks ride the same write event, in audit-then-sensors order
   // (mirrors the Claude settings.json registration). Both advisory: exit 0.
-  runCore("aidlc-audit-logger.ts", fwd.input);
-  runCore("aidlc-sensor-fire.ts", fwd.input);
+  runCore("aidlc-write-audit-log.ts", fwd.input);
+  runCore("aidlc-run-sensors.ts", fwd.input);
   return 0;
 }
 
@@ -602,8 +643,9 @@ if (target === "session-start") {
   return 0;
 }
 
-// stop (and any future passthrough target): forward stdout + exit code
-// verbatim — the {"decision":"block","reason"} contract is shared.
+// Preserve the core hook's stdout and exit code for passthrough targets. On
+// Kiro IDE 1.x the host discards Stop-hook output, so this relay does not imply
+// a shared `{"decision":"block","reason"}` contract.
 if (result.stdout) process.stdout.write(result.stdout);
 return result.code;
 }
