@@ -457,7 +457,46 @@ causes, three fixes:
 | Files | `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` (+~40) · `harness/kiro-ide/hooks/aidlc-shell-post.json` (new) · `harness/kiro-ide/manifest.ts` · `docs/guide/harnesses/kiro-ide.md`. Deletes `hooks/aidlc-{runtime-compile,sync-statusline}.json`. |
 | Class | **B — general, not CDE-specific.** |
 | Upstream | **Offer it** together with A7 — same run produced both findings. |
-| On conflict | Keep ours. If upstream has since edited either superseded `.json`, that edit is moot: re-apply the merge and carry their description text into `aidlc-shell-post.json`. |
+| On conflict | **BLOCKS THE SYNC — needs a human decision, see below.** The old instruction ("keep ours") is no longer sufficient: at 2.5.59 upstream renamed *both* superseded hooks (`aidlc-runtime-compile.ts` → `aidlc-rebuild-stage-graph.ts`, `aidlc-sync-statusline.ts` → `aidlc-sync-workflow-state.ts`), so "keep ours" leaves the fork's merged target calling two `runCore()` names that no longer exist — a silently dead hook layer. |
+
+> [!CAUTION]
+> **A8 is not a row, it is a subsystem — and that is what stopped the 2026-08-09
+> merge attempt.** Six surfaces encode it, and resolving fewer than all six leaves
+> an incoherent tree:
+>
+> 1. `harness/kiro-ide/hooks/aidlc-shell-post.json` — the merged registration
+> 2. `harness/kiro-ide/hooks/aidlc-kiro-adapter.ts` — the `shell-post` target,
+>    which fans out via `runCore("aidlc-runtime-compile.ts")` and
+>    `runCore("aidlc-sync-statusline.ts")` — **both names deleted upstream**
+> 3. `harness/kiro-ide/manifest.ts` — ships the merged json instead of the two
+> 4. `tests/unit/t245-…` — asserts *exactly one* v2 registration carries the
+>    `execute_bash` matcher, plus a pinned filename set
+> 5. `core/tools/aidlc-utility.ts` — U2's "Superseded hook registrations" doctor row
+> 6. `tests/unit/t259-…` — pins that doctor row, by the superseded filenames
+>
+> Taking upstream's split on a cost argument reddened t245 (`expected 1, received 2`)
+> and t259 (`expected /aidlc-runtime-compile\.json/, received ""`) within minutes.
+> The guards did their job; the resolution was the problem.
+>
+> **The decision, for whoever runs the next sync:**
+>
+> - **Keep A8.** Restore the merged registration and manifest entry, and **re-point
+>   the two `runCore()` names** to `aidlc-rebuild-stage-graph.ts` /
+>   `aidlc-sync-workflow-state.ts`. Also re-point t245's pinned filenames
+>   (`aidlc-stop.json` → `aidlc-continue-workflow.json`, `aidlc-mint.json` →
+>   `aidlc-record-human-turn.json`, `aidlc-audit-logger.json` →
+>   `aidlc-write-audit-log.json`). Preserves ~80ms of bun startup per shell command
+>   on one harness; keeps a six-surface fork-only subsystem that has now broken once
+>   on an upstream rename and will break again.
+> - **Drop A8.** Take upstream's split, then remove the fork's A8-dependent
+>   assertions: t245's one-matcher assertion and pinned-set entry, and U2's
+>   superseded-registration doctor row with t259. Note U2's row is nearly moot
+>   already — it hunts for leftover `aidlc-runtime-compile.json` /
+>   `aidlc-sync-statusline.json`, and **upstream deleted both**, so it is about to
+>   be checking for files nobody ships.
+>
+> Either is defensible. It is a fork-behaviour change, so it is not the resolver's
+> call to make mid-merge.
 
 `aidlc-runtime-compile` and `aidlc-sync-statusline` were two registrations sharing
 the `execute_bash` matcher, and both are payload-independent on the IDE — so every
@@ -968,6 +1007,45 @@ generated trees match the source you changed.
 ## 7. What the merges taught us
 
 Recorded because each of these will recur, and none was predicted by §2.
+
+### From the 2.5.59 sync ATTEMPT (2026-08-09) — resolved 16 of 18, aborted on A8
+
+The merge ran, was resolved down to two files, and was then **aborted deliberately**
+rather than landed: A8 turned out to need a fork-behaviour decision (see its
+CAUTION) and §4's own opening rule is not to resolve the enforcement spine under
+pressure. The branch was discarded and the tree returned to its pre-merge commit.
+Nothing below needs re-deriving next time.
+
+**18 non-dist conflicts, not the 20 the assessment predicted.** The A15 retraction
+removed `aidlc-orchestrate.ts` and `aidlc-session-start.ts` from the conflict set —
+a measured benefit of retracting rather than reworking.
+
+**Resolved, with the resolution that worked:**
+
+| Conflict | Resolution |
+| --- | --- |
+| A1 — 3 `onboarding.fills.ts` + 3 docs | Take **theirs** (upstream rewrote the surrounding prose in 2.5.57 and updated hook counts to 16/17), then re-apply only the install-command substitution. Exactly what A1's row prescribes. |
+| A7 — `aidlc-lib.ts`, 2 hunks | Both hunks were **both-sides-added**, not competing: ours added `readAuditShardsTail`, upstream added `readAuditShardEvents` + its interface; the import hunk needed `readSync` (ours) ∪ `linkSync`/`realpathSync` (theirs). Union both. |
+| A7 — `aidlc-sync-workflow-state.ts` | Keep the bounded-tail optimization, adopt upstream's new `hookDebug` label (`"sync-workflow-state"`). |
+| A11 — `aidlc-continue-workflow.ts` + `t121` | Resolve to **#729's exact text** — upstream's clauses, order reversed — so the row closes to a no-op if #729 merges. |
+| A12 — `aidlc-block.json` | Accept upstream's **deletion** (it is a rename), then add the `matcher` to the successor `aidlc-enforce-approval-gate.json`. Verified the matcher stays a superset of `aidlc-write-audit-log`'s and `aidlc-shell-post`'s. |
+| D1 — both coverage files | Regenerate, per D1. The ratchet list inside `gen-coverage-registry.test.ts` is a **union** (both sides appended entries). |
+
+**Three things worth carrying forward:**
+
+- **The union of two both-added hunks can still be syntactically broken.** Upstream's
+  `readAuditShardEvents` had its closing `}` on the far side of the conflict marker,
+  so a mechanical "theirs + ours" concatenation silently dropped it. `bun build` on
+  the single file named it immediately. **Syntax-check every file you resolve by
+  script**, before running anything else — `package.ts --check` will not catch it
+  (it compares bytes, it never parses).
+- **Upstream independently fixed one of the fork's divergences, better.** The
+  adapter's failed-write classification (fork: match Kiro's failure prefixes) is
+  upstream's too now, and theirs additionally treats a structured
+  `toolSuccess: true` as authoritative and only falls back to prose when the flag is
+  absent. Take theirs and close the fork's version by adoption.
+- **The version trio auto-resolved exactly as the assessment predicted** — consistent
+  at upstream's number, the fork's legacy `CHANGELOG.md` block intact.
 
 ### From the 2.5.59 sync ASSESSMENT (2026-08-08) — assessed, not merged
 
