@@ -49,7 +49,25 @@ AIDLC_PLUGIN_ROOT="$PLUGIN_ROOT" AIDLC_PROJECT_DIR="<project>" \
   AIDLC_HARNESS_DIR=.kiro bun "$PLUGIN_ROOT/hooks/compose.ts"
 ```
 
-**Step 3 — Select plugins** (run inside the project directory):
+> `AIDLC_PLUGIN_ROOT` must point at the harness projection
+> (`dist/plugins/poc-accelerator/<harness>/`), **not** at a repository root. The
+> composer takes the plugin's identity from the host manifest inside the
+> projection; pointed elsewhere it reads the directory name instead and skips
+> every contribution as foreign. It also exits 0 and writes nothing if
+> `<project>/.kiro/tools/aidlc-graph.ts` is missing — so check step 1 landed
+> before assuming step 2 worked.
+
+**Step 3 — Plugin selection — only if the project uses one.** With no selection
+recorded, every installed plugin is enabled and this one works straight after
+step 2; `doctor` reports `all enabled (no selection)`. So this step is usually a
+no-op.
+
+It matters in the inverse direction: a selection that **omits**
+`poc-accelerator` disables all 8 stages — silently, with `doctor` still green,
+because a narrowed selection is a valid state and not an error (measured:
+`select-plugins aidlc` drops the enabled counts to `aidlc=29, bootstrap=3` with
+no poc row). So whenever a selection exists, or you create one later for any
+other plugin, this plugin has to be named in it:
 
 ```bash
 cd <project>
@@ -66,8 +84,20 @@ step-8 cost analysis all run through these servers.
 **Step 5 — Verify, then start:**
 
 ```bash
-bun .kiro/tools/aidlc-utility.ts doctor    # all green = installed
+bun .kiro/tools/aidlc-utility.ts doctor
 ```
+
+Expect **0 failed** and these two rows, which are the ones that actually prove the
+plugin composed — a green run with the plugin missing looks identical without them:
+
+```text
+✓  Enabled plugins: ... enabled stage counts: aidlc=29, bootstrap=3, poc-accelerator=8
+✓  Hook drops: none recorded
+```
+
+The total row count depends on the framework install, not on this plugin: 39
+passed on a stock upstream `v2` install, 44 on this fork's. Either is fine;
+`0 failed` plus `poc-accelerator=8` is the signal.
 
 ```text
 /poc-accelerator-cde Build a safe customer demo for <scenario>
@@ -145,7 +175,44 @@ opencode's one-array `command` shape. See the
 > `.kiro.hook` for pre-1.0 builds), but they only fire if you install those files
 > under the project's `.kiro/hooks/`. Kiro CLI wires hooks through
 > `agents/aidlc.json` and ignores dropped hook files entirely. On both, run the
-> explicit compose command — it is the supported path and it is idempotent.
+> explicit compose command — it is the supported path.
+
+### Updating the plugin in a project that already has it
+
+Re-running compose does **not** update changed content, and this is the one place
+where an install can silently keep running an old version. Measured on Kiro IDE:
+
+| Situation | Result |
+| --- | --- |
+| Re-compose, content unchanged | 0 drops — genuinely idempotent |
+| Re-compose, content **changed** | 1 degraded drop, **file not updated** |
+| Delete the file from the install, then compose | 0 drops, new content lands |
+
+The composer will not overwrite a path that already exists — it cannot tell its own
+earlier output from a core or another plugin's file, so it refuses and records
+`collides with an existing file (core or another plugin); not overwritten`. Nothing
+fails loudly; the flow keeps running the old stage.
+
+`doctor` is what catches it, so read the row rather than trusting compose's exit
+code (it stays 0):
+
+```text
+✗  Hook drops (plugin-compose-poc-accelerator): 1 degraded of 1 ...
+```
+
+To update, remove the plugin's composed files first, then compose. The stages land
+in `.kiro/aidlc-common/stages/<phase>/`, the runners in `.kiro/skills/`:
+
+```bash
+cd <project>
+rm -rf .kiro/aidlc-common/stages/*/poc-accelerator-* \
+       .kiro/skills/poc-accelerator-* \
+       .kiro/scopes/poc-accelerator-cde.md \
+       .kiro/sensors/aidlc-poc-accelerator-* \
+       .kiro/tools/aidlc-sensor-poc-accelerator-*
+find aidlc -name 'plugin-compose-poc-accelerator.drops' -delete   # self-clears anyway
+# then re-run the step-2 compose command
+```
 
 ## Guardrails
 
