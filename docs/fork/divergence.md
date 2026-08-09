@@ -565,13 +565,13 @@ stakes (A1's doctor hint, U2's +92 doctor lines, and this line). It is upstream'
 25-edits-in-60-days file, so pricing this as "one line" understates it — the
 merge cost is per-file, not per-line.
 
-### A11 — Load-steering continuations were unfollowable under output truncation (2 files) — **upstream-bound**
+### A11 — Load-steering continuations were unfollowable under output truncation (2 files) — **submitted upstream**
 | | |
 | --- | --- |
 | Files | `core/hooks/aidlc-stop.ts` (`continuationReason`, load-steering branch) · `tests/integration/t121-stop-hook-enforce.test.ts` (ordering assertion, appended to the existing case). **Upstream renamed the file: after the next sync the target is `core/hooks/aidlc-continue-workflow.ts`** (R079). The function survives unchanged — same name, same signature, same `load-steering && continueToken` branch, same `exactContent` binding — so this is a two-clause reorder, not a re-implementation. |
 | Class | **B — general, not CDE-specific.** A message-ordering defect in upstream's Stop hook. Nothing here knows about CDE or any fork plugin. |
-| Upstream | **Offer it — this is the cheapest and strongest of the unsent rows.** Still live at 2.5.59: in `aidlc-continue-workflow.ts`'s `continuationReason`, `${exactContent}` is emitted *before* the `continue "${continueToken}"` command (verified 2026-08-08 by fragment order in the source). Upstream has **no** test pinning the order — `t121` there contains zero `indexOf` assertions — and this fork already has one, verified failing on exactly that order. A failing assertion plus a two-clause reorder is the best-shaped PR in the set. |
-| On conflict | Keep ours. If upstream rewrites the message, re-apply the *property* — actionable instruction before bulk payload — rather than the exact wording. |
+| Upstream | **Submitted: [awslabs/aidlc-workflows#729](https://github.com/awslabs/aidlc-workflows/pull/729)** (opened 2026-08-09 against `v2` at 2.5.59, submitted as 2.5.60). The defect was proven **by a run, not a read**: the fork's ordering assertion planted on an unmodified `v2` worktree failed with token at offset 332 and payload at 160, then passed after the reorder. Upstream had no test pinning the order (`t121` there carried zero `indexOf` assertions). |
+| On conflict | **Take upstream's clauses, then check the order.** Upstream rewrote every clause of this message since the merge base ("still has rules to load" for "has pending rule delivery", "each load-steering step it returns" for "load-steering continuations — chaining each response's own token", "Do not summarise or narrate these rule chunks to the user" for "Do not report or narrate steering chunks"), so #729 deliberately carries **upstream's** wording with only the order changed. The fork's older phrasing is not worth preserving; the *property* is — actionable instruction before bulk payload. If #729 has merged by sync time, take theirs wholesale and the row closes. If not, take theirs and re-apply the reorder, and update the fork's `t121` `toContain` assertions to upstream's clause text at the same time (they currently pin the fork's older wording). |
 The load-steering continuation inlined the whole rules bundle into the hook's
 `reason` and put the `continue` token **after** it. Measured on a stock install:
 **16,583 chars across 37 entries**. Kiro IDE truncates hook output, so every
@@ -921,12 +921,17 @@ reduces to `plugins/` plus the A4 identity files — the shape §7 argues it sho
 have had all along.
 
 **Open submissions.** A1 is [#701](https://github.com/awslabs/aidlc-workflows/pull/701)
-— the only one open. A2 (one word, inclusive language) and A5 (one 8-line rule) are
-still unsent and should go as separate PRs — they are unrelated concerns and
-bundling them would give a reviewer three reasons to hesitate instead of one to
-agree. **A11 is the strongest unsent candidate**: the defect is live at tip, the fix
-is a two-clause reorder, upstream has no test pinning the order and this fork
-already has one verified failing on it.
+and A11 is [#729](https://github.com/awslabs/aidlc-workflows/pull/729). A2 (one word,
+inclusive language) and A5 (one 8-line rule) are still unsent and should go as
+separate PRs — they are unrelated concerns and bundling them would give a reviewer
+three reasons to hesitate instead of one to agree.
+
+> [!TIP]
+> **#729 is the shape to copy.** One behaviour, one source file, and an assertion
+> **proven red on an unmodified upstream worktree before the fix was written** —
+> offsets recorded in the PR body. Compare A15's retraction, where the claim rested
+> on a grep instead of a run. The cost difference between the two is a merge and a
+> closed PR.
 
 **Closed without merging.** A15 was submitted as
 [#726](https://github.com/awslabs/aidlc-workflows/pull/726) and **we closed it**
