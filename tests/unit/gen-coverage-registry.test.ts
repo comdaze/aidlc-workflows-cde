@@ -753,8 +753,7 @@ describe("mechanismsOf is body-derived (milestone 3)", () => {
     "unit/t220-tier-projection-module.test.ts",
     // Spawns the project's own aidlc-utility.ts doctor under bun.
     "unit/t259-doctor-ide-hook-registration.test.ts",
-    // Spawns the real session-start hook and the real engine `next`.
-    "unit/t275-completed-workflow-new-intent-path.test.ts",
+
     "unit/t233-upstream-coverage-matching.test.ts",
     "unit/t231-handler-additions.test.ts",
     "unit/t238-build-binaries.test.ts",

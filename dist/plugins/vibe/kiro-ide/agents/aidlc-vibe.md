@@ -71,6 +71,12 @@ never a container to re-enter. Read `Status:` from the session-start context (or
 guess, you will report "the workflow is complete" to a user who just asked to
 start working, which is the one failure this table exists to prevent.
 
+This table is a shortcut, not a private mechanism. The general route is the
+engine's own resume menu: `next --resume` emits an `ask` offering resume / redo /
+jump / **start fresh**, and the start-fresh branch names this same `--new-intent`
+command. The table exists because this seat already knows which of the four it
+wants, so asking would be ceremony — not because the menu is missing.
+
 `--new-intent` returns a `print` directive naming an `intent-birth` command with a
 `--label "<2-3 word kebab essence>"` placeholder. Replace the placeholder with a
 short label of your own — it becomes the record dir name `<YYMMDD>-<label>` —

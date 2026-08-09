@@ -76,7 +76,7 @@ upstream `9c9201b8`:
 | `dist/` | 256 | **Not a conflict** — generated. Never merge it; regenerate (§3). |
 | `core/` | 4 | Low. See A1, A2 (small, policy-driven), A11 (Stop-hook message ordering), A13 (learnings identity) and A14 (a doctor row). |
 | `harness/` | 7 | **One real risk**, the Kiro IDE adapter. See B1; also A12 (one hook matcher). |
-| `tests/` | 5 | Low. One new file, one ratchet entry, three files with appended guards. See A5, A10, A11, A13, A15 — and D1 for the two derived coverage files, which are not a divergence at all but do conflict on every sync. |
+| `tests/` | 5 | Low. One new file, one ratchet entry, three files with appended guards. See A5, A10, A11, A13 — and D1 for the two derived coverage files, which are not a divergence at all but do conflict on every sync. |
 | root files | 6 | Low. No longer includes `CHANGELOG.md` or the version — see A3. |
 
 The plugin mechanism is doing its job: the majority of this fork's work lives in
@@ -689,41 +689,65 @@ when present (44/0).
 > environment problem, the probe has to run where the failure lives; a
 > stripped-*looking* shell is not the same as the shell the hook gets.
 
-### A15 — a completed workflow was a dead end (4 files) — **submitted upstream**
+### A15 — RETRACTED 2026-08-09: the premise was false, the mechanism already existed
 | | |
 | --- | --- |
-| Files | `core/tools/aidlc-orchestrate.ts` (the `done` branch names the move) · `core/hooks/aidlc-session-start.ts` (resume line keyed on `Status`) · `core/tools/aidlc-utility.ts` (`intent birth` in `--help`) · `tests/unit/t275-completed-workflow-new-intent-path.test.ts` (new) · `tests/unit/gen-coverage-registry.test.ts` + `tests/.coverage-registry.json` (ratchet) |
-| Class | **B — general.** Affects every scope on every harness; nothing here is CDE behaviour. |
-| Upstream | **Submitted: [awslabs/aidlc-workflows#726](https://github.com/awslabs/aidlc-workflows/pull/726)** (opened 2026-08-08 against `v2` at 2.5.59, submitted as 2.5.60). The shared text is byte-identical to that PR, so **A15 disappears from this table the moment it merges** — no follow-up edit needed. The one field that cannot match: upstream's `done` directive carries a `narration` the fork's directive type does not have, so the PR sets it and the fork does not. |
-| On conflict | Keep ours. If upstream rewrites either message, re-apply the *property* — a completed workflow must name `--new-intent` — rather than the literal sentence. |
-A completed intent is a finished record, never a container to re-enter, so the only
-move onward is to birth a new intent. That move (`next --new-intent` →
-`intent-birth`) appeared in **no** directive, **no** hook message and **no** help
-text. Meanwhile the session-start hook told the conductor to offer "the standard
-resume options (Resume / Redo / Jump / Start Fresh)" — a menu defined nowhere:
-`Start Fresh` occurred exactly once in the whole authored tree, in the line asking
-for it, and `Redo` *is* defined elsewhere as the intra-stage Keep/Modify/Redo gate
-loop, so a conductor that went looking found an actively misleading definition
-rather than none.
-Every scope runner forwards freeform text into `next` and ends its loop on
-`{kind:"done"}`, so the observable failure was: close a workflow, type a new
-request, get answered "Workflow complete", stop. Reported live on the `vibe` scope,
-where "one session per container" is by design and the closed case is therefore the
-*normal* one from the second session onward — but the defect is generic, and
-`/feature <request>` after a close-out dead-ends identically.
-The fix removes the dangling half rather than defining it in a second place that
-would drift: the hook keys its guidance on the `Status` it already read, and the
-engine's `done` reason names the command. `intent-birth`'s own source comment
-already described the capability ("OR a new intent for new work alongside an active
-one"); only the user-visible surfaces were silent.
-> [!NOTE]
-> **The shape is a dangling reference: prose and the mechanism it names were never
-> checked against each other.** That is the same family as the four
-> "check and checked were not independent" failures in §7 — a guard named for an
-> impossible precondition, a fixture compared to its own template, a doctor row
-> probing its own process, and a probe run outside the failing environment. t275
-> closes this instance in both directions, and is deliberately explicit about which
-> of its five assertions catches the class and which catches only the literal.
+| Files | **None. Reverted.** `core/tools/aidlc-orchestrate.ts` and `core/hooks/aidlc-session-start.ts` are restored to their pre-A15 state; `tests/unit/t275-completed-workflow-new-intent-path.test.ts` is deleted. The one surviving piece is the `intent birth` line in `core/tools/aidlc-utility.ts`'s `--help` (see the residual note below). |
+| Class | — |
+| Upstream | **[#726](https://github.com/awslabs/aidlc-workflows/pull/726) was CLOSED by us**, not merged, after `apackeer` requested changes. All four of that review's findings are valid and all four trace to the single error below. |
+| On conflict | Nothing to resolve — the divergence is gone. This row is kept, rather than deleted, so the next person who greps for `Start Fresh` does not rediscover the same false conclusion. |
+
+**The claim was:** after a close-out, the path to new work (`next --new-intent` →
+the intent-creation verb) appears in no directive, no hook message and no help
+text, and the session-start hook's "Resume / Redo / Jump / Start Fresh" is a menu
+defined nowhere.
+
+**The mechanism was in the engine the whole time, in BOTH trees:**
+
+```
+core/tools/aidlc-orchestrate.ts   --resume  →  askDirective("An existing workflow
+                                  was found… Resume from last checkpoint, redo the
+                                  current stage, jump to a stage, or start fresh.")
+core/tools/aidlc-orchestrate.ts   choice.includes("fresh")  →  printDirective(
+                                  "Start-fresh accepted. … run `next --new-intent
+                                  --scope <scope> \"<description>\"` — the existing
+                                  workflow stays in place…")
+```
+
+Those four labels in the hook line are the four implemented branches, reached by
+`next --resume` → the conductor renders the `ask` → `report --result resumed` →
+a per-choice `print`. The reference never dangled.
+
+**How the error was made, because this is the part worth keeping:** the search was
+for the *display label* `"Start Fresh"`. It appears once — in the hook line asking
+for it. The code spells the choices lowercase inside `choice.includes("fresh")`, and
+the menu text reads "…or start fresh." **The label was searched for and the
+mechanism declared absent.** The irony is exact: A15's own test carried an assertion
+("every `--flag` the guidance names must exist in the engine") written to catch
+prose that names a nonexistent mechanism, and the prose named a real mechanism the
+author could not find.
+
+**The original symptom was real but was a conductor error, not a framework defect.**
+On a completed workflow the conductor ran a bare `next`, received `done`, and
+stopped — instead of offering the resume menu the session-start hook had just
+instructed it to offer. The hook did its job.
+
+**Residual, genuinely missing, deliberately kept small:** `--help` lists
+`intent list` and `intent switch` but not the creation verb, so it is undiscoverable
+from the help text although it is the public form. The fork spells the verb `birth`;
+upstream retired that for `create` (`verbOrTarget === "create"`, `createPrintDirective`,
+`intent-create`), so **this one line cannot be byte-identical across the two trees
+and must be re-spelled at the sync.** Offered to upstream only if they want it.
+
+> [!CAUTION]
+> **Grep for the mechanism, not for the label.** A display string and the code that
+> implements it are usually spelled differently — different case, different
+> phrasing, split across a menu string and a branch predicate. Finding the label
+> once proves nothing about the referent. Before writing "X is defined nowhere",
+> search for what X would *do*: the flag it would set, the branch it would take, the
+> command it would print. This row cost a wrong `core/` change in two files, a test
+> that pinned the false premise, a divergence row, and a maintainer's review cycle
+> on a public repository.
 
 ### D1 — `tests/.coverage-ratchet.json` is derived — regenerate, never merge (1 file)
 | | |
@@ -896,11 +920,27 @@ and A5 all land, `core/` and `harness/` divergence goes to **zero** and the fork
 reduces to `plugins/` plus the A4 identity files — the shape §7 argues it should
 have had all along.
 
-**Open submissions.** A1 is [#701](https://github.com/awslabs/aidlc-workflows/pull/701);
-A15 is [#726](https://github.com/awslabs/aidlc-workflows/pull/726).
-A2 (one word, inclusive language) and A5 (one 8-line rule) are still unsent and
-should go as separate PRs — they are unrelated concerns and bundling them would
-give a reviewer three reasons to hesitate instead of one to agree.
+**Open submissions.** A1 is [#701](https://github.com/awslabs/aidlc-workflows/pull/701)
+— the only one open. A2 (one word, inclusive language) and A5 (one 8-line rule) are
+still unsent and should go as separate PRs — they are unrelated concerns and
+bundling them would give a reviewer three reasons to hesitate instead of one to
+agree. **A11 is the strongest unsent candidate**: the defect is live at tip, the fix
+is a two-clause reorder, upstream has no test pinning the order and this fork
+already has one verified failing on it.
+
+**Closed without merging.** A15 was submitted as
+[#726](https://github.com/awslabs/aidlc-workflows/pull/726) and **we closed it**
+after review: the premise was false and the mechanism already existed. Read A15's
+retraction before submitting anything — its lesson is about how the claim was
+verified, not about that particular row.
+
+> [!IMPORTANT]
+> **Verify the mechanism exists, or does not, before writing the PR body.** A15
+> reached a public repository asserting that a capability was absent from every user
+> surface; it was implemented in the file the PR edits. The cost was a maintainer's
+> review cycle plus a wrong `core/` change carried in this fork for a day. The check
+> that would have prevented it takes one command: grep for the branch or flag the
+> capability would use, not for the sentence that describes it.
 
 > [!CAUTION]
 > **Record a submission only against a PR number you just verified.** U2's row
