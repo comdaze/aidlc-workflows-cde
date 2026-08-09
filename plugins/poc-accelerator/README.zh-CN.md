@@ -47,7 +47,21 @@ AIDLC_PLUGIN_ROOT="$PLUGIN_ROOT" AIDLC_PROJECT_DIR="<project>" \
   AIDLC_HARNESS_DIR=.kiro bun "$PLUGIN_ROOT/hooks/compose.ts"
 ```
 
-**第 3 步 — 选择插件**（在项目目录内执行）：
+> `AIDLC_PLUGIN_ROOT` 必须指向 harness 投影
+> （`dist/plugins/poc-accelerator/<harness>/`），**不是**任何仓库根目录。composer 是
+> 从投影里的宿主 manifest 取插件身份的；指向别处它会改用目录名，然后把每一条
+> contribution 都当成外来内容跳过。另外，若 `<project>/.kiro/tools/aidlc-graph.ts`
+> 不存在，composer 会静默退出 0 且什么都不写——所以先确认第 1 步真的落地了。
+
+**第 3 步 — 插件选择 —— 仅在项目已有 selection 时才需要。** 没有 selection 时所有
+已安装插件都是启用的，第 2 步做完插件就能用，`doctor` 会显示
+`all enabled (no selection)`。所以这一步通常什么都不用做。
+
+真正要小心的是反方向：一个**漏掉** `poc-accelerator` 的 selection 会把 8 个 stage
+全关掉——而且是静默的，`doctor` 依然全绿，因为"缩小的 selection"是合法状态、不是
+错误。实测 `select-plugins aidlc` 之后启用计数降为 `aidlc=29, bootstrap=3`，poc 那
+行直接消失。所以只要 selection 存在，或你日后为别的插件建了一个，就必须把本插件
+一起列进去：
 
 ```bash
 cd <project>
@@ -63,8 +77,19 @@ bun .kiro/tools/aidlc-utility.ts select-plugins aidlc,poc-accelerator
 **第 5 步 — 验收，然后启动：**
 
 ```bash
-bun .kiro/tools/aidlc-utility.ts doctor    # 全绿 = 安装成功
+bun .kiro/tools/aidlc-utility.ts doctor
 ```
+
+期望 **0 failed**，并出现下面这两行——它们才是真正证明插件 compose 成功的证据；
+插件没装上的那次运行同样"全绿"，只是少了这两行：
+
+```text
+✓  Enabled plugins: ... enabled stage counts: aidlc=29, bootstrap=3, poc-accelerator=8
+✓  Hook drops: none recorded
+```
+
+总检查项数取决于框架 install 而不是本插件：原版上游 `v2` install 是 39 passed，
+本 fork 的是 44。两者都正常；判断标准是 `0 failed` 加上 `poc-accelerator=8`。
 
 ```text
 /poc-accelerator-cde Build a safe customer demo for <场景>
@@ -134,7 +159,43 @@ MCP 配置在每个 harness 上都是必需的，位置各不相同：`.mcp.json
 > （给 Kiro IDE ≥ 1.0.1xx 的 `aidlc-plugin-compose.json`，和给 pre-1.0 的
 > legacy `.kiro.hook`），但它们只有在被装进项目的 `.kiro/hooks/` 之后才会触发。
 > Kiro CLI 通过 `agents/aidlc.json` 挂钩子，完全不读投放进来的钩子文件。
-> 这两个 harness 上请执行显式 compose 命令 —— 那是受支持的路径，且是幂等的。
+> 这两个 harness 上请执行显式 compose 命令——那是受支持的路径。
+
+### 更新一个已经装过本插件的项目
+
+重跑 compose **不会**更新改动过的内容——这是整套流程里唯一一处会让 install 悄悄跑着
+旧版本的地方。在 Kiro IDE 上实测：
+
+| 情形 | 结果 |
+| --- | --- |
+| 内容未变，重新 compose | 0 drop，确实幂等 |
+| 内容**已变**，重新 compose | 1 条 degraded drop，**文件没被更新** |
+| 先从 install 删掉该文件，再 compose | 0 drop，新内容落地 |
+
+composer 不会覆盖一个已存在的路径——它分不清那是自己上次的产物、还是 core 或别的插件
+的文件，所以直接拒绝并记录
+`collides with an existing file (core or another plugin); not overwritten`。
+没有任何东西显式报错，流程继续跑旧的 stage。
+
+抓住它的是 `doctor`，所以要看这一行，别信 compose 的退出码（它一直是 0）：
+
+```text
+✗  Hook drops (plugin-compose-poc-accelerator): 1 degraded of 1 ...
+```
+
+更新的做法是先删掉插件 compose 出来的文件再重新 compose。stage 落在
+`.kiro/aidlc-common/stages/<phase>/`，runner 落在 `.kiro/skills/`：
+
+```bash
+cd <project>
+rm -rf .kiro/aidlc-common/stages/*/poc-accelerator-* \
+       .kiro/skills/poc-accelerator-* \
+       .kiro/scopes/poc-accelerator-cde.md \
+       .kiro/sensors/aidlc-poc-accelerator-* \
+       .kiro/tools/aidlc-sensor-poc-accelerator-*
+find aidlc -name 'plugin-compose-poc-accelerator.drops' -delete   # 它本来也会自清
+# 然后重跑第 2 步的 compose 命令
+```
 
 ## 护栏
 
