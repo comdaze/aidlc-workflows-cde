@@ -7,18 +7,23 @@ Chinese: [INSTALL.zh-CN.md](INSTALL.zh-CN.md) · What the plugin *is*:
 
 > [!IMPORTANT]
 > **Do not pair this plugin with an upstream `awslabs/aidlc-workflows` install.**
-> Three fixes it depends on live in this fork's `core/`, not in the plugin. With
-> stock upstream the plugin does not degrade gracefully — its first step errors out.
+> Two fixes it depends on live in this fork's `core/`, not in the plugin. With
+> stock upstream the plugin does not degrade gracefully.
 
 | Needs | Without it |
 | --- | --- |
-| `bolt set-autonomy` works on a fresh workflow (**A10**) | **Step 1 of the stage fails outright.** A newly generated state file has no `Construction Autonomy Mode` field, so the command hard-errors. The Stop hook then nudges the parked container as an abandoned workflow, every turn, up to the cap. |
 | Load-steering continuations are followable (**A11**) | The `continue` token is emitted *after* a ~16 KB rule payload and gets truncated away, so the chain can never advance. Same bundle re-delivered every turn, forever. |
 | Learnings identity is content-keyed (**A13**) | A second `sediment` in one session can **silently discard a rule you approved** while reporting success. |
 
-All three are recorded in `docs/fork/divergence.md` (rows A10, A11, A13) and are
+Both are recorded in `docs/fork/divergence.md` (rows A11, A13) and are
 offerable upstream; once they land upstream this warning goes away. Until then,
 **ship the fork, not the plugin alone.**
+
+(Earlier versions also depended on A10 — `set-autonomy` working on a fresh
+workflow. Since 0.3.0 the stage parks the container instead of granting
+autonomy, so that dependency is gone. A16 — the engine's parked branch honouring
+`--new-intent` — is what makes opening a second container beside a parked one
+work, and it ships in this fork's `core/` too.)
 
 The practical consequence: give the recipient this whole repository (or an archive
 of it), not just `plugins/vibe/`.

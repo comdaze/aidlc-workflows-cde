@@ -74,9 +74,9 @@ upstream `9c9201b8`:
 | `plugins/` | 59 | **None.** Ours entirely; upstream has no such directory. |
 | `docs/` | 8 | None in practice. Fork-authored chapters live under `docs/fork/`, a path upstream has none of — see A6. |
 | `dist/` | 256 | **Not a conflict** — generated. Never merge it; regenerate (§3). |
-| `core/` | 4 | Low. See A1, A2 (small, policy-driven), A11 (Stop-hook message ordering), A13 (learnings identity) and A14 (a doctor row). |
+| `core/` | 5 | Low. See A1, A2 (small, policy-driven), A11 (Stop-hook message ordering), A13 (learnings identity), A14 (a doctor row) and A16 (one condition in the engine's parked branch). |
 | `harness/` | 7 | **One real risk**, the Kiro IDE adapter. See B1; also A12 (one hook matcher). |
-| `tests/` | 5 | Low. One new file, one ratchet entry, three files with appended guards. See A5, A10, A11, A13 — and D1 for the two derived coverage files, which are not a divergence at all but do conflict on every sync. |
+| `tests/` | 5 | Low. One new file, one ratchet entry, three files with appended guards. See A5, A10, A11, A13, A16 — and D1 for the two derived coverage files, which are not a divergence at all but do conflict on every sync. |
 | root files | 6 | Low. No longer includes `CHANGELOG.md` or the version — see A3. |
 
 The plugin mechanism is doing its job: the majority of this fork's work lives in
@@ -254,7 +254,7 @@ line. See §7.
 
 | | |
 | --- | --- |
-| Files | `README.md` (**+12 lines, 2 hunks**: the 中文 link and an 11-line pointer to `PLUGINS.md`) · `PLUGINS.md` (new) · `README.zh-CN.md` (new) · `AGENTS.md` (the plugins paragraph + the A3 changelog policy) · `CHANGELOG.fork.md` (new, A3) · `.gitignore` (+`.refer`, +`/build`) · `Config` (BuilderHub package descriptor) |
+| Files | `README.md` (**+14 lines, 2 hunks**: the 中文 link and a ~13-line pointer to `PLUGINS.md`; the pointer's plugin list grows by one name per shipped plugin — `team-knowledge` added 2026-08-11) · `PLUGINS.md` (new) · `README.zh-CN.md` (new) · `AGENTS.md` (the plugins paragraph + the A3 changelog policy) · `CHANGELOG.fork.md` (new, A3) · `.gitignore` (+`.refer`, +`/build`) · `Config` (BuilderHub package descriptor) |
 | Class | **A — must diverge.** These describe *this* repository, not the framework. |
 | Upstream | No. `Config` and `/build` are GitFarm/Brazil artefacts; `.refer` is our scratch directory; the plugin docs are about plugins upstream does not ship. The Chinese READMEs are arguably offerable but would then need upstream maintenance. |
 | On conflict | Keep ours, additively. `README.md` and `AGENTS.md` are the two upstream also edits: take upstream's body and re-apply our two hunks. `PLUGINS.md`, `README.zh-CN.md` and `CHANGELOG.fork.md` can never conflict — upstream has no such paths. |
@@ -759,6 +759,37 @@ and must be re-spelled at the sync.** Offered to upstream only if they want it.
 > command it would print. This row cost a wrong `core/` change in two files, a test
 > that pinned the false premise, a divergence row, and a maintainer's review cycle
 > on a public repository.
+
+### A16 — Branch 2.5 (parked) swallowed `--new-intent` (2 files) — **upstream-bound**
+| | |
+| --- | --- |
+| Files | `core/tools/aidlc-orchestrate.ts` (one condition + comment in Branch 2.5) · `tests/unit/t114-orchestrate-next.test.ts` (one appended test in the parked describe) |
+| Class | **B — general.** Affects any install where a parked workflow is active when new work is requested. |
+| Upstream | **Offer it.** One-line guard alignment with Branch 4a's own stated contract ("precedes every continuation branch"). |
+| On conflict | Keep ours: `!flags.newIntent` joins the self-disable list exactly like `--resume`/`--stage`/`--phase`/`--review`. If upstream restructures the branch, preserve the property: `--new-intent` must reach the birth path regardless of the active intent's parked state. |
+
+Branch 2.5 short-circuits every `next` against a parked workflow into the terminal
+`parked` directive, self-disabling only for `--resume`/`--stage`/`--phase`/`--review`.
+`--new-intent` was missing from that list, so it never reached Branch 4a — whose own
+comment claims it "precedes every continuation branch so an active intent's state
+never routes the new-work birth into 'advance the current stage'". The parked check
+sits **above** 4a, so the claim held for every state except parked.
+
+Measured live (2026-08-09, this repo, Kiro IDE): with the active feature intent
+parked at `intent-capture`, `next --new-intent --scope vibe "<description>"` emitted
+`{"kind":"parked"}` and created nothing — the user asked to start new work and was
+told the workflow is paused. The vibe plugin's agent entry names this exact command
+as the *normal* route for a second container (`aidlc-vibe.md`'s three-row table), so
+any vibe user with a parked intent alongside hits it deterministically.
+
+The appended t114 test parks a mid-ideation workflow, runs
+`next --new-intent --scope feature "<text>"`, and asserts the directive is the
+`intent-create` birth print, not `parked`.
+
+> Distinct from A15 (retracted): A15 claimed the `--new-intent` *guidance* was
+> dangling and was wrong — the mechanism existed. A16 is the opposite shape: the
+> mechanism exists, is documented, and one branch ordering silently defeats it in
+> one state. The fix touches the branch, not the prose.
 
 ### D1 — `tests/.coverage-ratchet.json` is derived — regenerate, never merge (1 file)
 | | |

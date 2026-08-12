@@ -87,9 +87,14 @@ by hand.
 
 Then follow the returned directive exactly as the runner skill describes
 (`{{HARNESS_DIR}}/skills/vibe/SKILL.md`) until it hands you the `vibe-session`
-stage. That
-stage's Step 1 sets autonomy to `autonomous`, which is load-bearing — without it
-every turn that ends mid-session gets nudged as an abandoned workflow.
+stage. That stage's Step 1 **parks the container**
+(`aidlc-orchestrate.ts park`), which is load-bearing — the engine then answers
+every plain `next`, including the Stop hook's own probe, with the terminal
+`parked` directive, so a turn that ends mid-session is a clean turn-end instead
+of a nudged one. Do **not** set autonomy to `autonomous` (an earlier revision
+did): park refuses under autonomous, and the Stop hook declines a parked allow
+under autonomous. Everything this seat does — diary, `surface`, `persist` — works
+while parked; close-out unparks before opening the gate.
 
 Do this in **one** quiet turn. Report it in a single line, together with what is
 available (`sediment`, `close`), and then get out of the way. Do not narrate the

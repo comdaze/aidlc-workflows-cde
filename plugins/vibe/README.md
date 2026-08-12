@@ -170,10 +170,16 @@ precondition that makes sedimentation trustworthy.
   container**. The measured caveat: this stage cannot *govern* a spec task either
   (`PreTaskExec` exit 2 confers no veto), so it observes rather than supervises.
   See [`docs/fork/kiro-spec-integration.md`](../../docs/fork/kiro-spec-integration.md).
-- The Stop hook nudges a turn that ends with a pending directive. Step 1 sets
-  `Construction Autonomy Mode: autonomous`, which is that hook's first carve-out.
-  **Remove that line and every turn ending mid-session gets nudged as an
-  abandoned workflow**, up to the block cap. The plugin test pins it.
+- The Stop hook nudges a turn that ends with a pending directive. Step 1 **parks
+  the container** (`aidlc-orchestrate.ts park`), so the engine answers the hook's
+  probe with the terminal `parked` directive and the hook releases the turn —
+  no nudge, and no per-turn re-delivery of the ~16 KB stage-rules bundle.
+  **Remove that step and every turn ending mid-session gets nudged as an
+  abandoned workflow.** Do not substitute `set-autonomy --mode autonomous` (an
+  earlier revision did): park refuses under autonomous and the Stop hook declines
+  a parked allow under autonomous, so the two mechanisms cancel each other. The
+  plugin tests pin the park step and the parked lifecycle (surface/persist work
+  while parked; close-out unparks before the gate).
 
 **No sensors are bound by default.** The only artifact is a session log written
 once at close-out, so a document-shape sensor would cost friction and check
@@ -230,8 +236,9 @@ bun test plugins/vibe/tests/plugin.test.ts
 ```
 
 Beyond schema validity, the test pins the four properties the design rests on:
-exactly one stage, enterable from nothing, the autonomy line present with its
-reason, and a keyword-free scope (so a casual "vibe" cannot hijack a request meant
+exactly one stage, enterable from nothing, the park step present with its
+reason (plus the parked lifecycle exercised against the real tools), and a
+keyword-free scope (so a casual "vibe" cannot hijack a request meant
 for real work).
 
 It also guards the agent surface, where every failure is silent: the picker entry

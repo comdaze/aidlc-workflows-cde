@@ -9,13 +9,23 @@
 //      exists not to be.
 //   2. Enterable from nothing: no consumes, no requires_stage, execution ALWAYS.
 //      A container that needs an upstream artifact cannot open a bare session.
-//   3. The stage sets autonomy to `autonomous`. That is the Stop hook's first
-//      carve-out; without it, every turn that ends mid-session gets nudged as an
-//      abandoned workflow, up to the block cap.
+//   3. The stage PARKS the container (and never grants autonomy). The engine then
+//      answers the Stop hook's probe with the terminal `parked` directive, which
+//      the hook honours as a clean turn-end; without the park, every turn that
+//      ends mid-session gets nudged as an abandoned workflow AND pays a ~16 KB
+//      stage-rules re-delivery. Autonomy is the opposite of what this stage
+//      needs: `park` refuses under autonomous, and the Stop hook DECLINES a
+//      parked allow under autonomous. (An earlier revision granted autonomy on
+//      the strength of a prose claim that it was "the Stop hook's first
+//      carve-out" — it is the gate-floor hook's carve-out, not the Stop hook's,
+//      and the content-only test here let that claim stand. PROPERTY 3 is now
+//      pinned behaviourally against the real tools, not by substring.)
 //   4. The scope declares no keywords. "vibe" is exactly the word a user types
 //      casually, so keyword inference would hijack requests meant for real work.
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -98,11 +108,20 @@ describe(`${PLUGIN_NAME} plugin — content validation`, () => {
     }
   });
 
-  test("PROPERTY 3: the stage sets autonomy to autonomous (the Stop hook carve-out)", () => {
+  test("PROPERTY 3 (content): the stage parks the container and never grants autonomy", () => {
     const body = readFileSync(stageFiles[0] ?? "", "utf-8");
-    expect(body).toContain("set-autonomy --mode autonomous");
+    expect(body).toContain("aidlc-orchestrate.ts park");
     // And says why, so the next editor does not read it as boilerplate.
     expect(body.toLowerCase()).toContain("load-bearing");
+    // The regression this file previously pinned INTO place: granting autonomy
+    // disables the very release path park provides. The command must be absent
+    // as an instruction (it may appear inside "do not run" prose — assert the
+    // exact instruction shape instead).
+    expect(body).not.toContain("set-autonomy --mode autonomous");
+    // Close-out must unpark before opening the gate, or the completed workflow
+    // answers `parked` instead of `done` forever after.
+    expect(body).toContain("unpark");
+    expect(body.indexOf("unpark")).toBeLessThan(body.indexOf("--result awaiting-approval"));
   });
 
   test("the stage keeps exactly one approval gate, at close-out", () => {
@@ -158,6 +177,98 @@ describe(`${PLUGIN_NAME} plugin — content validation`, () => {
       knowledge: "knowledge/",
     });
   });
+});
+
+// PROPERTY 3, behaviourally — the parked-container lifecycle against the REAL
+// tools, in a throwaway project composed from dist/. Content assertions above
+// prove the stage file SAYS park; this proves the sequence it prescribes WORKS:
+// a fresh vibe workflow parks, a plain `next` (the Stop hook's probe shape)
+// answers `parked`, sedimentation stays fully functional while parked, and
+// close-out can unpark and open the gate. Every prior defect in this area was a
+// prose claim no behaviour backed ("asserting a document contains a command is
+// not asserting the command works" — team.md), so this block spawns everything.
+describe(`${PLUGIN_NAME} plugin — parked-container lifecycle (real tools)`, () => {
+  const BUN = process.execPath;
+
+  function run(cwd: string, cmd: string[], env?: Record<string, string>) {
+    const r = spawnSync(BUN, cmd, {
+      cwd,
+      encoding: "utf-8" as const,
+      // Every tool resolves the harness dir via AIDLC_HARNESS_DIR at call time;
+      // without it the default is .kiro and the .claude install is invisible.
+      env: { ...process.env, AIDLC_HARNESS_DIR: ".claude", ...env },
+      timeout: 30_000,
+    });
+    return { code: r.status ?? -1, out: (r.stdout ?? "") + (r.stderr ?? "") };
+  }
+
+  test(
+    "park -> next answers parked -> surface/persist work while parked -> unpark -> gate opens",
+    () => {
+      const proj = mkdtempSync(join(tmpdir(), "vibe-park-"));
+      try {
+        // Framework install (dist/claude), then compose + enable this plugin.
+        cpSync(join(REPO_ROOT, "dist", "claude", ".claude"), join(proj, ".claude"), { recursive: true });
+        const compose = run(proj, [join(REPO_ROOT, "dist", "plugins", "vibe", "claude", "hooks", "compose.ts")], {
+          AIDLC_PLUGIN_ROOT: join(REPO_ROOT, "dist", "plugins", "vibe", "claude"),
+          AIDLC_PROJECT_DIR: proj,
+          AIDLC_HARNESS_DIR: ".claude",
+        });
+        expect(compose.code).toBe(0);
+        const TOOLS = join(proj, ".claude", "tools");
+        expect(run(proj, [join(TOOLS, "aidlc-utility.ts"), "select-plugins", "aidlc,vibe"]).code).toBe(0);
+
+        // Open a vibe container and resolve the skeleton-stance round-trip.
+        expect(run(proj, [join(TOOLS, "aidlc-utility.ts"), "intent-create", "--scope", "vibe", "--arguments", "parked lifecycle probe", "--label", "park-probe"]).code).toBe(0);
+        expect(run(proj, [join(TOOLS, "aidlc-orchestrate.ts"), "report", "--stage", STAGE_SLUG, "--skeleton-stance", "scope-dependent"]).code).toBe(0);
+
+        // Step 1's park: exits 0 and emits the terminal parked directive.
+        const park = run(proj, [join(TOOLS, "aidlc-orchestrate.ts"), "park"]);
+        expect(park.code).toBe(0);
+        expect(park.out).toContain('"kind":"parked"');
+
+        // The Stop hook's probe shape — a plain `next` — now answers parked,
+        // which is the release that stops the per-turn nudge + rules re-delivery.
+        expect(run(proj, [join(TOOLS, "aidlc-orchestrate.ts"), "next"]).out).toContain('"kind":"parked"');
+
+        // Sedimentation stays fully functional while parked. surface/persist
+        // gate on Current Stage, which park does not move.
+        const intentDir = readdirSync(join(proj, "aidlc", "spaces", "default", "intents")).find((d) => d.includes("park-probe"));
+        expect(intentDir).toBeTruthy();
+        const stageDir = join(proj, "aidlc", "spaces", "default", "intents", intentDir ?? "", "construction", STAGE_SLUG);
+        mkdirSync(stageDir, { recursive: true });
+        writeFileSync(
+          join(stageDir, "memory.md"),
+          "## Interpretations\n- 2026-08-10T00:00:00Z — parked probe entry\n\n## Deviations\n\n## Tradeoffs\n\n## Open questions\n",
+        );
+        expect(run(proj, [join(TOOLS, "aidlc-runtime.ts"), "compile"]).code).toBe(0);
+        const surface = run(proj, [join(TOOLS, "aidlc-learnings.ts"), "surface", "--slug", STAGE_SLUG]);
+        expect(surface.code).toBe(0);
+        expect(surface.out).toContain('"stage_slug":"vibe-session"');
+        const selections = join(proj, "selections.json");
+        writeFileSync(
+          selections,
+          JSON.stringify({
+            stage_slug: STAGE_SLUG,
+            selections: [{ candidate_id: "c1", type: "learning", scope: "project", heading: "Tooling and Diagnostics", text: "Parked probe rule. Project-specific. (learned 2026-08-10)" }],
+          }),
+        );
+        const persist = run(proj, [join(TOOLS, "aidlc-learnings.ts"), "persist", "--slug", STAGE_SLUG, "--selections-json", selections]);
+        expect(persist.code).toBe(0);
+        expect(persist.out).toContain('"rule_learned":1');
+
+        // Close-out: unpark first, then the gate opens normally.
+        writeFileSync(join(stageDir, "vibe-session-log.md"), "# Vibe Session Log — park probe\n");
+        expect(run(proj, [join(TOOLS, "aidlc-state.ts"), "unpark"]).code).toBe(0);
+        const gate = run(proj, [join(TOOLS, "aidlc-orchestrate.ts"), "report", "--stage", STAGE_SLUG, "--result", "awaiting-approval"]);
+        expect(gate.code).toBe(0);
+        expect(gate.out).toContain('"kind":"print"');
+      } finally {
+        rmSync(proj, { recursive: true, force: true });
+      }
+    },
+    { timeout: 180_000 },
+  );
 });
 
 // The agent surface. This plugin ships its own seat rather than borrowing

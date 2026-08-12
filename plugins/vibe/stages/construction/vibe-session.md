@@ -22,7 +22,11 @@ outputs: vibe-session-log.md (under this stage's record dir, engine-resolved) �
 
 # Free-form Session
 
-MANDATORY: Follow stage-protocol.md for question format and completion messages.
+MANDATORY: The close-out gate (Steps 5–6) follows stage-protocol.md — and every
+command and message format that gate needs is already inlined in those steps. Do
+**not** load the full protocol file for this stage: it has no ritual questions,
+no stage plan, and no mid-stage gates, so the rest of the protocol buys nothing
+here except context spend.
 
 **Read this deviation before applying the protocol's gate rules.** This stage has
 exactly **one** approval gate and it sits at close-out (Step 5), reached only when
@@ -34,9 +38,18 @@ a container means, and two hook-level consequences depend on it:
   open gate, no interference — which is why free-form tool use works here, and
   why a native Kiro Spec run can proceed inside this container without being
   blocked mid-task.
-- The Stop hook nudges a turn that ends with a pending directive. Step 1 sets
-  autonomy to `autonomous`, which is that hook's first carve-out, so ending a
-  turn mid-session is not treated as abandoning a workflow.
+- The Stop hook nudges a turn that ends with a pending directive. Step 1 **parks
+  the container**, so the engine answers a plain `next` — including that hook's
+  own probe — with the terminal `parked` directive, which the hook honours as a
+  clean turn-end. Ending a turn mid-session is therefore not treated as
+  abandoning a workflow, and the stage-rules bundle (~16 KB) is not re-delivered
+  on every conversational turn. Do **not** set Construction Autonomy Mode to
+  `autonomous` in this stage: `park` refuses under autonomous, and the Stop hook
+  *declines* the parked allow under autonomous — the grant that an earlier
+  revision of this stage made "load-bearing" was in fact the one thing keeping
+  the nudge loop alive. (Autonomy's real carve-out is the human-presence
+  gate-floor hook, and that hook already stands down here because this stage has
+  no open gate mid-session.)
 
 Do **not** add gates, required questions, or a stage plan to this stage. If a
 piece of work needs those, it needs a different scope — say so and stop, rather
@@ -80,15 +93,29 @@ verification.
    a question a one-stage scope has no business being asked. Do not skip the
    round-trip anyway: the gate stays unresolved and the stage never opens.
 
-3. Set autonomy so the session is not treated as an abandoned workflow:
+3. Park the container so the session is not treated as an abandoned workflow:
 
    ```bash
-   bun {{HARNESS_DIR}}/tools/aidlc-bolt.ts set-autonomy --mode autonomous
+   bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts park
    ```
 
-   This writes `Construction Autonomy Mode: autonomous` to the state file and
-   emits an audit row. It is load-bearing, not cosmetic — see the deviation note
-   above.
+   This writes the `Parked` / `Parked At Stage` runtime markers (mutation lives
+   in the spawned `aidlc-state.ts park`), emits a `WORKFLOW_PARKED` audit row,
+   and returns the terminal `parked` directive. It is load-bearing, not cosmetic
+   — see the deviation note above: a parked container is what makes the Stop
+   hook release every mid-session turn instead of re-feeding the stage rules.
+   "Parked container" is this scope's literal mechanism, not a metaphor.
+
+   Everything in this stage works while parked — verified against the real
+   tools: the diary is a plain file, `aidlc-learnings.ts surface`/`persist`
+   check only that `vibe-session` is the Current Stage (park does not move it),
+   and `report` never reads the marker. The one thing park suspends is `next`
+   routing, which this stage does not use between opening and close-out.
+
+   Do **not** run `set-autonomy` here (an earlier revision did). `park` refuses
+   under autonomous mode, and the Stop hook declines a parked allow under
+   autonomous — the two mechanisms are mutually exclusive, and park is the one
+   this container needs.
 4. Create `vibe-session-log.md` in this stage's record dir with just a heading and
    the session's one-line intent. It grows at close-out; it is not a live diary
    (that is `memory.md`, Step 2).
@@ -97,7 +124,7 @@ verification.
 
 Steps 2 and 3 are bookkeeping the user did not ask for. Do them in **one** quiet
 turn and report the result in a single line — the first thing they read should be
-about their work, not about gate stances and autonomy fields.
+about their work, not about gate stances and park markers.
 
 ### Step 2: Free-form Work (the default state — no advance, no gate)
 
@@ -116,7 +143,10 @@ this state:
 and it is the one habit this stage does insist on. Append to
 `<record>/<phase>/<stage>/memory.md` (create on stage start if absent) under
 `Interpretations`, `Deviations`, `Tradeoffs`, `Open questions`, each entry with an
-ISO 8601 timestamp. Write an entry when you make a judgement call the next session
+ISO 8601 timestamp — the **real** current UTC time (read the clock:
+`date -u +%Y-%m-%dT%H:%M:%SZ`), never a fabricated `T00:00:00Z` placeholder,
+because the harvest ritual and the audit trail order entries by it. Write an
+entry when you make a judgement call the next session
 would want to know about: a constraint discovered, a route rejected and why, a
 surprise in someone else's code, a decision taken with incomplete information.
 Do not narrate what the diff already says.
@@ -168,7 +198,16 @@ Skip this step unless the user asks. Most sessions produce rules, not knowledge.
 2. Complete `vibe-session-log.md`: what was worked on, what landed (with file or
    commit references), what was sedimented, what is left open. Keep it short and
    factual. State plainly that this session made no correctness claim.
-3. Open the gate:
+3. Unpark — the container is closing, so the park marker must not outlive it:
+
+   ```bash
+   bun {{HARNESS_DIR}}/tools/aidlc-state.ts unpark
+   ```
+
+   Skipping this leaves a completed-but-parked workflow whose next plain `next`
+   answers `parked` instead of `done`, and the Stop hook would keep releasing a
+   gate it should be holding. Unpark first, then open the gate.
+4. Open the gate:
 
    ```bash
    bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts report --stage vibe-session --result awaiting-approval

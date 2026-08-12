@@ -503,6 +503,21 @@ describe("t114 parked branch (#367)", () => {
     expect(out).toContain("unpark");
   });
 
+  test("--new-intent on a parked workflow self-disables (names the intent birth, not parked)", () => {
+    // Regression (fork): Branch 2.5's self-disable list omitted --new-intent,
+    // so a parked ACTIVE intent swallowed the birth of a SIBLING intent and
+    // answered `parked` to a user who asked to start new work. Branch 4a's own
+    // comment says it "precedes every continuation branch" — the parked check
+    // must step aside for it exactly like --resume/--stage/--phase.
+    proj = createOrchestrationTestProject();
+    seedStateFile(proj, MID_IDEATION);
+    park(proj);
+    const out = runNext(proj, ["--new-intent", "--scope", "feature", "add feature flags"]).out;
+    expect(out).not.toContain('"kind":"parked"');
+    expect(out).toContain('"kind":"print"');
+    expect(out).toContain("intent-create --scope feature");
+  });
+
   test("stale parked (Current Stage advanced past Parked At Stage) is ignored", () => {
     proj = createOrchestrationTestProject();
     seedStateFile(proj, MID_IDEATION);

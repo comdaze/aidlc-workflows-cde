@@ -5,17 +5,20 @@ English: [INSTALL.md](INSTALL.md) · 插件本身是什么：[README.zh-CN.md](R
 ## 先读这一节：这个插件依赖本 fork 的引擎
 
 > [!IMPORTANT]
-> **不要把这个插件配上游 `awslabs/aidlc-workflows` 的安装。** 它依赖的三个修复在本
-> fork 的 `core/` 里，不在插件里。配原版上游不是"功能略差"，而是**stage 第一步就报错**。
+> **不要把这个插件配上游 `awslabs/aidlc-workflows` 的安装。** 它依赖的两个修复在本
+> fork 的 `core/` 里，不在插件里。配原版上游不会优雅降级。
 
 | 依赖 | 缺了会怎样 |
 | --- | --- |
-| 全新 workflow 上 `bolt set-autonomy` 可用（**A10**） | **stage 第 1 步直接失败。** 新生成的 state 文件里没有 `Construction Autonomy Mode` 字段，命令硬报错。之后 Stop 钩子会把这个刻意停住的容器当成弃置流程，每回合 nudge 一次直到上限。 |
 | load-steering 续传可跟随（**A11**） | `continue` 的 token 排在约 16KB 规则正文**后面**，会被截断掉，链永远推不动 —— 同一批内容每回合重发一次。 |
 | learnings 身份按内容取键（**A13**） | 同一会话里第二次 `沉淀` 可能**静默丢弃你已经批准的规则**，同时报告成功。 |
 
-三条都记在 `docs/fork/divergence.md`（A10 / A11 / A13），都是可以提给上游的；上游收了之后
+两条都记在 `docs/fork/divergence.md`（A11 / A13），都是可以提给上游的；上游收了之后
 这段警告就作废。在那之前，**要发就发整个 fork，不要单发插件。**
+
+（旧版还依赖 A10 —— fresh workflow 上 `set-autonomy` 可用。0.3.0 起 stage 改为把容器
+真正停车而不再授予 autonomy，该依赖已消除。另外让"在停车容器旁边开第二个容器"成立的
+是 A16 —— 引擎的 parked 分支放行 `--new-intent` —— 它同样在本 fork 的 `core/` 里。）
 
 实际结论：把**整个仓库**（或它的压缩包）交给对方，而不是只给 `plugins/vibe/`。
 

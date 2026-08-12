@@ -138,10 +138,13 @@ directive 会带着 `gate: "unresolved"` 过来，不把 `--skeleton-stance` 报
   实测的注意点：这个 stage 也**管不住** spec task（`PreTaskExec` 的 exit 2 没有否决权），
   所以它是观察，不是监督。见
   [`docs/fork/kiro-spec-integration.md`](../../docs/fork/kiro-spec-integration.md)。
-- Stop 钩子会对"回合结束时还有待办指令"发出提醒。第 1 步设置
-  `Construction Autonomy Mode: autonomous`，那正是这个钩子的第一条 carve-out。
-  **删掉那一行，每个在会话中间结束的回合都会被当成弃置的 workflow 来提醒**，一直到 block 上限。
-  插件测试把这条钉住了。
+- Stop 钩子会对"回合结束时还有待办指令"发出提醒。第 1 步**把容器真正停车**
+  （`aidlc-orchestrate.ts park`）：引擎对钩子自己的探测回答终态 `parked` 指令，钩子据此干净放行 ——
+  不再提醒，也不再每回合重发约 16 KB 的 stage 规则包。
+  **删掉这一步，每个在会话中间结束的回合都会被当成弃置的 workflow 来提醒。**
+  不要用 `set-autonomy --mode autonomous` 替代（旧版曾这么做）：park 在 autonomous 下拒绝执行，
+  Stop 钩子在 autonomous 下也拒绝 parked 放行，两个机制互相抵消。
+  插件测试钉住了停车步骤和停车生命周期（parked 下 surface/persist 可用；收工先 unpark 再开门）。
 
 **默认不绑任何 sensor。** 唯一的产物是收工时才写一次的会话日志，所以文档形 sensor 只会带来摩擦、
 检查不到任何有价值的东西。两个代码 sensor 是真选项 —— 它们的 glob 按文件类型匹配、不看是谁写的，
@@ -191,7 +194,7 @@ bun test plugins/vibe/tests/plugin.test.ts
 ```
 
 除了 schema 合法性，测试还钉住了这个设计赖以成立的四条性质：只有一个 stage、
-从零就能进入、autonomy 那行在且写明了原因、scope 不声明关键词
+从零就能进入、停车步骤在且写明了原因（并对真实工具验证了停车生命周期）、scope 不声明关键词
 （这样一句随口的"vibe"不会劫持一个本该走正经流程的请求）。
 
 agent 那一面也有守卫，因为那里每一种失败都是静默的：选择器条目不带 `hooks` 键、

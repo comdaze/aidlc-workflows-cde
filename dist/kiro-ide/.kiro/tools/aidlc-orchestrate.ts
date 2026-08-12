@@ -2509,6 +2509,13 @@ function handleNext(args: string[], projectDir: string | undefined): void {
   //   1. SELF-DISABLE on explicit re-entry - a `--resume` / `--stage` / `--phase`
   //      next is a deliberate continuation, handled by the unpark branch below
   //      (resume) or the jump path (stage/phase), so it never re-emits `parked`.
+  //      `--new-intent` self-disables too: it is not a continuation of the
+  //      parked workflow at all but the birth of a SIBLING intent (Branch 4a,
+  //      which its own comment says "precedes every continuation branch").
+  //      Without this exemption a parked active intent swallows the birth and
+  //      answers `parked` to a user who asked to start new work - measured live:
+  //      `next --new-intent --scope vibe "<text>"` against a parked feature
+  //      intent emitted the terminal parked directive and created nothing.
   //   2. STALE-BY-PROGRESS - only emit `parked` while `Parked At Stage` still
   //      equals `Current Stage`. If the workflow has advanced past the parked
   //      slug (a stale marker), ignore it and fall through to the normal route.
@@ -2518,6 +2525,7 @@ function handleNext(args: string[], projectDir: string | undefined): void {
     !flags.stage &&
     !flags.phase &&
     !flags.review &&
+    !flags.newIntent &&
     (getField(stateContent, "Parked") ?? "").trim().length > 0
   ) {
     const parkedAt = (getField(stateContent, "Parked At Stage") ?? "").trim();

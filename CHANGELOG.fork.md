@@ -33,6 +33,62 @@ CDE-specific work. This restores the policy the fork already had at
 Entries below are keyed by date and by the upstream version the fork was
 sitting on, not by a fork version number.
 
+## 2026-08-09 (vibe plugin 0.3.0, core A16) — on upstream 2.5.59
+**The vibe container now actually parks, and the engine no longer swallows
+`--new-intent` against a parked workflow.** Both diagnosed live in one Kiro IDE
+dogfood session (this repo, intent `260809-openwiki-plugin-eval`), where every
+conversational turn paid a ~16 KB stage-rules re-delivery and the container's
+own birth command was answered with `parked`.
+
+* **vibe 0.3.0 — Step 1 parks instead of granting autonomy.** The stage's
+  premise ("autonomy is the Stop hook's first carve-out") was wrong: autonomy is
+  the *gate-floor* hook's carve-out, and for the Stop hook it raises the block
+  cap 2→8 and hard-disables the conversational carve-out — the grant was the one
+  thing keeping the per-turn nudge loop alive. A parked container is what the
+  Stop hook actually releases (`parked` is its terminal allow), and "parked
+  container" was this scope's own description all along. Verified against the
+  real tools: fresh vibe workflows park cleanly (no human-turn dance — the 0.2.6
+  refusal documentation is obsolete for Step 1), `surface`/`persist` work while
+  parked, and close-out unparks before opening the gate (a new Step 5 item —
+  skipping it leaves a workflow that answers `parked` instead of `done`
+  forever). PROPERTY 3 in the plugin tests is now behavioural (spawns the whole
+  lifecycle in a composed throwaway project), not a substring check. Drops the
+  A10 install dependency; INSTALL.md tables updated.
+* **core A16 — Branch 2.5 (parked) now self-disables for `--new-intent`,** like
+  `--resume`/`--stage`/`--phase`/`--review`. Without it a parked active intent
+  swallowed the birth of a sibling intent — deterministically hit by vibe's
+  documented "open a second container" route, and a prerequisite for 0.3.0
+  (every vibe container is now parked). One condition + one t114 regression
+  test; recorded as divergence A16, upstream-bound.
+
+## 2026-08-09 (vibe plugin 0.2.6) — on upstream 2.5.59
+**Opening a fresh vibe container tripped the human-presence guard twice, and the
+stage invited a 105 KB protocol read it never uses.** Both observed dogfooding
+the plugin on Kiro IDE (agentic-power-trading, intent `260809-mock-dataset`).
+
+* **Expected `set-autonomy` refusal is now documented in the stage and the
+  persona.** The `/aidlc … --scope vibe` message fires `record-human-turn`
+  *before* the new intent's audit ledger exists, so when Step 1 runs
+  `set-autonomy --mode autonomous` in the same turn, `humanActedSinceGate` finds
+  zero `HUMAN_TURN` rows and refuses — deterministically, on every fresh
+  container. The observed session burned two `ERROR_LOGGED` round-trips (the
+  second retry inside the same turn, against the agent's own parked note) and
+  ran 17 minutes un-granted. The stage now says: expect one refusal, do not
+  retry in-turn, re-run first thing after the user's next message. A core fix
+  (counting the `WORKFLOW_STARTED` Request row as human presence, or minting
+  `HUMAN_TURN` at intent birth from the initiating prompt) would remove the seam
+  for all scopes and is offerable upstream; per the divergence policy the fork
+  carries only the plugin-side prose.
+* **Token: the stage no longer invites a full `stage-protocol.md` load.** The
+  old first line ("MANDATORY: Follow stage-protocol.md…") pointed at a ~105 KB
+  (~26k-token) file for a stage whose whole protocol surface is one close-out
+  gate — and Steps 5–6 already inline every command and format that gate needs.
+  The line now scopes the mandate to the close-out gate and explicitly forbids
+  loading the full protocol during free-form work.
+* **Diary timestamps must be real.** The dogfood diary carried fabricated
+  `T00:00:00Z` timestamps; Step 2 now says to read the clock
+  (`date -u +%Y-%m-%dT%H:%M:%SZ`), since harvest and audit order entries by it.
+
 ## 2026-08-06 (core fix, upstream-bound) — on upstream 2.5.33
 **Load-steering continuations could not be followed on a harness that truncates
 hook output, which made the Stop hook nag forever.** The continuation inlined the
