@@ -1,0 +1,9 @@
+# Admission responsibility and review responsibility land on the same person.
+# Last matching pattern wins (GitLab / GitHub semantics).
+*                               @knowledge-maintainers
+practices/                      @practice-owners
+practices/data-boundary/        @security-reviewers
+knowledge/domains/              @domain-owners
+knowledge/aws/                  @aws-specialists
+policy/                         @knowledge-maintainers
+tools/                          @knowledge-maintainers

@@ -18,6 +18,7 @@
 | **`poc-accelerator`** | 面向 CDE 认证 SA 的**八步、3-5 个工作日客户 PoC 交付流程**——CDK 优先部署、三档费用分析（pilot / 生产 / 超产能）、留痕的交接质量清单、双端接线的团队知识复用。 | [插件中文 README](plugins/poc-accelerator/README.zh-CN.md) |
 | **`knowledge-plugin`** | **棕地深度知识工程**——带代码锚点的 `.ai-ready/` 领域知识，过 senior 签字门，再翻译成 `reverse-engineering` 的 codekb；门禁驳回理由以 KEM-lite 格式回写沉淀。 | [插件中文 README](plugins/knowledge-plugin/README.zh-CN.md) |
 | **`test-pro`** | 叠加在工作流上的全面、可追溯测试覆盖。同时是插件机制的参考实现——写自己的插件可照抄其形状。 | [插件 README](plugins/test-pro/README.md) |
+| **`team-knowledge`** | **让团队知识跨项目流转。** 两个与 scope 无关的 stage，把已确认的规则与带证据的领域知识搬进搬出一个 OKF v0.2 卡片的共享 git 仓库——导入走框架自己的 learnings `persist` 仪式（冲突检查、幂等、留审计行），导出走具名脱敏批准 + 一份 fail-closed 校验器（同一份代码也是 hub 的 MR 门禁）。`project.md` 规则在**结构上**就不在导出面；bot 可以开 MR，永不合 MR。 | [插件中文 README](plugins/team-knowledge/README.zh-CN.md) |
 
 ### 在聊天窗口快速安装
 

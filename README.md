@@ -33,8 +33,9 @@ To learn more about AI-DLC, read this [blog post](https://aws.amazon.com/blogs/d
 
 This fork ships first-party **AIDLC plugins** on top of the framework: an
 eight-step customer PoC delivery flow (`poc-accelerator`), brownfield deep
-knowledge engineering (`knowledge-plugin`), and the plugin-mechanism reference
-implementation (`test-pro`). A plugin never edits `core/` -- it brings its own
+knowledge engineering (`knowledge-plugin`), cross-project team knowledge
+(`team-knowledge`), and the plugin-mechanism reference implementation
+(`test-pro`). A plugin never edits `core/` -- it brings its own
 stages, scopes, knowledge and tools, and merges additive contributions into core
 stages. Plugins add; the install selects.
 
