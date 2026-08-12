@@ -168,6 +168,33 @@ a harvest by definition.
    safety line applies to the team repository exactly as it does to the
    customer's.
 
+   **When the `team-knowledge` plugin is installed** — check for
+   `{{HARNESS_DIR}}/tools/aidlc-akp-validate.ts` — write the harvest as OKF v0.2
+   cards instead of leaving it as a prose list, one card per file, following that
+   plugin's `knowledge/aidlc-akp/card-authoring.md`. One card per file is not
+   housekeeping: it is what keeps two PoCs depositing in the same week from
+   conflicting, and what makes a later correction a single-file change. Then run
+   the same gate the hub's own merge requests run, *before* you push:
+
+   ```bash
+   bun {{HARNESS_DIR}}/tools/aidlc-akp-validate.ts --bundle <staging> --mode produce
+   ```
+
+   Produce mode rejects on both verdict classes. Fix and re-run until clean — do
+   not push a card the gate would reject and explain it in the MR description
+   instead. Record `validate: akp-validate-ok` and the card concept IDs.
+
+   Two things the gate gives you that a prose list cannot: `stale_after` is
+   reverse-computed from the policy half-life with zero days of tolerance, so the
+   playbook's freshness law becomes arithmetic instead of a habit; and a
+   `Practice` card carries the `cde.heading` that lets the *next* project import
+   it through `aidlc-learnings.ts persist` — with a conflict check and a
+   `RULE_LEARNED` audit row — instead of by hand.
+
+   **When that plugin is not installed**, deposit the prose entry list as before
+   and omit both fields. Nothing in this step depends on that plugin, and the
+   entry list stays required either way.
+
 5. **When the push is refused** (no write access, protected namespace, no
    network), the deposit is not dropped: write the patch
    (`git format-patch`) into this stage's record dir, name the owner who will
@@ -191,6 +218,9 @@ a harvest by definition.
      sanitization_approved_by: <named approver>
      entries:
        - <entry title> (knows|judges, industry-generic|needs-recalibration)
+     validate: akp-validate-ok          # optional — a PASSING team-knowledge gate run
+     cards:                             # optional — OKF card concept IDs
+       - practices/<topic>/<card>
      branch: <pushed branch>            # required unless patch-prepared
      review_url: <MR/PR URL>            # required for merge-request-opened
      owner: <who lands it>              # required for branch-pushed, patch-prepared
@@ -204,6 +234,12 @@ a harvest by definition.
    `sanitization_approved_by` is absent, or when the fields required by the
    chosen resolution are missing — so a handoff that quietly kept the harvest
    in the record is surfaced deterministically.
+
+   `validate` and `cards` are checked **only when present**: a recorded validator
+   run must be a passing one, and a non-empty `cards` list requires it — an
+   unvalidated card must never reach a human reviewer. `entries` stays required
+   even when `cards` is present, so a record written without the
+   `team-knowledge` plugin is judged exactly as it was before.
 
 ### Step 6: Verify the Handoff Quality Checklist
 

@@ -23,6 +23,9 @@ const RESOLUTIONS = ["merge-request-opened", "branch-pushed", "patch-prepared"] 
 type Resolution = (typeof RESOLUTIONS)[number];
 const URL_SOURCES = ["preflight-artifact", "memory-layer", "user-provided"] as const;
 const PROBE_OK = "git-ls-remote-ok";
+// The marker the team-knowledge validator's passing produce-mode run records.
+// Optional here — see the delegation block in checkDeposit.
+const VALIDATE_OK = "akp-validate-ok";
 const GIT_SCHEMES = ["https", "http", "ssh", "git", "file"];
 
 interface Result {
@@ -181,6 +184,33 @@ function checkDeposit(content: string): Result {
     requireField("patch_path", "where the patch was written");
     requireField("owner", "who lands it");
     requireField("blocked_reason", "why the push was refused");
+  }
+
+  // --- team-knowledge delegation, OPTIONAL by construction ---------------
+  // When the team-knowledge plugin is installed, step 5 also authors the
+  // harvest as OKF v0.2 cards and runs that plugin's validator in produce mode
+  // before pushing. `entries:` above stays REQUIRED either way, so a record
+  // written without that plugin keeps exactly the verdict it had before — which
+  // is what makes poc-accelerator still installable on its own (the composer
+  // does not enforce `dependencies` today).
+  const cards = blockList(block, "cards");
+  const validate = blockScalar(block, "validate");
+  if (validate !== "" && validate !== VALIDATE_OK) {
+    findings.push(
+      `validate "${validate}" is not "${VALIDATE_OK}" — a recorded validator run must be a PASSING one; a failing gate is fixed, not reported`,
+    );
+  }
+  if (cards.length > 0 && validate !== VALIDATE_OK) {
+    findings.push(
+      `cards lists ${cards.length} OKF card(s) but validate is not "${VALIDATE_OK}" — cards go through the team-knowledge validator locally before the branch is pushed, so an unvalidated card never reaches a human reviewer`,
+    );
+  }
+  for (const card of cards) {
+    if (/\s/.test(card)) {
+      findings.push(
+        `cards entry "${card}" is not a card concept ID — use the bundle-relative path without .md (e.g. practices/data-boundary/mock-data-synthesis)`,
+      );
+    }
   }
 
   return {

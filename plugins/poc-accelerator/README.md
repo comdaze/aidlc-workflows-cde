@@ -130,6 +130,24 @@ customer-delivery flow is never selected by ambiguous inference.
 >   URL itself — preflight artifact, then memory layers, then asking you — so a
 >   run that never read team knowledge still contributes what it learned.
 >
+> **Optionally richer with the [`team-knowledge`](../team-knowledge/README.md)
+> plugin.** Install it alongside and both ends upgrade in place: Step 1 searches
+> the repository through that plugin's computed OKF card index and inherits its
+> trust signals (`trust_tier`, staleness, recalibration grade) instead of grepping
+> prose, and Step 8 writes the harvest as one-card-one-file OKF v0.2 cards and runs
+> that plugin's fail-closed validator locally before pushing — the same gate the
+> hub's own merge requests run. The freshness law stops being a habit and becomes
+> arithmetic, and a deposited `Practice` card can be imported by the *next*
+> project through `aidlc-learnings.ts persist` (conflict-checked, audit-rowed)
+> rather than by hand.
+>
+> This is a genuine option, not a hidden dependency. Without that plugin both
+> steps behave exactly as before, and the sensors' verdicts are unchanged — the
+> two extra record fields (`card_tooling` / `cards_imported` on the preflight,
+> `validate` / `cards` on the deposit) are checked only when present. That matters
+> because the composer does not enforce `dependencies` today, so a plugin that
+> quietly assumed a sibling was installed would fail at runtime, not at install.
+>
 > Both ends carry a deterministic TypeScript sensor (advisory, like every
 > framework sensor): `poc-accelerator-team-knowledge-preflight` checks the
 > preflight artifact records a probed git URL and a real resolution, and

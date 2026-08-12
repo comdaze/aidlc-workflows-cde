@@ -67,6 +67,37 @@ recorded.
    use the approved local checkout when one exists, otherwise ask the user to
    approve a clone into a scratch directory. Import only approved, sanitized
    pack content into the active space before relying on it.
+
+   **When the `team-knowledge` plugin is installed** — check for
+   `{{HARNESS_DIR}}/tools/aidlc-akp-registry.ts` — search through its computed
+   card index rather than grepping prose, and take the trust signals with the
+   content:
+
+   ```bash
+   bun {{HARNESS_DIR}}/tools/aidlc-akp-registry.ts --bundle <hub> --markdown \
+     --query "<customer domain term>" --limit 40
+   bun {{HARNESS_DIR}}/tools/aidlc-akp-validate.ts --bundle <hub> --mode consume
+   ```
+
+   Read the index first and then only the cards you shortlist — never the whole
+   bundle. Three signals decide how much weight a card carries, and they replace
+   the guesswork the prose search leaves you with: `trust_tier` (`unverified`
+   means no human ever confirmed it — a lead, not a rule), STALE
+   (`today >= stale_after`: the card lost its *default* authority, so a named
+   human re-affirms it or it does not get used), and
+   `cde.generalization: needs-recalibration` (the reasoning travels, the numbers
+   do not). Record the imported cards' concept IDs and `card_tooling: available`.
+
+   Consume mode is deliberately lenient: only OKF's three hard requirements
+   reject. A card with no `cde:` block means "no CDE metadata" — treat it as
+   unverified and have a human complete the provenance. It is not a reason to
+   refuse the bundle.
+
+   **When that plugin is not installed**, do the prose search above and record
+   `card_tooling: absent`. That is a complete, honest resolution — this step does
+   not depend on the hub plugin, and the sensor does not require those fields.
+   What it must not do is claim `cards_imported` without the tooling that
+   produces card concept IDs.
 5. Register the confirmed URL under `## Team Knowledge Repository` in
    `aidlc/spaces/<space>/memory/project.md` when no memory layer already
    carries it, so later stages and later runs resolve it without re-asking.
@@ -95,6 +126,9 @@ recorded.
      import_path: <where it landed>    # required for pack-imported
      search_terms:                     # required for no-pack-match
        - <term>
+     card_tooling: available | absent  # optional — was team-knowledge installed
+     cards_imported:                   # optional — OKF card concept IDs
+       - practices/<topic>/<card>
    ```
 
    The sensor fails the write when `resolution` is missing or not one of the
@@ -103,6 +137,12 @@ recorded.
    empty, or when the fields required by the chosen resolution are absent — so
    an incomplete preflight, or one that quietly dropped the repository, is
    surfaced deterministically rather than by convention.
+
+   The last two fields are checked **only when present**: `card_tooling` against
+   its two values, and `cards_imported` for concept-ID shape plus the obvious
+   consistency rule — you cannot import cards without the tooling that produces
+   them. A record written without the `team-knowledge` plugin omits both and
+   is judged exactly as it was before that plugin existed.
 
 If a pack was imported, apply the playbook's freshness law before relying on
 it: entries older than 6 months without an intervening reference are flagged

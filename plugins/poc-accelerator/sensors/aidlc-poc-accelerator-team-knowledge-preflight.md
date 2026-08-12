@@ -42,6 +42,21 @@ verifies deterministically:
 `repo_url_source:` is checked when present (`memory-layer` or
 `user-provided`) and reported as a finding when it carries any other value.
 
+## Optional team-knowledge delegation
+
+When the `team-knowledge` plugin is installed, step 1 searches the hub
+through that plugin's computed card index instead of grepping prose. Two extra
+fields record it, and both are checked **only when present**:
+
+- `card_tooling:` is `available` or `absent`.
+- `cards_imported:` lists OKF card concept IDs (bundle-relative paths without
+  `.md`), and a non-empty list requires `card_tooling: available` — a record
+  cannot claim card imports without the tooling that produces card IDs.
+
+A record written without that plugin omits both and is judged exactly as it was
+before that plugin existed. That is deliberate: the composer does not enforce
+`dependencies` today, so `poc-accelerator` has to stay valid on its own.
+
 ## Advisory note
 
 The framework has no blocking sensor severity yet, so a `SENSOR_FAILED` here

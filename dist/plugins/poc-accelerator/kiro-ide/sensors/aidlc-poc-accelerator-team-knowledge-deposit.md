@@ -48,6 +48,21 @@ with `deposit:` and verifies deterministically:
 `repo_url_source:` is checked when present (`preflight-artifact`,
 `memory-layer`, or `user-provided`) and reported as a finding otherwise.
 
+## Optional team-knowledge delegation
+
+When the `team-knowledge` plugin is installed, step 5 also authors the
+harvest as OKF v0.2 cards and runs that plugin's validator in produce mode before
+pushing. Two extra fields record it, and both are checked **only when present**:
+
+- `validate:` must be `akp-validate-ok` — a recorded validator run has to be a
+  passing one; a failing gate is fixed, not reported.
+- `cards:` lists OKF card concept IDs, and a non-empty list requires
+  `validate: akp-validate-ok`, so an unvalidated card never reaches a reviewer.
+
+`entries:` stays required either way. A record written without that plugin omits
+both new fields and is judged exactly as it was before — the composer does not
+enforce `dependencies`, so `poc-accelerator` has to stay valid on its own.
+
 ## Advisory note
 
 The framework has no blocking sensor severity yet, so a `SENSOR_FAILED` here

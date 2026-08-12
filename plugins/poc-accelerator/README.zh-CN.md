@@ -118,6 +118,19 @@ cde` 或裸 `/aidlc poc`：`pocx` 不是别名，核心 `poc` 则是独立的、
 >   相互独立**：它自己解析 URL（预检产物 → memory 层 → 向你索取），所以
 >   即使这次运行没读过团队知识，也照样把学到的东西沉淀回去。
 >
+> **装上 [`team-knowledge`](../team-knowledge/README.zh-CN.md) 会更强。**
+> 两端就地升级：步骤 1 改用该插件现算的 OKF 卡片索引检索，并继承它的信任信号
+> （`trust_tier`、过期状态、是否需要重新校准），而不是靠 grep prose；步骤 8 把收获
+> 写成一卡一文件的 OKF v0.2 卡片，并在推送前本地跑该插件的 fail-closed 校验器——
+> 与 hub 自己 MR 门禁同一份代码。于是新鲜度法则从"习惯"变成算术，而沉淀出去的
+> `Practice` 卡可以被**下一个项目**通过 `aidlc-learnings.ts persist` 导入（带冲突
+> 检查、留审计行），而不是手抄。
+>
+> 这是真正的可选项，不是隐藏依赖。不装它，两个步骤的行为与从前完全一致，sensor
+> 判定也不变——新增的四个字段（预检的 `card_tooling` / `cards_imported`，沉淀的
+> `validate` / `cards`）只在出现时才校验。这一点很要紧：composer 目前并不解析
+> `dependencies`，一个悄悄假定兄弟插件已安装的插件，会在运行时而不是安装时才崩。
+>
 > 两端各有一个确定性 TypeScript sensor（与框架其他 sensor 一样为
 > advisory）：`poc-accelerator-team-knowledge-preflight` 校验预检产物记录了
 > 探测通过的 git URL 与真实结论；`poc-accelerator-team-knowledge-deposit`

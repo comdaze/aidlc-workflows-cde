@@ -19,6 +19,10 @@ const ARTIFACT_FILENAME = "poc-accelerator-team-knowledge-preflight.md";
 const RESOLUTIONS = ["pack-imported", "no-pack-match"] as const;
 type Resolution = (typeof RESOLUTIONS)[number];
 const URL_SOURCES = ["memory-layer", "user-provided"] as const;
+// Whether the team-knowledge plugin's card tools were on hand for this run.
+// See the delegation block in checkPreflight: recorded only when the step used
+// them, and never required.
+const CARD_TOOLING = ["available", "absent"] as const;
 const PROBE_OK = "git-ls-remote-ok";
 const GIT_SCHEMES = ["https", "http", "ssh", "git", "file"];
 
@@ -85,6 +89,11 @@ function blockList(block: string, key: string): string[] {
   return [...m[2].matchAll(/^\s+- (.+)$/gm)]
     .map((x) => x[1].trim().replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1"))
     .filter((v) => v !== "");
+}
+
+// Whether a key is present at all. An empty list is present; an absent key is not.
+function hasKey(block: string, key: string): boolean {
+  return new RegExp(`^[ \\t]+${key}:`, "m").test(block);
 }
 
 // Git remote shape, offline. Accepts what git accepts as a fetch/push URL:
@@ -166,6 +175,34 @@ function checkPreflight(content: string): Result {
     if (blockList(block, "search_terms").length === 0) {
       findings.push("no-pack-match requires a non-empty search_terms: list — an unmatched search is still an auditable claim");
     }
+  }
+
+  // --- team-knowledge delegation, OPTIONAL by construction ---------------
+  // When the team-knowledge plugin is installed, this step searches the hub
+  // through its computed card index instead of grepping prose, and records which
+  // OKF cards it imported. Those fields are checked ONLY when present, so a
+  // record written without that plugin — or written before it existed — keeps
+  // exactly the verdict it had before (poc-accelerator stays independently
+  // installable; `dependencies` is not enforced by the composer today).
+  const cardTooling = blockScalar(block, "card_tooling");
+  if (cardTooling !== "" && !CARD_TOOLING.includes(cardTooling as (typeof CARD_TOOLING)[number])) {
+    findings.push(`card_tooling "${cardTooling}" is not one of: ${CARD_TOOLING.join(", ")}`);
+  }
+  const cardsImported = blockList(block, "cards_imported");
+  if (cardsImported.length > 0 && cardTooling !== "available") {
+    findings.push(
+      "cards_imported lists cards but card_tooling is not \"available\" — a card can only be imported through the team-knowledge tools, so this record claims something it could not have done",
+    );
+  }
+  for (const card of cardsImported) {
+    if (/\s/.test(card)) {
+      findings.push(
+        `cards_imported entry "${card}" is not a card concept ID — use the bundle-relative path without .md (e.g. practices/data-boundary/mock-data-synthesis)`,
+      );
+    }
+  }
+  if (hasKey(block, "cards_imported") && cardTooling === "") {
+    findings.push("cards_imported is recorded without card_tooling: — say whether the team-knowledge tools were available");
   }
 
   return {
