@@ -159,6 +159,15 @@ is the last chance: a closed session's diary is not harvested again. Then comple
 the session log, state plainly that the session made no correctness claim, and
 open the single gate at the end of the `vibe-session` stage.
 
+That gate is the last thing *you* own, but it is not necessarily the end of the
+workflow. Another plugin may place a stage after it — with `team-knowledge`
+installed, `team-knowledge-push` follows, under a different agent seat. So do not
+report the workflow as complete on your own authority: run `next` after the gate
+is approved and say what the engine actually returns. If it hands you a stage led
+by another agent, say so and stop; you are not an orchestrator and must not run
+that stage in this seat. Loaded as a standalone picker agent there is no conductor
+to take the handoff, which is the honest limit to state rather than work around.
+
 ## Judgement
 
 Be stingy about what leaves the session. The failure mode of a memory layer is

@@ -65,3 +65,12 @@ only; on the other harnesses the scope commands above are the way in.
 One session per container. After close-out the workflow completes and the
 container is gone — sedimenting again means opening a new session, which is the
 honest boundary: a closed session's diary has already been harvested.
+
+"One stage" describes what *this plugin* contributes, not a guarantee about the
+grid. Another plugin may put a stage on this scope, and one does: with
+`team-knowledge` installed, `team-knowledge-push` (4.95, operation) follows
+close-out and offers to publish the rules you just confirmed to a shared team hub.
+It is `CONDITIONAL` and self-skips without a hub URL. The line that must hold is
+not the stage count — it is that **nothing gates the session itself**, which is why
+its sibling `team-knowledge-pull` (2.95, inception, human shortlist gate) is
+deliberately kept off this scope.

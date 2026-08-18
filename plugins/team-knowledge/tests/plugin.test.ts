@@ -25,6 +25,27 @@ const CORE_SCOPES = [
   "workshop",
 ];
 
+/**
+ * The exact scope membership each stage claims. Kept as an EQUALITY per stage,
+ * not a superset check: scope membership is a pure transpose of these lists
+ * (aidlc-graph.ts transposeScopeGrid), so a name added or dropped here changes
+ * which workflows the stage silently appears in — with no error anywhere. An
+ * equality makes that a red test.
+ *
+ * The asymmetry is deliberate. Both stages are on every core scope (G2). `push`
+ * is additionally on the rails-free `vibe` scope: a free-form session's whole
+ * justification is that what it learned survives, its sedimentation already
+ * lands in `team.md` through the same learnings ritual this stage reads from,
+ * and at 4.95 it falls after close-out. `pull` is NOT, and must not be added
+ * for symmetry's sake — it carries a human shortlist gate and sits upstream of
+ * construction, so on that scope it would fire *before* the session opens,
+ * turning "start working" into a hub search.
+ */
+const EXPECTED_SCOPES: Record<string, string[]> = {
+  "team-knowledge-pull": CORE_SCOPES,
+  "team-knowledge-push": [...CORE_SCOPES, "vibe"],
+};
+
 function walk(dir: string, ext = ".md"): string[] {
   if (!existsSync(dir)) return [];
   const out: string[] = [];
@@ -147,8 +168,14 @@ describe(`${PLUGIN_NAME} plugin — content validation`, () => {
         }
       });
 
-      test(`${filename} is on every core scope (G2 — scope-independent)`, () => {
-        expect(((frontmatter.scopes as string[]) ?? []).slice().sort()).toEqual(CORE_SCOPES.slice().sort());
+      test(`${filename} claims exactly its declared scope membership (G2)`, () => {
+        const expected = EXPECTED_SCOPES[frontmatter.slug as string];
+        // A new stage with no entry fails loudly rather than passing vacuously —
+        // an undeclared scope list is the drift this equality exists to catch.
+        if (!expected) {
+          throw new Error(`${filename}: no EXPECTED_SCOPES entry for slug "${frontmatter.slug}"`);
+        }
+        expect(((frontmatter.scopes as string[]) ?? []).slice().sort()).toEqual(expected.slice().sort());
       });
 
       test(`${filename} reuses an existing agent seat rather than adding one`, () => {

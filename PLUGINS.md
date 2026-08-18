@@ -155,6 +155,24 @@ no requirements, no reviewed design, no acceptance criteria, so nothing produced
 a vibe session is evidence of correctness — use `feature`/`mvp`/`enterprise` when
 you need that claim.
 
+**`team-knowledge`** — composing is not enough; the two stages resolve a hub URL
+and self-skip without one. Point the space at a hub (see the plugin README for
+standing one up from `hub-skeleton/`):
+
+```markdown
+<!-- aidlc/spaces/<space>/memory/team.md -->
+## Team Knowledge Repository
+https://gitlab.example.com/team/aidlc-knowledge.git
+```
+
+Then both stages fire inside the normal flow on every core scope — `pull` (2.95,
+inception) before the design stages, `push` (4.95, operation) at close-out. `push`
+is additionally on the `vibe` scope so a free-form session can publish what it
+confirmed; `pull` deliberately is not, because at 2.95 it would open every vibe
+session with a hub search and a shortlist gate. On `vibe`, the push handoff needs
+the conductor — enter via `/vibe` or `/aidlc --scope vibe`, not the Kiro
+`aidlc-vibe` picker entry, whose persona is written not to orchestrate.
+
 **`unknowns`** — no setup: two stages, one persona, one knowledge file, two
 contributions; no MCP, no sensors of its own. It has no entry point, because
 having one would defeat it — a blindspot pass you must remember to ask for cannot

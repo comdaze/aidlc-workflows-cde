@@ -5,7 +5,7 @@ name: Team Knowledge Push
 plugin: team-knowledge
 phase: operation
 execution: CONDITIONAL
-condition: Runs at close-out when the workflow produced team-level learnings or confirmed domain knowledge and a team knowledge hub is reachable. Skipped only when the human declines to name a hub, or affirms there is nothing that has passed the learning ritual yet — never skipped because pushing was inconvenient.
+condition: Runs at close-out when the workflow produced team-level learnings or confirmed domain knowledge and a team knowledge hub is reachable. Skipped only when the human declines to name a hub, or affirms there is nothing that has passed the learning ritual yet — never skipped because pushing was inconvenient. This is the one stage of the pair that is also on the rails-free `vibe` scope: a free-form session's whole justification is that what it learned survives, and its sedimentation already lands in `team.md` through the same learnings ritual this stage reads from, so the export half applies unchanged. The import half deliberately does not — see team-knowledge-pull.
 lead_agent: aidlc-developer-agent
 support_agents: []
 mode: inline
@@ -27,6 +27,7 @@ scopes:
   - poc
   - refactor
   - security-patch
+  - vibe
   - workshop
 inputs: The active space's team.md (rules that already passed the learning ritual, with their RULE_LEARNED audit rows), the space knowledge seats, the pull artifact when this run produced one, and the team knowledge hub's git URL
 outputs: team-knowledge-push-deposit.md and the authored OKF cards (under this stage's record dir, engine-resolved); the cards are submitted to the hub as a branch plus merge request
@@ -68,8 +69,33 @@ Resolve the URL in this order:
    the ambient git credential helper or SSH agent.
 
 Probe it read-only before writing anything: `git ls-remote --heads <url>`. A
-failed probe is re-asked, never recorded as done. Register the confirmed URL in
-`aidlc/spaces/<space>/memory/project.md` if no layer carries it yet.
+failed probe is re-asked, never recorded as done.
+
+**A probe failure is a knowledge question before it is a credentials question.**
+Some hosts refuse git over one transport entirely while serving the same
+repository over another, and refuse it in a way that reads like a missing
+repository or a permissions problem — so the diagnosis goes to access when it
+belongs to protocol. Before concluding anything, try the other transport form of
+the same URL. If a form works, two things follow and both are this stage's
+business: say in the deposit record which form was probed, and treat the
+registered URL as wrong rather than unlucky.
+
+**Register the URL in a form the probe can actually use, under the heading this
+stage reads.** Write it to `## Team Knowledge Repository` in
+`aidlc/spaces/<space>/memory/project.md` when no layer carries it — that exact
+heading, because resolution step 2 looks for it and nowhere else. A URL parked
+under some other heading is invisible to this stage even though a human reading
+the file would find it immediately, and a URL in a transport form the host
+refuses fails every flow that opens with a read-only probe. Say so in the deposit
+record when you find either: correcting the memory layer is not this stage's
+product, and a silent re-diagnosis next quarter is the cost of not naming it.
+
+There is a bootstrap this stage cannot solve, so do not pretend to. If the hub
+holds a card about reaching the hub, it is unreadable until the hub is reached.
+What makes that knowledge available at the moment it is needed is a *previous*
+`team-knowledge-pull` in this project having imported it into the local layers —
+a one-time-per-project bootstrap, not an ordering within one workflow. When this
+project has never pulled, say so in the completion summary and suggest it.
 
 ### Step 2: Assemble the Candidate List — Note What Is Structurally Absent
 
@@ -106,7 +132,25 @@ into the digest, so a key computed locally will not match the key a card recorde
 in another project (§10.2) — the key is a trace anchor, not a cross-project
 dedupe key. The validator catches only *exact* duplicates of the `# 规则` text
 (§13.1). Two teams phrasing one lesson differently is caught by CODEOWNERS
-review, or not at all. Do not present the machine check as sufficient.
+review, or not at all. Do not present the machine check as sufficient. A keyword
+query is also not a digest comparison — running one does not discharge Step 5's
+in-bundle dedupe, and neither substitutes for the other.
+
+**Survey the hub's conventions, not only its content.** Read the hub's
+`index.md` and its existing topic tree before you choose any destination path in
+Step 4:
+
+```bash
+bun {{HARNESS_DIR}}/tools/aidlc-akp-registry.ts --bundle <hub> --json
+```
+
+Reuse an existing topic directory wherever one fits, and when you introduce a new
+one say in the deposit record why no existing topic would do. Without this the
+tree becomes the sum of independent inventions — each deposit reasonable on its
+own, the whole unnavigable — and nothing in the validator objects, because a path
+is only wrong relative to a convention no file states. Where the hub has no
+precedent at all, say that too: the first deposit into an empty topic space is
+setting the convention, and it should be visible that it did.
 
 ### Step 3: Per-Entry Approval and a Named Sanitization Approver
 
@@ -122,6 +166,16 @@ the two would quietly disappear.
 
 If a `project.md` rule is being re-graded to team level, capture that decision
 and the approver here; the deposit record reports both.
+
+When **most or all** of a deposit arrives this way, that is worth saying out loud
+rather than just recording. It means the learnings ritual upstream routed
+travelling knowledge to the project layer, and the structural exclusion this
+stage relies on is being opened by hand every time — which makes it a review gate
+wearing a structural gate's clothes. The usual cause is the question the rule was
+written under: "what does this project need" produces a project-level rule, while
+the test that decides whether knowledge travels is "would this still hold for
+another customer". Name it in the deposit record so the next harvest starts
+further along, and note that this stage cannot fix it — the fix is upstream.
 
 ### Step 4: Author the Cards — One Card, One File
 
@@ -147,6 +201,24 @@ The clock is mechanical, not a matter of taste:
 it differs. The validator recomputes it with **zero** days of tolerance, so a
 hand-typed far-future date is rejected rather than believed.
 
+**The topic in that lookup comes from the card's path, so the directory you pick
+sets the shelf life — and it does so silently.** A path whose topic has no policy
+entry falls back to the plain `type` window, which is usually the longest one
+available; a `tags:` entry naming the topic does not correct it. So state, in the
+card body, which window the chosen path implies and why that number is right for
+this claim. One sentence is enough, and it is the only thing that makes a wrong
+clock reviewable — the arithmetic is always correct, and it is the input nobody
+checks.
+
+The question to answer is whether the assertion describes **the current state of
+something that changes** or **a settled fact**. A defect pinned to a released
+version, with the version that fixed it, is settled: it will not become false, and
+a long window is right. Current behaviour of a fast-moving dependency or
+framework is not settled, and inherits a long window only because of where the
+file sits — that is the case for `cde.review_interval_days`. Do not infer this
+from how specific the title looks; a version number in a title is as likely to
+mean "settled" as "perishable", and the two want opposite windows.
+
 `cde.origin.content_key` is the Content-Key from the rule's `RULE_LEARNED` audit
 row, and `cde.origin.content_key_scope` is the scope that key was computed under.
 Recording the scope is not bookkeeping: the key is `sha256(scope + "\0" + text)`,
@@ -161,15 +233,44 @@ Attribute every claim with a `[^id]` footnote matching a `sources[].id`.
 
 ### Step 5: Validate Locally, Fail Closed
 
+Validate **inside the scratch checkout from Step 6**, with the cards copied to
+their hub paths, scoped to this deposit's cards:
+
 ```bash
-bun {{HARNESS_DIR}}/tools/aidlc-akp-validate.ts --bundle <staging> --mode produce
+bun {{HARNESS_DIR}}/tools/aidlc-akp-validate.ts --bundle <hub-checkout> --mode produce \
+  --card <hub-checkout>/<path/to/card>.md   # one --card per card in this deposit
 ```
+
+Not an isolated staging directory, and this is not a preference. Rule 7 dedupe
+compares digests **within one bundle**, so a bundle holding only your own new
+cards has nothing to compare against and the check passes vacuously — it reports
+clean because it looked at nothing. `--card` keeps the *findings* scoped to this
+deposit while the bundle still supplies the hub's existing cards as dedupe
+context. Validating a staging dir is how a deposit gets a green validator run and
+no duplicate check at all, and nothing in the output says so.
+
+Two traps worth naming, because both produce a confident wrong reading:
+
+- **Do not point `--bundle` at this stage's record dir.** The stage journal lives
+  there, `memory.md` has no frontmatter, and it trips rule 1 as
+  `okf-nonconformant` — a finding about the diary, reported as if the deposit were
+  malformed.
+- **Build the `--card` list as a shell array.** In `zsh` an unquoted `$VAR`
+  holding `--card a --card b` is **not** word-split; it arrives as a single
+  argument, the tool sees zero `--card` flags, and it silently validates and
+  reports the whole bundle. The tell is `cards_checked` not matching your card
+  count — check it every time.
 
 Produce mode rejects on **both** verdict classes. Fix and re-run until clean; do
 not push a card the gate would reject, and do not "explain it in the MR
 description" instead. If the validator's complaint looks wrong, that is a finding
 about the validator or the policy — raise it as such, in its own change, rather
 than routing around it.
+
+Expect findings against cards you did not write when the hub carries older ones.
+Report the scoped run, and say plainly that the unscoped total belongs to
+pre-existing cards — never fold someone else's non-conformance into this
+deposit's result, in either direction.
 
 ### Step 6: Submit Through the Repository's Own Process
 
@@ -182,6 +283,20 @@ Fetch into a scratch checkout, then:
 4. Push the branch and open the merge request. Never commit to the default
    branch, never force-push, never commit credentials — the framework's git
    safety line applies to the team repository exactly as to the customer's.
+
+When the host opens the merge request from a push option, keep the description
+**short and single-line** and let the commit message carry the reasoning. A long
+option value has been observed to make the push hang and then fail with no
+message, and the failure is not recoverable in place: push options only fire on a
+push that updates a ref, so once the branch is up to date a retry reports
+"Everything up-to-date" and creates nothing. If that happens, the honest
+resolution is `branch-pushed` with a named owner and the host's
+create-merge-request URL — not a manufactured empty commit to trigger it, and not
+a force-push.
+
+After any git command that times out, verify state before retrying. A blind retry
+on an ambiguous failure is how a duplicate commit or a lost staging set happens;
+`git ls-remote` plus `git log -1` answers it in one step.
 
 A **correction** is one MR, not two: the new card, the old card flipped to
 `status: deprecated` with a markdown link to its successor, and

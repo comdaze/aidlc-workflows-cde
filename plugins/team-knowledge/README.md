@@ -159,6 +159,20 @@ Follow the generic plugin install in [`PLUGINS.md`](../../PLUGINS.md), with
 `CONDITIONAL`: without a hub URL in memory and without a human naming one, they
 skip rather than blocking the workflow.
 
+`team-knowledge-push` is additionally on the `vibe` scope, and `team-knowledge-pull`
+is deliberately not. A free-form session's whole justification is that what it
+learned survives, and its sedimentation already lands in `team.md` through the same
+learnings ritual push reads from — so at 4.95, after close-out, the export half
+applies unchanged. Pull would fire at 2.95, *before* the session opens, turning
+"start working" into a hub search plus a shortlist gate; that is the one property
+the `vibe` scope exists to protect. Pulling on a free-form session is a
+`aidlc-akp-registry.ts` query away when you want it, which is the right cost for
+something you asked for. One caveat if you enter `vibe` from Kiro's agent picker
+rather than by scope command: `aidlc-vibe` is written as a standalone persona that
+does not orchestrate, so it will not hand off to this stage's `aidlc-developer-agent`
+seat on its own. Enter via `/vibe` or `/aidlc --scope vibe` when you want the
+close-out handoff to happen by itself.
+
 ## Known limits, stated rather than papered over
 
 - **Only exact duplicates are caught.** The dedupe digest is the normalized

@@ -33,6 +33,137 @@ CDE-specific work. This restores the policy the fork already had at
 Entries below are keyed by date and by the upstream version the fork was
 sitting on, not by a fork version number.
 
+## 2026-08-18 (team-knowledge 0.3.0) — on upstream 2.5.59
+
+**Two live deposits, four days apart, exposed three ways `team-knowledge-push`
+could report a clean run while having checked less than it appeared to.** All
+three are prose fixes to the stage plus three new entries in `CONTRACT.md` §13 —
+no tool or schema change, so a card that passed yesterday still passes.
+Plugin-only, nothing for `docs/fork/divergence.md`.
+
+* **Step 5 now validates inside the hub checkout, scoped with `--card` — not an
+  isolated staging directory.** Rule 7 dedupe compares digests *within one
+  bundle*, so a bundle holding only your own new cards has nothing to compare
+  against and passes **vacuously**: it reports clean because it looked at
+  nothing. The 2026-08-18 deposit did exactly that, following the old wording,
+  and its 7 cards never met the 26 cards then on `main`. Re-run afterwards with
+  hub context they all pass — so the outcome was right and the *coverage* was
+  absent, which is precisely why this class of defect survives. New `CONTRACT.md`
+  §13.6 records that the blindness is structural (no committed registry, no
+  network — the validator only knows the bundle in hand), so the prose is a
+  mitigation and not a guard.
+* **Step 4 now requires the card to state which freshness window its path
+  implies, and why that number is right.** `halfLifeDays()` takes its topic from
+  `topicOf()` — the concept ID's *path segment* — and silently falls back to the
+  plain `type` window when there is no policy entry, which is usually the longest
+  one. So the directory sets the shelf life, `tags:` does not correct it, and
+  nothing warns: the arithmetic is always right and the input is never checked.
+  The step also names the judgement that actually decides it — current state of
+  something that changes, versus a settled fact — and warns against inferring it
+  from how specific a title looks. A defect pinned to a released version *with*
+  the version that fixed it is settled and correctly gets a long window; current
+  behaviour of a fast-moving dependency is not. New `CONTRACT.md` §13.7, which
+  records that turning this into a hard guarantee would need a new §11 rule and
+  is deliberately not done here.
+* **Step 1 treats a failed probe as a knowledge question before a credentials
+  one, and names the bootstrap it cannot solve.** A host may refuse git over one
+  transport while serving the same repository over another, and refuse it in a
+  way that reads like a missing repository — so the diagnosis goes to access when
+  it belongs to protocol. The step now says to try the other transport form, to
+  register the URL in a usable form under the `## Team Knowledge Repository`
+  heading resolution actually reads, and to report a wrong registration rather
+  than quietly working around it. It also states the limit plainly: a card about
+  reaching the hub is unreadable until the hub is reached, so what makes it
+  available is a *previous* `team-knowledge-pull` in that project — a
+  one-time-per-project bootstrap, not an ordering inside one workflow. When the
+  project has never pulled, say so at close-out.
+* **Step 2 adds a conventions survey; Step 3 asks how much of the deposit came
+  through the `project.md` re-grade.** Reading the hub's `index.md` and topic
+  tree before choosing destination paths stops the tree becoming the sum of
+  independent inventions — nothing in the validator objects to a path, because a
+  path is only wrong relative to a convention no file states. And when most of a
+  deposit arrives by hand-opened re-grade (7 of 7 on 2026-08-18), the structural
+  exclusion §5.2 leans on is a review gate in structural clothing; the cause is
+  upstream routing, so the step says to name it rather than fix it here. New
+  `CONTRACT.md` §13.8.
+* **Two operational traps are now written down where they bite.** Step 5: build
+  the `--card` list as a shell array, because `zsh` does not word-split an
+  unquoted `$VAR` — it arrives as one argument, the tool sees zero `--card`
+  flags, and it silently validates the whole bundle; the tell is `cards_checked`
+  not matching your count. Step 6: keep `-o merge_request.description`
+  single-line and short, because a long value has been seen to hang the push and
+  then fail with no message — and push options only fire on a ref-updating push,
+  so once the branch is up to date a retry reports "Everything up-to-date" and
+  creates nothing. The honest resolution there is `branch-pushed` with a named
+  owner, never a manufactured empty commit and never a force-push.
+
+Verified: `package.ts --check` in sync; team-knowledge 110 pass, vibe 19 pass,
+t68 7 pass, `ci-changelog-guard` OK (180 entries preserved, 0 new); no test
+asserted on the changed prose (the `{{HARNESS_DIR}}` assertion covers sensor
+`command` fields, not stage bash blocks). The installed `.kiro` copy was
+refreshed by hand and confirmed byte-identical to `dist/` for all 12 composed
+files — compose is no-clobber and exits 0 with no output, so its silence is not
+evidence.
+
+`t188-plugin-compose` reports **74 pass, 1 fail** here, and the failure is
+**pre-existing and unrelated to this change** — recorded because the number
+differs from the 08-14 entry above. The failing item is the `(unnamed)` `afterAll`
+hook, which was never given an explicit timeout while its sibling `beforeAll` got
+`TIMEOUT_MS` (60 s); it therefore inherits Bun's 5 s default for a recursive
+delete of a multi-project temp tree, and every observed failure lands just over
+that line: 5390 / 5458 / 5566 / 5736 / 6292 ms. All 74 assertions pass in every
+run. Reproduced at **clean HEAD with zero dirty files**, and *not* reproduced with
+only this change applied to clean HEAD — so it is machine-load-dependent, not
+content-dependent. The fix the existing team rule prescribes is to derive the
+budget from the work or retry the hook; that is a `tests/` edit outside
+`plugins/`, so it is left for its own change with a `docs/fork/divergence.md` row
+rather than folded in here.
+
+## 2026-08-14 (team-knowledge 0.2.0, vibe 0.3.1) — on upstream 2.5.59
+
+**A free-form session can now publish what it confirmed to the team hub.**
+`team-knowledge-push` joins the `vibe` scope grid; `team-knowledge-pull`
+deliberately does not. Plugin-only change — no `core/` or `harness/` edits, so
+nothing new to record in `docs/fork/divergence.md`.
+
+* **team-knowledge 0.2.0 — `push` (4.95, operation) is now on the `vibe`
+  scope.** The vibe scope's whole justification is that what a session learned
+  survives it, and its sedimentation already lands in `team.md` through the same
+  `aidlc-learnings.ts persist` ritual this stage reads from — so at 4.95, after
+  close-out, the export half applies unchanged. `pull` (2.95, inception) is
+  excluded on purpose and must not be added for symmetry: it carries a human
+  shortlist gate upstream of construction, so on a rails-free scope it would
+  fire *before* the session opens, turning "start working" into a hub search.
+  Pulling stays a `aidlc-akp-registry.ts` query away for whoever wants it.
+  Unchanged for every other scope, and still `CONDITIONAL` — no hub URL in
+  memory means both stages self-skip.
+* **The G2 scope test is now per-stage, and still an equality.** The single
+  `CORE_SCOPES` equality became an `EXPECTED_SCOPES` map keyed by slug, with a
+  loud throw for an undeclared slug. Kept as equality rather than loosened to a
+  superset check because scope membership is a pure transpose
+  (`transposeScopeGrid`): a name added or dropped changes which workflows a
+  stage silently appears in, with no error anywhere. `CONTRACT.md` G2 now
+  separates "invocable from any scope" (the capability) from "which scopes it is
+  on by default" (membership) — the change is a membership trade, not a G2
+  exception.
+* **vibe 0.3.1 — the prose that assumed close-out was the end is corrected.**
+  "One stage" describes what the vibe plugin contributes, not a guarantee about
+  the grid; the line that must hold is that *nothing gates the session itself*.
+  The persona now runs `next` after its gate and reports what the engine
+  actually returns instead of announcing the workflow complete, and states the
+  honest limit when handed a stage led by another seat: entered from Kiro's
+  agent picker there is no conductor to take the handoff, so use `/vibe` or
+  `/aidlc --scope vibe` when you want it to happen by itself. No behavioural
+  change to the stage — `plugins/vibe/tests/plugin.test.ts` PROPERTY 1 counts
+  the plugin's own stage files, not grid rows, so it never guarded this.
+* **`PLUGINS.md` gains the team-knowledge setup section it was missing** —
+  composing alone does nothing until a `## Team Knowledge Repository` URL exists
+  in a memory layer.
+
+Verified: `package.ts --check` in sync; team-knowledge 110 pass, vibe 19 pass,
+t188 plugin-compose 74 pass, 7 scope/version unit files 71 pass; `doctor` 45/45
+on a live dogfood install with all four plugins enabled.
+
 ## 2026-08-09 (vibe plugin 0.3.0, core A16) — on upstream 2.5.59
 **The vibe container now actually parks, and the engine no longer swallows
 `--new-intent` against a parked workflow.** Both diagnosed live in one Kiro IDE

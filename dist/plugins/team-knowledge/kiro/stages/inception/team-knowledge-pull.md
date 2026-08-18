@@ -6,6 +6,11 @@ plugin: team-knowledge
 phase: inception
 execution: CONDITIONAL
 condition: Runs when a team knowledge hub is reachable for this space — a `## Team Knowledge Repository` URL in any memory layer, or one the human supplies — and is skipped only when the human declines to name one. Place it before the design-class stages so imported rules are in force while decisions are made, or invoke it directly at any point.
+# Not on the `vibe` scope, while team-knowledge-push is. This stage carries a
+# human shortlist gate and sits upstream of construction, so on a rails-free
+# scope it would fire before the session opens — turning "start working" into a
+# hub search, which is the one property that scope exists to protect. Pulling is
+# cheap to ask for on demand (aidlc-akp-registry.ts); an unrequested gate is not.
 lead_agent: aidlc-developer-agent
 support_agents: []
 mode: inline

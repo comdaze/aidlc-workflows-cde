@@ -195,6 +195,17 @@ findings, on a project with no eslint).
 clears, and sedimenting again means opening a new session. That boundary is
 deliberate: a harvested diary should not be harvested twice.
 
+One exception, and only if you installed it: the `team-knowledge` plugin puts
+`team-knowledge-push` (4.95, operation) on this scope, so close-out is followed by
+an offer to publish the rules you just confirmed to a shared team hub as OKF cards.
+It is `CONDITIONAL` and self-skips when no hub URL is in memory, so an install
+without a hub behaves exactly as described above. Note that the follow-on stage
+runs under `aidlc-developer-agent`: the handoff happens when the conductor is
+driving (`/vibe`, `/aidlc --scope vibe`), not when you selected `aidlc-vibe` from
+Kiro's agent picker — that persona is written not to orchestrate. Its sibling
+`team-knowledge-pull` is deliberately *not* on this scope; it would open every
+session with a hub search.
+
 ## Install
 
 Same as any AIDLC plugin — see [PLUGINS.md](../../PLUGINS.md). Short form:

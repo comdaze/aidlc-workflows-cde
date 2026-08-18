@@ -106,6 +106,16 @@ https://gitlab.example.com/team/aidlc-knowledge.git
 `team-knowledge`。两个 stage 挂在全部核心 scope 上且为 `CONDITIONAL`：memory 里
 没有 hub 地址、人也不给，就跳过，不会卡住工作流。
 
+`team-knowledge-push` 额外挂在 `vibe` scope 上，`team-knowledge-pull` 刻意不挂。
+自由会话的全部理由就是"学到的东西要留下来"，而它的沉淀本来就通过 push 所读的同一条
+learnings 仪式落进 `team.md`——所以 4.95 这个位置（收尾之后）导出这一半原样适用。
+pull 在 2.95，会跑在会话**打开之前**，把"开始干活"变成一次 hub 检索加人工筛选 gate，
+而这正是 `vibe` scope 存在要保护的那个属性。自由会话里想拉的时候，一条
+`aidlc-akp-registry.ts` 查询就够了——主动要的东西付这个代价是合适的。一个前提要注意：
+如果你是从 Kiro 的 agent picker 选 `aidlc-vibe` 进来（而不是走 scope 命令），那个
+persona 被写成不做编排的独立座位，不会自己交接到本 stage 的 `aidlc-developer-agent`
+座位。想让收尾自动接上，用 `/vibe` 或 `/aidlc --scope vibe` 进入。
+
 ## 已知局限（不掩盖）
 
 - **只能挡精确重复。** 去重摘要是归一化后的 `# 规则` 文本，Content-Key 又含 scope，
