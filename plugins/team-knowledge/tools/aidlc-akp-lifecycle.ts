@@ -32,6 +32,7 @@ import {
   parseDate,
   readCard,
   serializeCard,
+  extPath,
   str,
   trustTier,
 } from "./aidlc-akp-cards.ts";
@@ -322,7 +323,7 @@ export function carryAffirmations(
       .filter((d): d is Date => d !== null)
       .sort((a, b) => b.getTime() - a.getTime())[0];
     const window =
-      Number(str((card.frontmatter.cde as YamlMap | undefined)?.review_interval_days)) ||
+      Number(str(extPath("review_interval_days", card.frontmatter))) ||
       halfLifeDays(policy, str(card.frontmatter.type), card.id);
     if (!newest || window === null) {
       skipped.push(`${id}: no half-life policy for type "${str(card.frontmatter.type)}"`);

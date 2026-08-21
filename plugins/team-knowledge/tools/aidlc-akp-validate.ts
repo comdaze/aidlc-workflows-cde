@@ -34,6 +34,9 @@ import {
   normalizeVerified,
   parseDate,
   parseYaml,
+  extBlock,
+  extPath,
+  sanitizationBlock,
   path as dig,
   readCard,
   ruleDigest,
@@ -416,11 +419,11 @@ function checkCard(card: Card, ctx: Ctx): Finding[] {
   }
 
   // Rule 5 — the freshness clock, recomputed and compared with 0-day tolerance.
-  const cde = fm.cde;
-  const overrideRaw = str(dig("cde.review_interval_days", fm));
+  const cde = extBlock(fm);
+  const overrideRaw = str(extPath("review_interval_days", fm));
   const override = overrideRaw === "" ? null : Number(overrideRaw);
   if (overrideRaw !== "" && (!Number.isFinite(override) || (override as number) <= 0)) {
-    policyFail("4", `cde.review_interval_days "${overrideRaw}" is not a positive number of days`);
+    policyFail("4", `akp.review_interval_days "${overrideRaw}" is not a positive number of days`);
   }
   const lastVerified = verified
     .map((e) => parseDate(e.at))
@@ -477,11 +480,11 @@ function checkCard(card: Card, ctx: Ctx): Finding[] {
       );
     }
   }
-  const supersedes = str(dig("cde.supersedes", fm));
+  const supersedes = str(extPath("supersedes", fm));
   if (supersedes !== "") {
     const target = ctx.byId.get(supersedes);
     if (!target) {
-      policyFail("8", `cde.supersedes "${supersedes}" is not a card in this bundle — the replacement lands in the SAME MR`);
+      policyFail("8", `akp.supersedes "${supersedes}" is not a card in this bundle — the replacement lands in the SAME MR`);
     } else if (str(target.frontmatter.status) !== "deprecated") {
       policyFail(
         "8",
@@ -496,14 +499,14 @@ function checkCard(card: Card, ctx: Ctx): Finding[] {
   } else {
     const cls = str(cde.class);
     if (!(CDE_CLASSES as readonly string[]).includes(cls)) {
-      policyFail("4", `cde.class "${cls || "(absent)"}" is not one of: ${CDE_CLASSES.join(", ")}`);
+      policyFail("4", `akp.class "${cls || "(absent)"}" is not one of: ${CDE_CLASSES.join(", ")}`);
     }
     const generalization = str(cde.generalization);
     if (!(GENERALIZATIONS as readonly string[]).includes(generalization)) {
-      policyFail("4", `cde.generalization "${generalization || "(absent)"}" is not one of: ${GENERALIZATIONS.join(", ")}`);
+      policyFail("4", `akp.generalization "${generalization || "(absent)"}" is not one of: ${GENERALIZATIONS.join(", ")}`);
     }
     for (const field of ["project", "intent", "stage", "content_key"] as const) {
-      if (str(dig(`origin.${field}`, cde)) === "") policyFail("4", `cde.origin.${field} is required`);
+      if (str(dig(`origin.${field}`, cde)) === "") policyFail("4", `akp.origin.${field} is required`);
     }
     const keyScope = str(dig("origin.content_key_scope", cde));
     if (!(CONTENT_KEY_SCOPES as readonly string[]).includes(keyScope)) {
@@ -512,17 +515,22 @@ function checkCard(card: Card, ctx: Ctx): Finding[] {
         `cde.origin.content_key_scope "${keyScope || "(absent)"}" is not one of: ${CONTENT_KEY_SCOPES.join(", ")} — the Content-Key hashes scope INTO the digest (§10.2), so a key without its scope cannot be traced back`,
       );
     }
-    const sanitizedBy = str(dig("sanitization.by", cde));
+    // Either field name, block form only. A bare-string `sanitized_by` yields
+    // undefined here and fails below, which is correct: a string carries no
+    // approval date.
+    const sanitized = sanitizationBlock(cde);
+    const sanitizedBy = str(dig("by", sanitized));
     if (sanitizedBy === "") {
-      policyFail("4", "cde.sanitization.by is required — the NAMED human who approved this leaving the delivery site");
+      policyFail("4", "akp.sanitized_by.by is required — the NAMED human who approved this leaving the delivery site");
     } else if (!sanitizedBy.startsWith("human:")) {
       policyFail(
         "4",
-        `cde.sanitization.by "${sanitizedBy}" must be a human: actor — sanitization is a value judgement and cannot be machine-approved (§2.2)`,
+        `akp.sanitized_by.by "${sanitizedBy}" must be a human: actor — sanitization is a value judgement and cannot be machine-approved (§2.2)`,
       );
     }
-    if (parseDate(str(dig("sanitization.at", cde))) === null) {
-      policyFail("4", `cde.sanitization.at "${str(dig("sanitization.at", cde)) || "(absent)"}" is not a parseable date`);
+    const sanitizedAt = str(dig("at", sanitized));
+    if (parseDate(sanitizedAt) === null) {
+      policyFail("4", `akp.sanitized_by.at "${sanitizedAt || "(absent)"}" is not a parseable date`);
     }
 
     if (type === "Practice") {
@@ -535,14 +543,14 @@ function checkCard(card: Card, ctx: Ctx): Finding[] {
       }
       const heading = str(cde.heading);
       if (!(VALID_HEADINGS as readonly string[]).includes(heading)) {
-        policyFail("9", `cde.heading "${heading || "(absent)"}" is not one of the 8 team.md headings: ${VALID_HEADINGS.join(", ")}`);
+        policyFail("9", `akp.heading "${heading || "(absent)"}" is not one of the 8 team.md headings: ${VALID_HEADINGS.join(", ")}`);
       }
     }
     if (type === "Domain Knowledge") {
       const seat = str(cde.knowledge_seat);
-      if (seat === "") policyFail("10", "cde.knowledge_seat is required on a Domain Knowledge card");
+      if (seat === "") policyFail("10", "akp.knowledge_seat is required on a Domain Knowledge card");
       else if (!ctx.seats.includes(seat)) {
-        policyFail("10", `cde.knowledge_seat "${seat}" is not an installed agent seat or "aidlc-shared"`);
+        policyFail("10", `akp.knowledge_seat "${seat}" is not an installed agent seat or "aidlc-shared"`);
       }
     }
   }
