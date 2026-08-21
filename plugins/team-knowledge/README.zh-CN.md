@@ -78,13 +78,17 @@ trace 变成单文件 `git blame`。标准字段用 OKF 原名，我们的扩展
 
 ## hub 仓库
 
-[`hub-skeleton/`](hub-skeleton/) 是可直接用的起点：`index.md`、`log.md`、`README.md`
-（含关于脱敏边界到底在哪的诚实声明）、`CODEOWNERS`、`policy/lifecycle.json`、含 MR
-门禁与三个定时任务的 `.gitlab-ci.yml`，以及五个工具入口（对 vendored 校验器的薄封装）。
+骨架在 `agent-knowledge-governance` 仓库根的 `hub/`：`index.md`、`log.md`、`README.md`（含关于脱敏边界到底在哪的诚实声明）、
+`CODEOWNERS`、`policy/lifecycle.json`、含 MR 门禁与三个定时任务的 `.gitlab-ci.yml`，
+以及五个工具入口（对 vendored 校验器的薄封装）。
+
+本插件曾带一份副本 `hub-skeleton/`。同一份骨架维护在两个仓库里必然漂移——
+`sync-from-plugin.sh` 已经分叉且无人发现，因为"权威副本在仓库根 hub/"这句话是注释
+而不是检查。该副本已删除，它的测试随骨架迁走，现在对着骨架本体跑。
 
 ```bash
 git init my-team-knowledge && cd my-team-knowledge
-cp -R <repo>/plugins/team-knowledge/hub-skeleton/. .
+cp -R <akg-repo>/hub/. .
 ./tools/sync-from-plugin.sh <repo>      # vendor 门禁，并写下 VENDOR-STAMP.txt
 bun tools/validate-cards.ts             # 空库应当通过
 ```

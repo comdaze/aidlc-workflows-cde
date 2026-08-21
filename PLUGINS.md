@@ -157,7 +157,7 @@ you need that claim.
 
 **`team-knowledge`** — composing is not enough; the two stages resolve a hub URL
 and self-skip without one. Point the space at a hub (see the plugin README for
-standing one up from `hub-skeleton/`):
+standing one up from the hub skeleton):
 
 ```markdown
 <!-- aidlc/spaces/<space>/memory/team.md -->

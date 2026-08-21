@@ -413,8 +413,9 @@ The reference implementation lives at:
 Components:
 - `tools/aidlc-akp-validate.ts` — the validator (V1-V8)
 - `tools/aidlc-akp-cards.ts` — card authoring engine
-- `hub-skeleton/` — a ready-to-use hub repository template
-- `hub-skeleton/tools/` — scheduled jobs (review-debt, carry-affirmations, propose-archive)
+- the hub skeleton — a ready-to-use hub repository template, maintained in
+  `agent-knowledge-governance` at its top-level `hub/`
+- its `tools/` — scheduled jobs (review-debt, carry-affirmations, propose-archive)
 
 ---
 

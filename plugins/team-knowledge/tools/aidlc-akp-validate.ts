@@ -55,7 +55,7 @@ export interface Policy {
   controlled_tags: string[];
 }
 
-/** Shipped defaults — mirrored by `hub-skeleton/policy/lifecycle.json` (§8.1). */
+/** Shipped defaults — mirrored by the hub skeleton's `policy/lifecycle.json` (§8.1). */
 export const DEFAULT_POLICY: Policy = {
   half_life_days: {
     Practice: 180,

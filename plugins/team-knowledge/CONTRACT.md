@@ -23,14 +23,16 @@ compose 到真实 Claude 安装零 drop，`--doctor` 49 项全过并报告
 2. **§8.4 的三个定时任务作为插件工具实现，hub 侧只放薄封装。** 它们是对 bundle 做
    运算的 TS，与 validate / registry 同类；`tools/aidlc-akp-lifecycle.ts` 提供
    `review-debt | carry-affirmations | propose-archive` 三个子命令，
-   `hub-skeleton/tools/` 下 §7.1 承诺的五个文件名是对 vendored 模块的薄封装。
+   hub 骨架 `tools/` 下 §7.1 承诺的五个文件名是对 vendored 模块的薄封装。
    这样"双侧共用一份实现"（§8.3）对定时任务同样成立，而不是只对校验器成立。
 3. **`propose-archive` 不翻 `status`。** §11.8 会拒收"deprecated 且无后继链接"的卡，
    所以自动归档只能产出 `ARCHIVE-PROPOSAL.md` 决策清单交人处理——这与 §4.4 一致，
    在此写明是因为"归档"一词容易被读成"自动降级"。
 
-`hub-skeleton/` 是 P1 的可运行骨架（含 MR 门禁与三个 scheduled job 的
-`.gitlab-ci.yml`、CODEOWNERS、policy、五个工具入口与 `sync-from-plugin.sh`）。
+hub 骨架是 P1 的可运行起点（含 MR 门禁与三个 scheduled job 的 `.gitlab-ci.yml`、
+CODEOWNERS、policy、五个工具入口与 `sync-from-plugin.sh`），维护在
+`agent-knowledge-governance` 仓库根的 `hub/`。本插件曾带一份 `hub-skeleton/` 副本，
+因两处维护必然漂移而删除。
 
 ### 0.1 P5 的实际形态：委派 + 具名降级，不是"两份合成一份"
 
@@ -597,7 +599,6 @@ plugins/team-knowledge/
 ├── knowledge/aidlc-akp/
 │   ├── card-authoring.md           # 五条守则 + 目的地决策
 │   └── hub-operations.md           # MR / 复审 / 归档流程
-├── hub-skeleton/                   # P1：hub 仓库骨架（CI 门禁 + CODEOWNERS + policy + 五个入口）
 └── tests/
 ```
 

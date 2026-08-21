@@ -127,15 +127,21 @@ provenance, and carry on.
 
 ## The hub repository
 
-[`hub-skeleton/`](hub-skeleton/) is a working starting point: `index.md`,
-`log.md`, `README.md` (including the honest statement of where the sanitization
-boundary actually is), `CODEOWNERS`, `policy/lifecycle.json`, a `.gitlab-ci.yml`
-with the MR gate plus the three scheduled jobs, and the five tool entry points as
-thin wrappers over the vendored validator.
+The skeleton lives in the `agent-knowledge-governance` repository's top-level `hub/`: `index.md`, `log.md`, `README.md` (including the honest
+statement of where the sanitization boundary actually is), `CODEOWNERS`,
+`policy/lifecycle.json`, a `.gitlab-ci.yml` with the MR gate plus the three
+scheduled jobs, and the five tool entry points as thin wrappers over the vendored
+validator.
+
+This plugin used to carry a second copy as `hub-skeleton/`. One skeleton maintained
+in two repositories drifted — `sync-from-plugin.sh` diverged and nothing noticed,
+because the "canonical at the repo-root hub/" claim was a comment rather than a
+check. The copy is gone; its tests moved with the skeleton and now run against it
+there.
 
 ```bash
 git init my-team-knowledge && cd my-team-knowledge
-cp -R <repo>/plugins/team-knowledge/hub-skeleton/. .
+cp -R <akg-repo>/hub/. .
 ./tools/sync-from-plugin.sh <repo>      # vendor the gate; writes VENDOR-STAMP.txt
 bun tools/validate-cards.ts             # should pass on an empty bundle
 ```
