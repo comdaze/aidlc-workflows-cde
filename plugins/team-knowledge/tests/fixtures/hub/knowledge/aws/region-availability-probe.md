@@ -17,6 +17,7 @@ cde:
   class: knows
   generalization: industry-generic
   origin:
+    agent_system: aidlc
     project: agentic-power-trading
     intent: 260809-mock-dataset
     stage: poc-accelerator-step-03-environment-readiness

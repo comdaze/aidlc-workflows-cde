@@ -16,7 +16,7 @@ sources:
 cde:
   class: knows
   generalization: needs-recalibration
-  origin: { project: agentic-power-trading, intent: 260809-mock-dataset,
+  origin: { agent_system: aidlc, project: agentic-power-trading, intent: 260809-mock-dataset,
             stage: vibe-session, content_key: 70e94c13bfa0f8ca,
             content_key_scope: project }
   sanitization: { by: human:alice, at: 2026-08-09 }

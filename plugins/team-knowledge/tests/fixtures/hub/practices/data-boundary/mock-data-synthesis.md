@@ -18,6 +18,7 @@ cde:
   class: judges
   generalization: industry-generic
   origin:
+    agent_system: aidlc
     project: agentic-power-trading
     intent: 260809-mock-dataset
     stage: vibe-session

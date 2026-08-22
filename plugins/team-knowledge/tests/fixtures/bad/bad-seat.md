@@ -15,6 +15,7 @@ cde:
   class: knows
   generalization: needs-recalibration
   origin:
+    agent_system: aidlc
     project: fixture
     intent: 260809-fixture
     stage: vibe-session

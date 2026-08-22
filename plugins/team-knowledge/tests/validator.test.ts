@@ -197,12 +197,130 @@ describe("§11 rule table — produce mode", () => {
       "---\ntype: Practice\ntitle: t\ndescription: d\ntags: [testing]\nstatus: stable\n" +
         "generated: { by: process:x, at: 2026-08-09 }\nverified:\n  - { by: human:a, at: 2026-08-09 }\n" +
         "stale_after: 2027-02-05\nsources:\n  - id: s\n    resource: docs/x.md\n" +
-        "cde:\n  class: judges\n  generalization: industry-generic\n  origin:\n    project: p\n    intent: i\n" +
+        "cde:\n  class: judges\n  generalization: industry-generic\n  origin:\n    agent_system: aidlc\n    project: p\n    intent: i\n" +
         "    stage: s\n    content_key: k\n    content_key_scope: project\n  sanitization: { by: human:a, at: 2026-08-09 }\n" +
         '  memory_target: team\n  heading: "## Mandated"\n---\n\n# 为什么\n\nNo rule section at all.\n',
     );
     const only = validateBundle({ bundleRoot: dir, mode: "produce", today: TODAY });
     expect(only.findings.some((f) => f.rule === "7" && f.message.includes("# 规则"))).toBe(true);
+  });
+});
+
+
+// --- origin is a coordinate in the PRODUCING system's address space ----------
+
+describe("origin: shape, not vocabulary", () => {
+  /**
+   * One card, two hosts' idea of provenance. `extra` goes inside the `cde:`
+   * block; `originBody` replaces the whole origin mapping.
+   */
+  function cardWith(originBody: string, extra = "", type = "Domain Knowledge"): string {
+    const dir = mkdtempSync(join(tmpdir(), "akp-origin-"));
+    writeFileSync(
+      join(dir, "card.md"),
+      "---\ntype: " + type + "\ntitle: t\ndescription: d\ntags: [testing]\nstatus: stable\n" +
+        "generated: { by: process:x, at: 2026-08-09 }\nverified:\n  - { by: human:a, at: 2026-08-09 }\n" +
+        "stale_after: " + (type === "Practice" ? "2027-02-05" : "2027-08-09") + "\n" +
+        "sources:\n  - id: s\n    resource: docs/x.md\n" +
+        "akp:\n  class: knows\n  generalization: industry-generic\n" +
+        "  origin:\n" + originBody +
+        "  sanitized_by: { by: human:a, at: 2026-08-09 }\n" + extra +
+        "---\n\n# 规则\n\nA self-contained rule sentence.\n",
+    );
+    return dir;
+  }
+  const AIDLC_ORIGIN =
+    "    agent_system: aidlc\n    project: p\n    intent: i\n    stage: s\n" +
+    "    content_key: abcd0000abcd0000\n    content_key_scope: project\n";
+  // What an AMSP host actually knows: which shard, which machine, which entry.
+  // No intent and no stage, because it has neither.
+  const AMSP_ORIGIN =
+    "    agent_system: quick\n    agent: quick\n    machine: laptop\n    memory_id: amsp_19ff8df1\n";
+
+  function findings(dir: string, profile: "hub" | "aidlc" = "hub"): Finding[] {
+    return validateBundle({ bundleRoot: dir, mode: "produce", profile, today: TODAY }).findings;
+  }
+
+  test("an AMSP-shaped origin passes the hub gate — it has no intent to give", () => {
+    const hits = findings(cardWith(AMSP_ORIGIN));
+    expect(hits.map((f) => f.rule + ": " + f.message)).toEqual([]);
+  });
+
+  test("the same card fails --profile aidlc, which is where AIDLC's field set belongs", () => {
+    const messages = findings(cardWith(AMSP_ORIGIN), "aidlc").map((f) => f.message).join("\n");
+    for (const field of ["project", "intent", "stage", "content_key"]) {
+      expect(messages).toContain("akp.origin." + field + " is required under --profile aidlc");
+    }
+  });
+
+  test("naming no system is rejected: a coordinate in an unnamed address space", () => {
+    const noSystem = AIDLC_ORIGIN.replace("    agent_system: aidlc\n", "");
+    expect(findings(cardWith(noSystem)).some((f) => f.message.includes("akp.origin.agent_system is required"))).toBe(true);
+  });
+
+  test("naming a system with no coordinate is rejected too — provenance needs both halves", () => {
+    const hits = findings(cardWith("    agent_system: quick\n"));
+    expect(hits.some((f) => f.message.includes("carries no coordinate"))).toBe(true);
+  });
+
+  test("a Content-Key without its scope is rejected — sha256(scope + NUL + text) cannot be re-derived", () => {
+    const noScope = AIDLC_ORIGIN.replace("    content_key_scope: project\n", "");
+    expect(findings(cardWith(noScope)).some((f) => f.message.includes("content_key_scope"))).toBe(true);
+  });
+
+  test("...and a host that records no Content-Key is not asked for its scope", () => {
+    expect(findings(cardWith(AMSP_ORIGIN)).some((f) => f.message.includes("content_key_scope"))).toBe(false);
+  });
+});
+
+describe("import destination: declared it, so it must be real", () => {
+  function practice(extra: string, profile: "hub" | "aidlc" = "hub"): Finding[] {
+    const dir = mkdtempSync(join(tmpdir(), "akp-dest-"));
+    writeFileSync(
+      join(dir, "card.md"),
+      "---\ntype: Practice\ntitle: t\ndescription: d\ntags: [testing]\nstatus: stable\n" +
+        "generated: { by: process:x, at: 2026-08-09 }\nverified:\n  - { by: human:a, at: 2026-08-09 }\n" +
+        "stale_after: 2027-02-05\nsources:\n  - id: s\n    resource: docs/x.md\n" +
+        "akp:\n  class: judges\n  generalization: industry-generic\n" +
+        "  origin:\n    agent_system: quick\n    memory_id: amsp_19ff8df1\n" +
+        "  sanitized_by: { by: human:a, at: 2026-08-09 }\n" + extra +
+        "---\n\n# 规则\n\nA self-contained rule sentence.\n",
+    );
+    return validateBundle({ bundleRoot: dir, mode: "produce", profile, today: TODAY }).findings;
+  }
+
+  test("no destination at all passes the hub gate — the card may never be imported anywhere", () => {
+    expect(practice("")).toEqual([]);
+  });
+
+  test("a WRONG destination still fails, in either profile — that is the check with teeth", () => {
+    const hits = practice('  memory_target: practices/anti-patterns\n  heading: "## House Rules"\n');
+    expect(hits.some((f) => f.rule === "9" && f.message.includes('must be "team"'))).toBe(true);
+    expect(hits.some((f) => f.rule === "9" && f.message.includes("## House Rules"))).toBe(true);
+  });
+
+  test("--profile aidlc requires one, because AIDLC's import has to know where it lands", () => {
+    const messages = practice("", "aidlc").map((f) => f.message).join("\n");
+    expect(messages).toContain("akp.memory_target is required under --profile aidlc");
+    expect(messages).toContain("akp.heading is required under --profile aidlc");
+  });
+
+  test("an unknown knowledge_seat fails whether or not the profile demanded one", () => {
+    const dir = mkdtempSync(join(tmpdir(), "akp-seat-"));
+    writeFileSync(
+      join(dir, "card.md"),
+      "---\ntype: Domain Knowledge\ntitle: t\ndescription: d\ntags: [testing]\nstatus: stable\n" +
+        "generated: { by: process:x, at: 2026-08-09 }\nverified:\n  - { by: human:a, at: 2026-08-09 }\n" +
+        "stale_after: 2027-08-09\nsources:\n  - id: s\n    resource: docs/x.md\n" +
+        "akp:\n  class: knows\n  generalization: industry-generic\n" +
+        "  origin:\n    agent_system: quick\n    memory_id: amsp_19ff8df1\n" +
+        "  sanitized_by: { by: human:a, at: 2026-08-09 }\n  knowledge_seat: aidlc-turbine-agent\n" +
+        "---\n\n# 领域事实\n\nA fact.\n",
+    );
+    for (const profile of ["hub", "aidlc"] as const) {
+      const hits = validateBundle({ bundleRoot: dir, mode: "produce", profile, today: TODAY }).findings;
+      expect(hits.some((f) => f.rule === "10" && f.message.includes("aidlc-turbine-agent"))).toBe(true);
+    }
   });
 });
 

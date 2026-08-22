@@ -317,27 +317,58 @@ bundle。而我们要求 `title` / `description` / `tags` / `verified` / `source
 
 `actor` 用 OKF §7 约定：`human:<id>` / `process:<id>` / `<producer>/<version>`。
 
-#### 6.3.1 `cde:` 扩展
+#### 6.3.1 `akp:` 扩展
+
+**两个 profile，两套必填。** hub 是 host-neutral 闸口：一个共享 hub 里的每张卡，
+不论谁写的，都必须过。`aidlc` 在其上追加 AIDLC 自己往返所需——即验证器的
+`--profile aidlc`，由 push stage 对**自己的产出**运行。
+
+早先这张表把两者混作一列，验证器便把 AIDLC 的契约施加于全 hub。后果是可测的：
+Quick 写入的 54 张卡各带同十类错误（约 53 份），而唯一的通过办法是编一个
+`intent: amsp-quick`——一个指向不存在之物的 trace 锚点，比留空更糟，因为读的人会去追。
+
+**hub profile（全部卡片）**
 
 | 字段 | 必填 | 含义 |
 |---|---|---|
-| `cde.class` | ✅ | `knows` / `judges` |
-| `cde.generalization` | ✅ | `industry-generic` / `needs-recalibration` |
-| `cde.origin.project` | ✅ | 来源项目代号（脱敏，非客户名） |
-| `cde.origin.intent` | ✅ | intent 记录目录名 |
-| `cde.origin.stage` | ✅ | stage slug |
-| `cde.origin.content_key` | ✅ | 原项目 `RULE_LEARNED` 行的 Content-Key（trace 锚点） |
-| `cde.origin.content_key_scope` | ✅ | 该 key 计算时的 scope（`project` / `team`） |
-| `cde.sanitization` | ✅ | `{by: human:<id>, at: <date>}` 谁批准其**离开**交付现场 |
-| `cde.memory_target` | Practice 必填 | **仅 `team`**（`org` 无写入路径，§10.1） |
-| `cde.heading` | Practice 必填 | 目标 heading，限 §10.4 的 8 个 |
-| `cde.knowledge_seat` | Domain Knowledge 必填 | 落到哪个 agent seat 的 knowledge 目录 |
-| `cde.supersedes` | — | 被本卡取代的 concept ID（与正文链接互为镜像） |
-| `cde.review_interval_days` | — | 覆盖 policy 默认半衰期，须在正文说明理由 |
+| `akp.class` | ✅ | `knows` / `judges` |
+| `akp.generalization` | ✅ | `industry-generic` / `needs-recalibration` |
+| `akp.origin` | ✅ | 产出系统**自己地址空间里的一个坐标** |
+| `akp.origin.agent_system` | ✅ | 哪个 agent 系统产出（`aidlc` / `kirocrew` / `quick` / `cursor` / `manual`）。不写这一项，下面的坐标就落在一个没有名字的地址空间里：不认识产出方的读者无从知道 `intent` 或 `memory_id` 指的是什么 |
+| `akp.origin.<坐标>` | ✅ 至少一项 | 在那个系统里定位所需的字段。**查形状不查词汇**：AIDLC 用 project/intent/stage/content_key，AMSP 宿主用 agent/machine/memory_id——两者回答同一个问题，各用自己的词 |
+| `akp.sanitized_by` | ✅ | `{by: human:<id>, at: <date>}` 谁批准其**离开**交付现场 |
+| `akp.origin.content_key_scope` | 记了 key 才必填 | 该 key 计算时的 scope（`project` / `team`） |
+| `akp.memory_target` | 声明了才校验 | 若声明，**仅 `team`**（`org` 无写入路径，§10.1） |
+| `akp.heading` | 声明了才校验 | 若声明，限 §10.4 的 8 个 |
+| `akp.knowledge_seat` | 声明了才校验 | 若声明，须是已安装的 agent seat 或 `aidlc-shared` |
+| `akp.supersedes` | — | 被本卡取代的 concept ID（与正文链接互为镜像） |
+| `akp.review_interval_days` | — | 覆盖 policy 默认半衰期，须在正文说明理由 |
 
-`content_key_scope` 必须记录：Content-Key 的算法是 `sha256(scope + "\0" + text)`（§10.2），
-**含 scope**。一条 project 级规则在闸口被重新定级为 team 时，本地 key 是按 `project` 算的；
-不记 scope，将来拿 key 回查审计行会对不上。
+后三项是**条件式而非必填**：它们描述的是**导入目的地**——一条 Practice 规则落在
+`team.md` 的哪个标题下、一张 Domain Knowledge 卡落在哪个席位。任何有记忆层的宿主
+都有这个需求，但只有 AIDLC 的答案拼作 `## Testing Posture` / `aidlc-shared`；
+一张永远不会被导入 AIDLC space 的卡，没有这样的目的地可写。SPEC §11 V6 原本就是
+这个措辞（"`akp.heading` in known headings"），是验证器把它读成了必填。
+
+**aidlc profile（追加）**
+
+| 字段 | 追加要求 | 为什么 |
+|---|---|---|
+| `akp.origin.project` | ✅ | 来源项目代号（脱敏，非客户名） |
+| `akp.origin.intent` | ✅ | intent 记录目录名 |
+| `akp.origin.stage` | ✅ | stage slug |
+| `akp.origin.content_key` | ✅ | 原项目 `RULE_LEARNED` 行的 Content-Key（trace 锚点） |
+| `akp.memory_target` | Practice ✅ | pull 阶段要知道往哪写 |
+| `akp.heading` | Practice ✅ | 同上，限 §10.4 的 8 个 |
+| `akp.knowledge_seat` | Domain Knowledge ✅ | 落到哪个 agent seat 的 knowledge 目录 |
+
+`content_key_scope` 是**条件于声明本身、而非条件于谁在声明**：记了 Content-Key 就
+必须记 scope。理由不是家规——Content-Key 的算法是 `sha256(scope + "\0" + text)`（§10.2），
+**含 scope**。一条 project 级规则在闸口被重新定级为 team 时，本地 key 是按 `project`
+算的；不记 scope，将来拿 key 回查审计行会对不上。对不用 Content-Key 的宿主，这一条
+自动空过——这正是要点。
+
+命名空间为 `akp:`；`cde:` 仍被读取（历史卡片），写入端一律用 `akp:`。
 
 ### 6.4 固定键序（NFR-2）
 
