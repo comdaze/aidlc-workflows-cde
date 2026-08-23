@@ -13,7 +13,16 @@ commands a stage or conductor invokes directly.
 
 All event names follow `SUBJECT_PAST_VERB` — every event answers "what happened?"
 
-## Event Registry (82 events, 21 categories)
+## Emitter-Owned Fields
+
+The structured renderer writes exactly one `Timestamp` and one `Event` line per
+block; callers must not supply either field. For compatibility, the generic
+`audit append --field Timestamp=...` form is still accepted, but its value is
+intentionally ignored. Historical shards are not rewritten: readers that parse
+whole files must split on `---` and use the first timestamp in each block, or
+deduplicate timestamp fields produced by older versions.
+
+## Event Registry (86 events, 22 categories)
 
 ### Workflow Lifecycle (4 events)
 
@@ -21,7 +30,7 @@ All event names follow `SUBJECT_PAST_VERB` — every event answers "what happene
 |-------|------|-----------------|---------|
 | ✓ `WORKFLOW_STARTED` | Scope determined, workflow begins | Timestamp, Scope, Request | `tools/aidlc-utility.ts intent-create` |
 | ✓ `WORKFLOW_COMPLETED` | All in-scope stages done | Timestamp, Scope, Details | `tools/aidlc-state.ts complete-workflow` |
-| ✓ `WORKFLOW_PARKED` | Workflow parked mid-flow for a later session (no stage advanced) | Stage, Timestamp | `tools/aidlc-state.ts park` |
+| ✓ `WORKFLOW_PARKED` | Workflow parked mid-flow for a later session (no stage advanced) | Timestamp, Stage | `tools/aidlc-state.ts park` |
 | ✓ `WORKFLOW_UNPARKED` | Park marker cleared on explicit `--resume` re-entry | Timestamp | `tools/aidlc-state.ts unpark` |
 
 ### Phase Lifecycle (4 events)
@@ -38,7 +47,7 @@ All event names follow `SUBJECT_PAST_VERB` — every event answers "what happene
 | Event | When | Required Fields | Emitter |
 |-------|------|-----------------|---------|
 | ✓ `STAGE_STARTED` | Stage enters `[-]` Active | Timestamp, Stage, Agent | `tools/aidlc-state.ts advance`, `tools/aidlc-utility.ts intent-create` (init stages) |
-| `STAGE_AWAITING_APPROVAL` | Stage enters `[?]` (gate open) | Timestamp, Stage, Artifacts, optional `Recovered=true` (backfilled gate row) | `tools/aidlc-state.ts gate-start` (organic, or `--recovered` backfill), `tools/aidlc-state.ts revise` (gate re-entry), `tools/aidlc-state.ts reject` (backfill when gate-start was skipped), `tools/aidlc-state.ts approve` (backstop re-entry row after a backfilled revision) |
+| `STAGE_AWAITING_APPROVAL` | Stage enters `[?]` (gate open) | Timestamp, Stage, Artifacts, optional `Recovered=true` (backfilled gate row) | `tools/aidlc-state.ts gate-start` (organic, or `--recovered` backfill), `tools/aidlc-state.ts revise` (gate re-entry), `tools/aidlc-state.ts approve` (backstop re-entry after its opening guards pass) |
 | `STAGE_REVISING` | Stage enters `[R]` (user rejected gate) | Timestamp, Stage, Revision count, Feedback, optional `Recovered=true` (backfilled by the approve-time revision backstop) | `tools/aidlc-state.ts reject`, `tools/aidlc-state.ts approve` (backstop backfill) |
 | ✓ `STAGE_COMPLETED` | Stage finishes (`[x]`) | Timestamp, Stage, Details, Artifacts | `tools/aidlc-state.ts approve` (gated stages; also auto-advances to next), `tools/aidlc-state.ts advance` (non-gated stages), `tools/aidlc-utility.ts intent-create` (init stages) |
 | `STAGE_JUMPED` | Forward/backward/redo jump target reached | Timestamp, Direction, Source, Target, Scope | `tools/aidlc-jump.ts execute` |
@@ -52,7 +61,16 @@ All event names follow `SUBJECT_PAST_VERB` — every event answers "what happene
 | `SESSION_RESUMED` | Existing Claude Code session resumed (source=resume) | Timestamp, Source | `hooks/aidlc-session-start.ts` |
 | `SESSION_COMPACTED` | Context compaction occurred | Timestamp, Current Stage, State Validity | `hooks/aidlc-validate-state.ts` (PreCompact) |
 | `SESSION_ENDED` | Claude Code session terminates | Timestamp, Reason | `hooks/aidlc-session-end.ts` |
-| `HUMAN_TURN` | A real human acted this turn: submitted a prompt or answered a question widget (the approval/interview gate requires one since the last gate resolution) | Timestamp | `hooks/aidlc-record-human-turn.ts` (UserPromptSubmit + PostToolUse AskUserQuestion) + the per-harness prompt-submit adapters |
+| `HUMAN_TURN` | A supported prompt-submit or answered-widget seam was observed (the approval/interview gate requires one since the last gate resolution) | Timestamp | `hooks/aidlc-record-human-turn.ts` (UserPromptSubmit + PostToolUse AskUserQuestion) + the per-harness prompt-submit adapters |
+
+`HUMAN_TURN` is chronological presence evidence, not authenticated decision
+content. The `--user-input`, `--feedback`, and `--details` fields recorded by
+authority-bearing tools are caller-supplied prose. A narrow defense-in-depth
+tripwire rejects recognized explicit conductor/model self-attribution, but
+unlabelled, paraphrased, localized, or otherwise unrecognized wording remains
+indistinguishable from human-authored text. `AIDLC_SKIP_HUMAN_PRESENCE_GUARD=1`
+also disables that tripwire for deterministic recovery/tests. Audit shards are
+operational evidence, not a tamper-proof human-authorship boundary.
 
 ### Initialization Events (3 events — fire IN ADDITION TO `STAGE_COMPLETED`)
 
@@ -74,7 +92,7 @@ All event names follow `SUBJECT_PAST_VERB` — every event answers "what happene
 | `SCOPE_DETECTED` | Auto-detected from freeform text | Timestamp, Detected scope, Input text, Source, Matched keywords (optional; present when `Source=keyword`) | `tools/aidlc-utility.ts detect-scope` |
 | `RECOMPOSED` | The adaptive composer re-shaped a running workflow's pending stages (suffix flips via `recompose`) | Timestamp, Scope, Stages skipped, Stages added, Stages in Scope | `tools/aidlc-utility.ts recompose` |
 
-### Interaction Events (7 events)
+### Interaction Events (8 events)
 
 | Event | When | Required Fields | Emitter |
 |-------|------|-----------------|---------|
@@ -83,8 +101,9 @@ All event names follow `SUBJECT_PAST_VERB` — every event answers "what happene
 | `GATE_REJECTED` | Human requested changes | Timestamp, Stage, Feedback, optional `Recovered=true` (backfilled by the approve-time revision backstop) | `tools/aidlc-state.ts reject`, `tools/aidlc-state.ts approve` (backstop backfill) |
 | `QUESTION_ANSWERED` | Non-gate question answered by user | Timestamp, Stage, Details | `tools/aidlc-log.ts answer` |
 | `SUMMARY_CONFIRMATION_RECORDED` | Consolidated-summary choice recorded after the matching prompt and a fresh human turn; reserved from the public audit CLI | Timestamp, Stage, Details, Checkpoint, Questions File, Questions SHA-256; optional Unit, Workflow | `tools/aidlc-log.ts answer --checkpoint summary-confirmation` |
-| `REVIEW_REQUESTED` | Conductor dispatches the §12a reviewer sub-agent; reserved from the public audit CLI | Timestamp, Stage, Reviewer, Iteration, optional Unit (per-unit stages), optional Retry (`pending-request` recovery of an unmatched request) | `tools/aidlc-log.ts review` |
-| `REVIEW_COMPLETED` | Reviewer verdict read; gates the approval of a reviewer-bearing stage, must pair to the same request iteration, and is reserved from the public audit CLI | Timestamp, Stage, Reviewer, Iteration, Verdict, Artifact Fingerprint (`sha256:<hex>` over declared artifact paths and bytes), optional Unit (per-unit stages) | `tools/aidlc-log.ts review --verdict` |
+| `REVIEW_REQUESTED` | Conductor dispatches the §12a reviewer sub-agent; reserved from the public audit CLI | Timestamp, Stage, Reviewer, Iteration, Artifact Fingerprint (`sha256:<hex>` over the bytes dispatched for review), optional Unit (authoritative-DAG per-unit stages), optional Retry (`pending-request` recovery of an unmatched request), optional Recovery (`stale-receipt` bounded recovery after artifact/source invalidation) | `tools/aidlc-log.ts review` |
+| `REVIEW_COMPLETED` | Reviewer verdict read; gates the approval of a reviewer-bearing stage, must pair to the same request iteration and unchanged request fingerprint, and is reserved from the public audit CLI | Timestamp, Stage, Reviewer, Iteration, Verdict, Artifact Fingerprint (must match the request and current bytes), optional Unit (per-unit stages), optional Source Fingerprint (`workspace_requires` stages only: git-native source hash or `unbindable`; modern unbindable receipts fail closed) | `tools/aidlc-log.ts review --verdict` |
+| `PIPELINE_LINK_COMPLETED` | A declared pipeline link returned in order; current-attempt receipts gate pipeline approval and are reserved from the public audit CLI | Timestamp, Stage, Link, Position (`k/N`), optional Repo (required by the protocol for multi-repo chains), optional Workflow (`single-stage:<slug>` for isolated runs) | `tools/aidlc-log.ts link` |
 
 ### Unit Lifecycle Events (4 events — inline per-unit Construction stages)
 
@@ -115,7 +134,7 @@ the active space's shared `codekb/<repo>/` tree.
 |-------|------|-----------------|---------|
 | `ARTIFACT_CREATED` | New artifact written in the active intent record or space-level codekb tree | Timestamp, Tool, File, Context | `hooks/aidlc-write-audit-log.ts` (PostToolUse; Write to net-new path) |
 | `ARTIFACT_UPDATED` | Existing artifact modified in either tree | Timestamp, Tool, File, Context | `hooks/aidlc-write-audit-log.ts` (PostToolUse; Edit, or Write overwriting existing) |
-| `ARTIFACT_REUSED` | Re-use decision on backward jump | Timestamp, Stage, Decision, Artifacts | `tools/aidlc-state.ts reuse-artifact` |
+| `ARTIFACT_REUSED` | Re-use decision on backward jump or per-repo pipeline reuse evidence; only `Decision=keep` grants the pipeline exemption; reserved from the public audit CLI | Timestamp, Stage, Decision, Artifacts, optional Repo | `tools/aidlc-state.ts reuse-artifact` |
 
 ### Subagent Events (1 event — hook-emitted)
 
@@ -135,6 +154,23 @@ the active space's shared `codekb/<repo>/` tree.
 | Event | When | Required Fields | Emitter |
 |-------|------|-----------------|---------|
 | `PLAN_APPROVAL_BLOCKED` | A code-generation developer-agent dispatch was refused because a targeted unit lacked a non-empty, explicitly approved `code-generation-plan.md` (stage Steps 2-3 must precede Step 4) | Timestamp, Tool, Target, Stage, Unit | `hooks/aidlc-plan-approval-guard.ts` (PreToolUse) |
+
+### Documents (3 events)
+
+The DocumentKB is a **space-level** store, so all three events land in the space-level audit shard (`spaces/<space>/intents/audit/`) even for an intent-scoped document — the intent UUID is recorded as a field rather than selecting the shard. This keeps one document's history in one place across an `associate`/`dissociate` scope change. These events are provenance, **not a backup**: deleting the whole `documentkb/` tree destroys the per-document records, so document ids, tombstones, and intent links do NOT survive it — the next `sync` re-indexes the surviving originals as brand-new rows. Only a lost `index.json` alone is recoverable (`sync` rebuilds it from the per-document `metadata.json` files).
+
+| Event | When | Required Fields | Emitter |
+|-------|------|-----------------|---------|
+| `DOCUMENT_INDEXED` | A customer document was indexed into the DocumentKB for the first time (from `onboard`, and from `sync`'s fresh-document branch) | Timestamp, Space, Document, Source, Digest, optional Intent | `tools/aidlc-knowledge.ts` |
+| `DOCUMENT_UPDATED` | An indexed document's record changed — a new revision, a re-extraction, a move, or an intent association change (from `associate`, `dissociate`, `rebind`, `onboard`'s edited-row branch, `sync`'s moved/changed/retried branches, and the idempotent audit-repair pass) | Timestamp, Space, Document, Change, optional Intent | `tools/aidlc-knowledge.ts` |
+| `DOCUMENT_REMOVED` | The original is gone; the row became a metadata-only tombstone and extracted content was deleted (from `sync`) | Timestamp, Space, Document, Last Path, Last Digest | `tools/aidlc-knowledge.ts` |
+
+All three are written to the **space-level** shard (`intents/audit/`), not an intent's,
+even when the document carries `related_intent_ids`. A document outlives any single
+intent and `associate`/`dissociate` can move its scope, so filing its provenance under
+the active intent would split one document's history across shards. An
+`associate`/`dissociate` that changes nothing emits **no** event: a per-call event
+would fill the ledger with non-changes and break reconstruction-from-the-ledger.
 
 ### Utility Events (1 event)
 
@@ -172,7 +208,7 @@ Emitted during Phase 3 (Construction) when Bolts run inside per-Bolt git worktre
 | `STATE_FORKED` | State file forked to worktree on Bolt start | Timestamp, Bolt slug, Worktree path, Source state hash, Target state hash | `tools/aidlc-state.ts` (`fork`) |
 | `STATE_MERGED` | Worktree's state merged back to main state on gate approval | Timestamp, Bolt slug, Worktree path, Source state hash, Target state hash, Conflict resolution | `tools/aidlc-state.ts` (`merge`) |
 | `AUDIT_FORKED` | Audit log forked to worktree on Bolt start (audit-of-intent — emit precedes the byte-copy) | Timestamp, Bolt slug, Source Audit Hash, Fork Boundary | `tools/aidlc-audit.ts` (`audit-fork`) |
-| `AUDIT_MERGED` | Worktree's audit entries appended to main audit on gate approval; per-Bolt entry order preserved, cross-Bolt order reflects merge-completion order | Timestamp, Bolt slug, Entries Merged, Source Audit Hash, Fork Boundary | `tools/aidlc-audit.ts` (`audit-merge`) |
+| `AUDIT_MERGED` | Worktree's audit entries appended to main audit on gate approval; per-Bolt entry order preserved, cross-Bolt order reflects merge-completion order | Timestamp, Bolt slug, Entries Merged, Source Audit Hash, Fork Boundary, Fork Timestamp | `tools/aidlc-audit.ts` (`audit-merge`) |
 
 ### Practices (4 events)
 
@@ -218,7 +254,7 @@ Emitted by stage-protocol §13 (Learnings Ritual). The runtime-graph compile emi
 | Event | When | Required Fields | Emitter |
 |-------|------|-----------------|---------|
 | `MEMORY_EMPTY` | A stage approval triggered a runtime-graph compile and the stage's memory.md had zero non-blank entries under any of the four §13 headings | Timestamp, Stage | `tools/aidlc-runtime.ts compile` |
-| `RULE_LEARNED` | The learning gate persisted a kept learning as a practice line under the routed heading in `{project,team}.md` | Timestamp, Stage, Candidate-ID, Destination, Heading, Source | `tools/aidlc-learnings.ts persist` |
+| `RULE_LEARNED` | The learning gate persisted a kept learning as a practice line under the routed heading in `{project,team}.md` | Timestamp, Stage, Candidate-ID, Content-Hash, Destination, Heading, Source | `tools/aidlc-learnings.ts persist` |
 | `SENSOR_PROPOSED` | The learning gate scaffolded a project-tier sensor manifest and bound it to the originating stage's `sensors:` frontmatter | Timestamp, Stage, Candidate-ID, Sensor ID, Manifest path, Matches, Destinations, Source | `tools/aidlc-learnings.ts persist` |
 
 ### Swarm (6 events)
@@ -228,7 +264,7 @@ All six swarm events emit from the swarm referee `aidlc-swarm.ts` — the determ
 | Event | When | Required Fields | Emitter |
 |-------|------|-----------------|---------|
 | `SWARM_STARTED` | Swarm referee `prepare` captured the exact attempt and forked a batch of dependency-linked Units | Timestamp, Batch number, Unit names, Concurrency cap, Stage, Run floor | `tools/aidlc-swarm.ts` |
-| `SWARM_UNIT_CONVERGED` | A swarm Unit re-verified green (and untampered) at the `finalize` gate AND its merge-back landed (a converged unit in `merge_failures` gets no row until a finalize retry merges it) | Timestamp, Batch number, Unit name, Stage, Run floor (the exact token captured by `SWARM_STARTED`; consumers require an exact current-attempt match) | `tools/aidlc-swarm.ts` |
+| `SWARM_UNIT_CONVERGED` | A swarm Unit re-verified green (and untampered) at the `finalize` gate AND its AIDLC metadata merge-back landed (a converged unit in `merge_failures` gets no row until a finalize retry merges it) | Timestamp, Batch number, Unit name, Stage, Run floor (the exact token captured by `SWARM_STARTED`; consumers require an exact current-attempt match), optional Source Fingerprint and Source Commit (immutable reviewed source accepted by `aidlc-worktree merge`), or `Source Freshness Bypass: true` when finalize explicitly used `AIDLC_SKIP_SOURCE_FRESHNESS=1` (merge must repeat the switch) | `tools/aidlc-swarm.ts` |
 | `SWARM_UNIT_FAILED` | A swarm Unit failed the `finalize` re-verify (not claimed, claimed-but-red, or tampered) | Timestamp, Batch number, Unit name, Reason | `tools/aidlc-swarm.ts` |
 <!-- Reason for a CLAIMED-but-red / tampered unit is always the tool's own verdict (`error`); for a DECLINED (unclaimed) unit it is the conductor's typed attribution via `finalize --reasons` (`unsatisfiable` / `budget-exhausted` / `cap-exhausted`, defaulting to `cap-exhausted`) — the tool records the conductor's knowledge call, it does not judge unsatisfiability itself (D-I). -->
 | `SWARM_BATON_RETURNED` | A swarm Unit returned the baton to the conductor for orchestrator-mediated coordination | Timestamp, Batch number, Unit name, Reason | `tools/aidlc-swarm.ts` |
@@ -239,7 +275,7 @@ All six swarm events emit from the swarm referee `aidlc-swarm.ts` — the determ
 
 Hooks emit events through the same library emitter as orchestrator-driven emissions (`appendAuditEntry` from `tools/aidlc-audit.ts`). Hook-emitted events are first-class taxonomy members (`ARTIFACT_CREATED`, `ARTIFACT_UPDATED`, `SUBAGENT_COMPLETED`, all `SESSION_*`) — there is no longer a separate "free-form hook entry" format. A hook with no active workflow in `cwd` is a no-op; session events only append to a workflow's audit.md when one exists.
 
-The public `aidlc-audit.ts append` CLI is a diagnostic escape hatch, not the canonical emit path: it refuses authority-bearing receipts (`HUMAN_TURN`, `GATE_APPROVED`, `GATE_REJECTED`, `QUESTION_ANSWERED`, `REVIEW_REQUESTED`, `REVIEW_COMPLETED`, `SWARM_STARTED`, `SWARM_UNIT_CONVERGED`, `AUTONOMY_MODE_SET`, `UNIT_STARTED`, `UNIT_PAUSED`, `UNIT_RESUMED`, `UNIT_COMPLETED`), which only their owning tool or hook may emit. Field names must be printable single-line labels matching the audit field grammar; values have every line terminator escaped. `append-raw` likewise refuses a body carrying an `**Event**:` line naming a taxonomy event and refuses line-breaking headings.
+The public `aidlc-audit.ts append` CLI is a diagnostic escape hatch, not the canonical emit path: it refuses authority-bearing receipts (`HUMAN_TURN`, `GATE_APPROVED`, `GATE_REJECTED`, `QUESTION_ANSWERED`, `REVIEW_REQUESTED`, `REVIEW_COMPLETED`, `PIPELINE_LINK_COMPLETED`, `ARTIFACT_REUSED`, `SWARM_STARTED`, `SWARM_UNIT_CONVERGED`, `AUTONOMY_MODE_SET`, `UNIT_STARTED`, `UNIT_PAUSED`, `UNIT_RESUMED`, `UNIT_COMPLETED`), which only their owning tool or hook may emit. Field names must be printable single-line labels matching the audit field grammar; values have every line terminator escaped. `append-raw` likewise refuses a body carrying an `**Event**:` line naming a taxonomy event and refuses line-breaking headings.
 
 ## Format Standards
 

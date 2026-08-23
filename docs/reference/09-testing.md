@@ -104,8 +104,9 @@ bun tests/run-tests.ts [--ci | --all --debug -P 8]
 1. Install `bun`, Node.js, and the Claude Code CLI.
 2. Install Git for Windows if you are running the full suite or the POSIX wrapper compatibility smoke; the native runner path itself does not require Bash.
 3. For e2e TUI tests, install the dev dependencies with npm so node can resolve `node-pty` and `@xterm/headless`.
-4. Set `AIDLC_NODE_BIN` to the concrete `node.exe` path and set `AIDLC_TUI_LIVE=1` for a full acceptance run.
-5. Run `bun tests/run-tests.ts --all --debug -P 8`.
+4. Set `AIDLC_NODE_BIN` to the concrete `node.exe` path and set `AIDLC_TUI_LIVE=1` for live Claude TUI coverage.
+5. For the Kiro IDE slice, install and sign in to Kiro IDE, then set `AIDLC_KIRO_IDE_LIVE=1`. The default Windows binary is `%LOCALAPPDATA%\Programs\Kiro\Kiro.exe`; override it with `AIDLC_KIRO_IDE_BIN`.
+6. Run `bun tests/run-tests.ts --all --debug -P 8`.
 
 No WSL or Docker is required; the supported validation substrate is native Windows.
 
@@ -240,9 +241,9 @@ Contents: 4 minimal .md files (architecture-overview, technology-stack, codebase
 
 ### Inception Artifacts Fixture: `tests/fixtures/inception-artifacts/`
 
-Pre-seeded inception phase output for tests that jump into construction. Copied into `$PROJ/aidlc/spaces/default/intents/<record>/inception/{requirements-analysis,application-design,units-generation}/` during setup.
+Pre-seeded inception phase output for tests that jump into construction. Copied into `$PROJ/aidlc/spaces/default/intents/<record>/inception/{requirements-analysis,domain-design,units-generation}/` during setup.
 
-Contents: 7 minimal .md files (requirements, components, component-methods, services, component-dependency, unit-of-work, unit-of-work-story-map) describing the Todo app. Unit name: `todo-core`.
+Contents: minimal .md files (requirements, the consolidated `components.md` catalogue, unit-of-work, unit-of-work-story-map) describing the Todo app. Unit name: `todo-core`.
 
 ### Construction Artifacts Fixture: `tests/fixtures/construction-artifacts/`
 
@@ -269,7 +270,7 @@ Contents: 1 minimal .md file (functional-design) describing the todo-core unit's
 
 1. Choose the stage to test and identify what state fixture it needs (the state must show that stage as the current/next stage)
 2. Create or reuse a state fixture in `tests/fixtures/`
-3. Create `tests/integration/tNN-stage-SLUG.test.ts` and use the shared TypeScript harness helpers (`tests/harness/fixtures.ts`, `tests/harness/sdk-drive.ts`, or `tests/harness/tui-drive.ts`) rather than shell TAP helpers.
+3. Create `tests/integration/tNN-stage-SLUG.test.ts` and use the shared TypeScript harness helpers (`tests/harness/fixtures.ts`, `tests/harness/sdk-drive.ts`, `tests/harness/tui-drive.ts`, `tests/harness/plugin-kit.ts`, or `tests/harness/exec-drive.ts`) rather than shell TAP helpers.
 4. Run with `bun tests/run-tests.ts --integration` or directly: `bun test tests/integration/tNN-stage-SLUG.test.ts`
 
 ## How to Add Acceptance Assertions
@@ -301,6 +302,9 @@ To add artifact assertions to an existing e2e workflow test under `tests/e2e/`:
 | `AIDLC_TEST_TIMEOUT` | `1800` | Per-`claude -p` call timeout in seconds. Set to `0` to disable. |
 | `AIDLC_TUI_SETTING_SOURCES` | `project` | Setting sources injected into live `claude` TUI launches. Use `default` or an empty value only for focused calibration that intentionally includes user/local Claude settings. |
 | `AIDLC_TUI_TRACE_POLL_MS` | `10000` | Minimum interval between `answer_gate_poll` snapshots in TUI NDJSON traces while a long journey is waiting for the next menu or disk terminator. |
+| `AIDLC_KIRO_IDE_LIVE` | unset | Set to `1` to run the signed-in Kiro IDE desktop journey on macOS or Windows. |
+| `AIDLC_KIRO_IDE_BIN` | platform default | Override the Kiro IDE executable. Defaults to `/Applications/Kiro.app/Contents/MacOS/Electron` on macOS and `%LOCALAPPDATA%\Programs\Kiro\Kiro.exe` on Windows. |
+| `AIDLC_KIRO_IDE_SEED` | generated seed | Optional Kiro user-data directory. The test copies it to a disposable temp directory before launch and never mutates the source profile. |
 
 ## CLI Reference
 

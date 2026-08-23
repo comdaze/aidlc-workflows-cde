@@ -1,0 +1,8 @@
+{
+  "name": "aidlc-unknowns",
+  "version": "0.1.0",
+  "description": "Find the unknowns before they get expensive. Two cheap pre-implementation stages — a blindspot pass that scouts what the human does not know they do not know, and an evaluation calibration that raises the human's ability to judge a domain BEFORE a downstream gate asks them to approve work in it — plus contributions that add the symmetric over-specification check to requirements/design and a conservative-deviation rule to code generation. Distilled, with attribution, from Thariq Shihipar's essay 'A field guide to Claude Fable 5: Finding your unknowns'.",
+  "author": {
+    "name": "AWS GCR — CDE"
+  }
+}

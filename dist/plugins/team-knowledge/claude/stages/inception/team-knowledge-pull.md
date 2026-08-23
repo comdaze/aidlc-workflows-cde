@@ -142,6 +142,8 @@ it to the framework's own persist path — never write `team.md` directly:
 ```json
 {
   "stage_slug": "team-knowledge-pull",
+  "space": "default",
+  "intent": "<the active record dir, or null>",
   "selections": [
     {
       "candidate_id": "practices/data-boundary/mock-data-synthesis",
@@ -162,11 +164,22 @@ bun {{HARNESS_DIR}}/tools/aidlc-learnings.ts persist \
 
 Field rules, each load-bearing:
 
+- `space` and `intent` pin **where the write lands**. `persist` writes against
+  this pair rather than the live active-intent cursor, so an intent switch between
+  building the file and persisting it cannot misattribute the rules. On a build
+  whose `surface` emits the pair, copy it verbatim from that output; this stage
+  imports cards rather than surfacing journal candidates, so take the active
+  space/intent from `aidlc-utility.ts intent --json`. A build that requires the
+  pair fails with `missing or non-string space` when it is absent; one that does
+  not require it ignores the keys — so naming them is correct either way. `intent`
+  may be `null`, which records the write as `unscoped`.
 - `candidate_id` is the **card's concept ID**. It is stable and unique, which
-  sidesteps the position-derived candidate IDs of journal candidates; the
-  idempotency key is `(stage_slug, candidate_id)`, so a concept ID also makes a
-  re-run a no-op instead of a duplicate. Never reuse a `candidate_id` inside one
-  persist call.
+  sidesteps the position-derived candidate IDs of journal candidates. Never reuse
+  a `candidate_id` inside one persist call. Do not rely on it for idempotency,
+  though: identity is keyed on a **content hash** of the rule text (the marker is
+  `cid:<intent>:<stage>:<hash>`), precisely because positional candidate ids get
+  reused across runs for different text. A re-run with the same text is a no-op;
+  edited text is a new rule.
 - `scope` is `"team"`, from the card's `cde.memory_target`. `org` is not
   available — `persist` has no `org.md` write path (§10.1). A card claiming an
   org-level rule is imported as team-level or not at all; escalating it is a

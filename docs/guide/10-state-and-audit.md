@@ -77,9 +77,9 @@ stateDiagram-v2
 
 The audit trail lives in the intent's record dir at `aidlc/spaces/<space>/intents/<YYMMDD>-<label>/audit/`. It is an append-only event log written as **per-clone shards** (`<host>-<clone>.md`): each clone appends only to its own shard, so concurrent appends from sibling worktrees never git-conflict. Readers glob `audit/*.md` and merge-sort by ISO timestamp to reconstruct the full chronological history of decisions and events.
 
-### 82-event taxonomy
+### 86-event taxonomy
 
-Events are organized into 21 categories:
+Events are organized into 22 categories:
 
 | Category | Count | Events |
 |----------|------:|--------|
@@ -89,12 +89,13 @@ Events are organized into 21 categories:
 | **Session** | 5 | `SESSION_STARTED`, `SESSION_RESUMED`, `SESSION_COMPACTED`, `SESSION_ENDED`, `HUMAN_TURN` (hook-emitted) |
 | **Initialization** | 3 | `WORKSPACE_SCAFFOLDED`, `WORKSPACE_SCANNED`, `WORKSPACE_INITIALISED` |
 | **Navigation** | 7 | `SCOPE_CHANGED`, `SCOPE_DETECTED`, `DEPTH_CHANGED`, `TEST_STRATEGY_CHANGED`, `REVIEW_CLASS_CHANGED`, `RECOMPOSED`, `PLUGIN_SELECTION_CHANGED` |
-| **Interaction** | 7 | `DECISION_RECORDED`, `GATE_APPROVED`, `GATE_REJECTED`, `QUESTION_ANSWERED`, `SUMMARY_CONFIRMATION_RECORDED`, `REVIEW_REQUESTED`, `REVIEW_COMPLETED` |
+| **Interaction** | 8 | `DECISION_RECORDED`, `GATE_APPROVED`, `GATE_REJECTED`, `QUESTION_ANSWERED`, `SUMMARY_CONFIRMATION_RECORDED`, `REVIEW_REQUESTED`, `REVIEW_COMPLETED`, `PIPELINE_LINK_COMPLETED` |
 | **Unit Lifecycle** | 4 | `UNIT_STARTED`, `UNIT_PAUSED`, `UNIT_RESUMED`, `UNIT_COMPLETED` |
 | **Artifact** | 3 | `ARTIFACT_CREATED`, `ARTIFACT_UPDATED` (write-audit-log hook), `ARTIFACT_REUSED` |
 | **Subagent** | 1 | `SUBAGENT_COMPLETED` (log-subagent hook) |
 | **Reviewer Enforcement** | 2 | `REVIEWER_SCOPE_BLOCKED` (reviewer-scope hook), `REVIEW_FREEZE_BLOCKED` (review-freeze hook) |
 | **Plan Approval** | 1 | `PLAN_APPROVAL_BLOCKED` (plan-approval-guard hook) |
+| **Documents** | 3 | `DOCUMENT_INDEXED`, `DOCUMENT_UPDATED`, `DOCUMENT_REMOVED` — space-level shard even when intent-scoped |
 | **Utility** | 1 | `HEALTH_CHECKED` |
 | **Error/Recovery** | 2 | `ERROR_LOGGED`, `RECOVERY_COMPLETED` |
 | **Construction Bolt** | 4 | `BOLT_STARTED`, `BOLT_COMPLETED`, `BOLT_FAILED`, `AUTONOMY_MODE_SET` |
@@ -119,7 +120,7 @@ Events are organized into 21 categories:
 Each entry follows a structured format with these fields:
 
 - **Timestamp** — ISO 8601 timestamp
-- **Event** - One of the 82 event types
+- **Event** - One of the 86 event types
 - **Details** — Event-specific data (stage name, decision, artifact path, etc.)
 
 Entries are appended chronologically. To review the history of a specific stage, search for its `STAGE_STARTED` and `STAGE_COMPLETED` entries and everything in between.

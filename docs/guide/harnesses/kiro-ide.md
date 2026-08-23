@@ -2,7 +2,7 @@
 
 One of the framework's harnesses: `dist/kiro-ide/` runs the same AI-DLC
 methodology inside [Kiro IDE](https://kiro.dev/). One deterministic core —
-the tools, 32 stage files, protocols, knowledge, sensors, scopes, and rules —
+the tools, 33 stage files, protocols, knowledge, sensors, scopes, and rules —
 is byte-shared across every harness; only the shell (skills, agent configs,
 hook wiring, activation) differs.
 
@@ -140,7 +140,7 @@ legacy-only case, which fires nothing at all on a 1.x IDE.
 Identical to the Claude Code harness: `/aidlc <description>` starts a
 workflow, `/aidlc --status` reports position, `/aidlc --doctor`, `--stage`,
 `--phase`, `--depth`, `--test-strategy` all work, and the
-per-stage (`/aidlc-application-design`) and per-scope (`/aidlc-feature`) runner
+per-stage (`/aidlc-domain-design`) and per-scope (`/aidlc-feature`) runner
 skills are installed. There is no init command — the shipped shell scaffolds
 the workspace and the first intent auto-births on your first `/aidlc`.
 
@@ -154,20 +154,27 @@ routes through the shared `aidlc-kiro-adapter.ts` shim, which normalizes the
 IDE's hook event into the shape the byte-shared core hooks expect.
 
 Kiro IDE 1.x delivers hook context as **JSON on stdin** (snake_case:
-`{ tool_name, tool_input, tool_response }`; the older 0.12 builds instead set
+`{ session_id, tool_name, tool_input, tool_response }`; the older 0.12 builds instead set
 the `USER_PROMPT` environment variable with a camelCase equivalent, and the
 adapter accepts both). Captured PostToolUse write/shell events leave tool inputs
 empty on both channels, so their written path must be recovered from the result
-text and payload-free hooks (`rebuild-stage-graph`, `sync-workflow-state`) run from the
-audit trail. Later 1.x builds populate some PreToolUse and delegation inputs;
-the adapter preserves those fields without depending on them.
+text and audit-tail hooks (`rebuild-stage-graph`, `sync-workflow-state`) run
+from the audit trail. The graph-rebuild route also retains the shell result and session
+identity so a successful `intent-create` binds to the invoking session: modern
+events carry the exact `session_id`, while the legacy channel reuses the
+synthetic identity retained by SessionStart. Modern Stop likewise prefers its
+event-local `session_id`, preventing one concurrent chat from consuming
+another chat's post-create handoff; legacy agentStop falls back to the retained
+identity. Later 1.x builds populate some PreToolUse and delegation inputs; the
+adapter preserves those fields without depending on them.
 
 The payload acquisition is **gated to payload-dependent targets**
-(`audit-and-sensors`, `log-subagent`). A non-empty `USER_PROMPT` is consumed
-immediately on 0.12 builds (which open stdin without ever writing); otherwise
-the adapter reads the 1.x stdin channel with a 2s broken-channel ceiling.
-Every other target - including `block`, which fires on every `PreToolUse` -
-touches neither channel and keeps its zero-latency path.
+(`audit-and-sensors`, `log-subagent`, `rebuild-stage-graph`) plus `session-start`
+and `continue-workflow` for their modern `session_id`. A non-empty
+`USER_PROMPT` is consumed immediately on 0.12 builds (which open stdin without
+ever writing); otherwise the adapter reads the 1.x stdin channel with a 2s
+broken-channel ceiling. Every other target - including `block`, which fires on
+every `PreToolUse` - touches neither channel and keeps its zero-latency path.
 
 | Hook | Trigger (matcher) | Purpose |
 |------|-------------------|---------|
@@ -257,8 +264,8 @@ Installed and activated? The methodology is the same on every harness — keep
 going with the neutral chapters:
 
 - [Your First Workflow](../02-your-first-workflow.md) — an annotated end-to-end run.
-- [Phases and Stages](../04-phases-and-stages.md) — the 5 phases and 32 stages.
+- [Phases and Stages](../04-phases-and-stages.md) — the 5 phases and 33 stages.
 - [Scopes, Depth, and Test Strategy](../05-scopes-and-depth.md) — right-sizing a run.
 - [Glossary](../glossary.md) — every term defined.
 
-Other harnesses: [AI-DLC on Codex CLI](codex-cli.md) · [the harness family index](README.md).
+Other harnesses: [AI-DLC on Codex CLI](codex-cli.md) · [AI-DLC on Cursor](cursor.md) · [the harness family index](README.md).

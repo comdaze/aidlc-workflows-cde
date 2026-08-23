@@ -8,8 +8,9 @@
 // failure is caught and logged to the hooks-health file instead of swallowed by
 // `2>/dev/null || true`.
 //
-// Runs on SessionStart (Claude/Codex) or via the Kiro .kiro.hook. Harness-agnostic:
-//   PLUGIN_ROOT   ← CLAUDE_PLUGIN_ROOT | PLUGIN_ROOT | AIDLC_PLUGIN_ROOT
+// Runs on SessionStart (Claude/Codex/Cursor/Kiro IDE) or explicitly on Kiro CLI. Harness-agnostic:
+//   PLUGIN_ROOT   ← CLAUDE_PLUGIN_ROOT | PLUGIN_ROOT | AIDLC_PLUGIN_ROOT |
+//                   this file's parent plugin directory
 //   PROJECT_DIR   ← CLAUDE_PROJECT_DIR | AIDLC_PROJECT_DIR | PWD  (Codex unsets the first)
 //   HARNESS_LEAF  ← AIDLC_HARNESS_DIR  (".claude" default)
 //
@@ -28,31 +29,63 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const PLUGIN_ROOT =
-  process.env.CLAUDE_PLUGIN_ROOT || process.env.PLUGIN_ROOT || process.env.AIDLC_PLUGIN_ROOT || "";
+  process.env.CLAUDE_PLUGIN_ROOT ||
+  process.env.PLUGIN_ROOT ||
+  process.env.AIDLC_PLUGIN_ROOT ||
+  dirname(dirname(fileURLToPath(import.meta.url)));
 const PROJECT_DIR = resolve(
-  process.env.CLAUDE_PROJECT_DIR || process.env.AIDLC_PROJECT_DIR || process.env.PWD || process.cwd(),
+  process.env.CLAUDE_PROJECT_DIR ||
+    process.env.AIDLC_PROJECT_DIR ||
+    process.env.PWD ||
+    process.cwd(),
 );
 const HARNESS_LEAF = process.env.AIDLC_HARNESS_DIR || ".claude";
 const HARNESS_DIR = join(PROJECT_DIR, HARNESS_LEAF);
+const HARNESS_NAME = (() => {
+  const explicit = process.env.AIDLC_HARNESS_NAME?.trim();
+  if (explicit) return explicit;
+  try {
+    const parsed = JSON.parse(
+      readFileSync(join(HARNESS_DIR, "tools", "data", "harness.json"), "utf-8"),
+    ) as { name?: unknown };
+    if (typeof parsed.name === "string" && parsed.name.trim()) return parsed.name.trim();
+  } catch {
+    // Legacy installs did not record a distribution name.
+  }
+  if (HARNESS_LEAF === ".aidlc") {
+    return existsSync(join(PROJECT_DIR, ".github", "hooks", "aidlc.json"))
+      ? "copilot"
+      : "opencode";
+  }
+  return HARNESS_LEAF.replace(/^\./, "");
+})();
+const IS_COPILOT = HARNESS_NAME === "copilot";
+const IS_OPENCODE = HARNESS_NAME === "opencode";
 const STAGES_DIR = join(HARNESS_DIR, "aidlc-common", "stages");
-// Stage-runner skills live under the harness dir on most hosts, but Codex
-// discovers skills at `<project>/.agents/skills/` and ships nothing in
-// `.codex/skills/`. Without this fallback, composing a plugin on Codex generated
-// NO stage runners at all: the existence probe missed `.codex/skills` and the
-// only trace was an advisory drop, so the plugin's stages had no `/…` entry
-// point even though every file had landed correctly.
+// Stage-runner skills live under the harness dir on most hosts, but two hosts
+// put them elsewhere: Copilot uses `<project>/.github/skills/`, and Codex
+// discovers them at `<project>/.agents/skills/` while shipping nothing under
+// `.codex/skills/`. Without the Codex fallback, composing a plugin there
+// generated NO stage runners at all: the existence probe missed `.codex/skills`
+// and the only trace was an advisory drop, so the plugin's stages had no `/…`
+// entry point even though every file had landed correctly.
 //
 // KEEP IN SYNC with aidlc-runtime-paths.ts resolveSkillsPath — that is what
 // aidlc-runner-gen actually writes through, so this probe must agree with it or
 // compose decides "generate" against one dir while the generator writes another.
-// Same rule, same order: harness skills win when present; `.codex` alone falls
-// back. Resolved once at module scope so the probe, the per-stage SKILL.md
-// check, and the drop message can never disagree.
+// This mirrors the resolver's rule AND its order: Copilot is decided first, then
+// `codex` falls back only when the harness skills dir is absent. Re-derived from
+// the resolver rather than re-applied as a patch, because the resolver carried
+// BOTH branches while this probe carried only the Copilot one — that asymmetry is
+// exactly what left Codex runner-less. Resolved once at module scope so the probe,
+// the per-stage SKILL.md check, and the drop message can never disagree.
 const SKILLS_DIR = ((): string => {
+  if (IS_COPILOT) return join(PROJECT_DIR, ".github", "skills");
   const harnessSkills = join(HARNESS_DIR, "skills");
   if (HARNESS_LEAF !== ".codex" || existsSync(harnessSkills)) return harnessSkills;
   return join(PROJECT_DIR, ".agents", "skills");
@@ -124,6 +157,7 @@ function pluginNameFromRoot(): string {
     ".claude-plugin",
     ".codex-plugin",
     ".opencode-plugin",
+    ".cursor-plugin",
     ".plugin",
     ".kiro-plugin",
   ]) {
@@ -272,6 +306,7 @@ function installedToolEnv(): NodeJS.ProcessEnv {
     // AIDLC_PROJECT_DIR outranks CLAUDE_PROJECT_DIR in resolveProjectDir.
     AIDLC_PROJECT_DIR: PROJECT_DIR,
     AIDLC_HARNESS_DIR: HARNESS_LEAF,
+    AIDLC_HARNESS_NAME: HARNESS_NAME,
     AIDLC_STAGE_GRAPH: join(HARNESS_DIR, "tools", "data", "stage-graph.json"),
     AIDLC_SCOPE_GRID: join(HARNESS_DIR, "tools", "data", "scope-grid.json"),
     AIDLC_STAGES_DIR: STAGES_DIR,
@@ -367,11 +402,6 @@ export async function compose(): Promise<void> {
 if (!existsSync(join(HARNESS_DIR, "tools", "aidlc-graph.ts"))) {
   return; // not an AIDLC project — nothing to do (no drop: not our project)
 }
-if (!PLUGIN_ROOT) {
-  recordDrop("plugin root env not set (CLAUDE_PLUGIN_ROOT/PLUGIN_ROOT/AIDLC_PLUGIN_ROOT)");
-  await flushDrops();
-  return;
-}
 // A set-but-wrong PLUGIN_ROOT (e.g. a mistyped path from a hand-run command)
 // would otherwise pass the non-empty check and then find nothing to copy/merge —
 // a silent no-op. Record it so it surfaces in --doctor rather than looking clean.
@@ -455,6 +485,10 @@ function walk(dir: string): string[] {
 type CopyContext = { file: string; rel: string; content: string };
 type CopyPrecheck = (ctx: CopyContext & { dest: string }) => boolean;
 type CopyTransform = (ctx: CopyContext) => string;
+type ExistingCopyAction = "compare" | "handled" | "written";
+type ExistingCopyHandler = (
+  ctx: CopyContext & { dest: string; installed: Buffer },
+) => ExistingCopyAction;
 
 function frontmatterName(content: string): string | null {
   return frontmatterScalar(content, "name");
@@ -586,12 +620,136 @@ function sensorManifestNamePrecheck(): CopyPrecheck {
   };
 }
 
+function doctorScriptOwnershipPrecheck(): CopyPrecheck {
+  const toolsRoot = join(PLUGIN_ROOT, "tools");
+  const targetRoot = join(HARNESS_DIR, "tools");
+  const foreignOwner = (relPosix: string): string | null => {
+    const match = basename(relPosix).match(/^(.+)-doctor\.ts$/);
+    return match && match[1] !== PLUGIN_NAME ? match[1] : null;
+  };
+  const drop = (relPosix: string, owner: string, landed: boolean): void => {
+    recordDrop(
+      `plugin "${PLUGIN_NAME}" doctor script "${relPosix}" names foreign plugin "${owner}"; doctor scripts must be named "${PLUGIN_NAME}-doctor.ts" so disabled plugins cannot install checks for another identity${landed ? " (the file is already installed; remove it and re-run compose)" : " - not copied"}`,
+      "advisory",
+    );
+  };
+  // Older compose versions may already have landed the foreign file. Audit that
+  // state up front because copyTreeNoClobber skips prechecks for existing paths.
+  for (const file of walk(toolsRoot).filter((p) => p.endsWith("-doctor.ts"))) {
+    const relPosix = relative(toolsRoot, file).replace(/\\/g, "/");
+    const owner = foreignOwner(relPosix);
+    if (owner && existsSync(join(targetRoot, relPosix))) {
+      drop(relPosix, owner, true);
+    }
+  }
+  return ({ rel }) => {
+    const relPosix = rel.replace(/\\/g, "/");
+    const owner = foreignOwner(relPosix);
+    if (!owner) return true;
+    drop(relPosix, owner, false);
+    return false;
+  };
+}
+
 function projectOpencodeAgentMemory(raw: string): string {
   return raw
     .replaceAll(".aidlc/rules/aidlc-org.md", "aidlc/spaces/default/memory/org.md")
     .replaceAll(".aidlc/rules/aidlc-team.md", "aidlc/spaces/default/memory/team.md")
     .replaceAll(".aidlc/rules/aidlc-project.md", "aidlc/spaces/default/memory/project.md")
     .replaceAll(".aidlc/rules/", "aidlc/spaces/default/memory/");
+}
+
+function projectCursorNativeAgent({ file, content }: CopyContext): string {
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  if (!m) throw new Error(`${file}: plugin agent has no closed frontmatter block`);
+  const fm = m[1]
+    .split(/\r?\n/)
+    .filter((line) => !/^(?:model|tier|effort|variant):/.test(line))
+    .join("\n");
+  return content.replace(m[0], () => `---\n${fm}\n---\n`);
+}
+
+function disallowedToolsValues(content: string): string[] {
+  return [
+    ...frontmatter(content).matchAll(/^disallowedTools:\s*(.*?)\s*$/gm),
+  ].map((match) => match[1].trim());
+}
+
+function projectKiroNativeAgent({ file, content }: CopyContext): string {
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  if (!m) throw new Error(`${file}: plugin agent has no closed frontmatter block`);
+  const disallowed = disallowedToolsValues(content);
+  if (
+    disallowed.length > 1 ||
+    (disallowed.length === 1 && !/^Task$/i.test(disallowed[0]))
+  ) {
+    throw new Error(`${file}: Kiro cannot project this disallowedTools declaration`);
+  }
+  const fm = m[1]
+    .split(/\r?\n/)
+    .filter((line) => !/^disallowedTools:/.test(line))
+    .join("\n");
+  return content.replace(m[0], () => `---\n${fm}\n---\n`);
+}
+
+function kiroNativeAgentPrecheck(): CopyPrecheck {
+  return (ctx) => {
+    if (!ctx.content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/)) {
+      recordDrop(
+        `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" has no closed frontmatter block; not copied to Kiro's agent roster`,
+      );
+      return false;
+    }
+    const disallowed = disallowedToolsValues(ctx.content);
+    if (disallowed.length > 1) {
+      recordDrop(
+        `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" declares multiple disallowedTools lines; Kiro accepts at most one disallowedTools: Task line; not copied`,
+      );
+      return false;
+    }
+    if (disallowed.length === 1 && !/^Task$/i.test(disallowed[0])) {
+      recordDrop(
+        `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" cannot project disallowedTools "${disallowed[0]}" to Kiro; not copied`,
+      );
+      return false;
+    }
+    return true;
+  };
+}
+
+function migrateExistingKiroAgent(
+  ctx: CopyContext & { dest: string; installed: Buffer },
+): ExistingCopyAction {
+  if (!ctx.file.endsWith(".md")) return "compare";
+  const installed = ctx.installed.toString("utf-8");
+  // This migration is deliberately narrower than ordinary plugin upgrades:
+  // only an unchanged pre-projection copy owned by this plugin is rewritten.
+  // User edits, core files, and another plugin's files stay under no-clobber.
+  if (
+    installed !== ctx.content ||
+    frontmatterScalar(ctx.content, "plugin") !== PLUGIN_NAME ||
+    frontmatterScalar(installed, "plugin") !== PLUGIN_NAME
+  ) {
+    return "compare";
+  }
+  const disallowed = disallowedToolsValues(ctx.content);
+  if (disallowed.length === 0) return "compare";
+  if (disallowed.length > 1) {
+    const installedRel = relative(PROJECT_DIR, ctx.dest).replace(/\\/g, "/");
+    recordDrop(
+      `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" is already composed with multiple disallowedTools lines; fix the plugin source, remove "${installedRel}", and re-run compose`,
+    );
+    return "handled";
+  }
+  if (!/^Task$/i.test(disallowed[0])) {
+    const installedRel = relative(PROJECT_DIR, ctx.dest).replace(/\\/g, "/");
+    recordDrop(
+      `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" is already composed with unsupported disallowedTools "${disallowed[0]}"; fix the plugin source, remove "${installedRel}", and re-run compose`,
+    );
+    return "handled";
+  }
+  writeComposeFile(ctx.dest, projectKiroNativeAgent(ctx));
+  return "written";
 }
 
 function opencodeNativeAgentPrecheck(dst: string): CopyPrecheck {
@@ -608,6 +766,42 @@ function opencodeNativeAgentPrecheck(dst: string): CopyPrecheck {
     if (disallowed && !/^\s*Task\s*$/i.test(disallowed)) {
       recordDrop(
         `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" cannot project disallowedTools "${disallowed}" to OpenCode; not copied`,
+      );
+      return false;
+    }
+    return true;
+  };
+}
+
+const COPILOT_WORKER_TOOLS = ["read", "edit", "search", "execute", "web", "todo"] as const;
+
+function copilotNativeAgentPrecheck(dst: string): CopyPrecheck {
+  const collision = installedNameCollisionPrecheck(dst, "agents");
+  return (ctx) => {
+    if (!collision(ctx)) return false;
+    if (!ctx.content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/)) {
+      recordDrop(
+        `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" has no closed frontmatter block; not copied to Copilot's native roster`,
+      );
+      return false;
+    }
+    const fm = frontmatter(ctx.content);
+    const disallowed = fm.match(/^disallowedTools:\s*(.*?)\s*$/m)?.[1];
+    if (!disallowed) {
+      recordDrop(
+        `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" must declare disallowedTools: Task for Copilot; not copied`,
+      );
+      return false;
+    }
+    if (!/^\s*Task\s*$/i.test(disallowed)) {
+      recordDrop(
+        `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" cannot project disallowedTools "${disallowed}" to Copilot; not copied`,
+      );
+      return false;
+    }
+    if (/^tools:/m.test(fm)) {
+      recordDrop(
+        `plugin "${PLUGIN_NAME}" agent file "${ctx.rel}" declares both tools and disallowedTools; Copilot projection would be ambiguous`,
       );
       return false;
     }
@@ -641,6 +835,22 @@ function emitOpencodeNativeAgent({ file, content }: CopyContext): string {
     fm += "\npermission:\n  task: deny";
   }
   fm += "\nmode: subagent";
+  return content.replace(m[0], () => `---\n${fm}\n---\n`);
+}
+
+function emitCopilotNativeAgent({ file, content }: CopyContext): string {
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  if (!m) throw new Error(`${file}: plugin agent has no closed frontmatter block`);
+  const fm = m[1]
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      if (/^(tier|model|effort):/.test(line)) return [];
+      if (/^disallowedTools:/.test(line)) {
+        return [`tools: [${COPILOT_WORKER_TOOLS.map((tool) => `"${tool}"`).join(", ")}]`];
+      }
+      return [line];
+    })
+    .join("\n");
   return content.replace(m[0], () => `---\n${fm}\n---\n`);
 }
 
@@ -723,16 +933,14 @@ interface KiroPluginAgentPrechecks {
   agent: CopyPrecheck;
 }
 
-// OpenCode's dispatch surface is the native roster `.opencode/agents/<a>.md`.
-// Unlike Kiro/Codex surfaces (which a plugin can never ship), a plugin's own
-// Markdown persona IS the source of the native twin compose emits later in
-// this same pass — so a stage may reference an agent whose surface arrives
-// with the plugin. Accept that only when the shipped file would survive the
-// full opencodeNativeAgentPrecheck: closed frontmatter, no un-projectable
-// disallowedTools, AND no name collision with a different installed native
-// agent — a collision-dropped twin would leave the accepted stage without its
-// dispatch target.
-function pluginShipsViableOpencodeAgent(agent: string): boolean {
+// OpenCode and Copilot dispatch from native Markdown rosters outside .aidlc.
+// A plugin persona is the source for the native twin emitted later in this
+// pass, so accept a stage reference only when that twin survives projection.
+function nativeAgentsDir(): string {
+  return join(PROJECT_DIR, IS_COPILOT ? ".github" : ".opencode", "agents");
+}
+
+function pluginShipsViableNativeAgent(agent: string): boolean {
   const file = join(PLUGIN_ROOT, "agents", `${agent}.md`);
   if (!existsSync(file)) return false;
   let content = "";
@@ -745,21 +953,19 @@ function pluginShipsViableOpencodeAgent(agent: string): boolean {
   const declaredPlugin = frontmatter(content).match(/^plugin:\s*(.+)$/m)?.[1].trim();
   if (declaredPlugin?.startsWith("aidlc-")) return false;
   const disallowed = frontmatter(content).match(/^disallowedTools:\s*(.*?)\s*$/m)?.[1];
+  if (IS_COPILOT && !disallowed) return false;
   if (disallowed && !/^\s*Task\s*$/i.test(disallowed)) return false;
-  const nativeAgentsDir = join(PROJECT_DIR, ".opencode", "agents");
+  if (IS_COPILOT && disallowed && /^tools:/m.test(frontmatter(content))) return false;
+  const rosterDir = nativeAgentsDir();
   const name = frontmatterName(content);
   if (!name) return true;
-  const collidingFile = installedNameRoster(nativeAgentsDir).get(name);
-  return !collidingFile || collidingFile === join(nativeAgentsDir, `${agent}.md`);
+  const collidingFile = installedNameRoster(rosterDir).get(name);
+  return !collidingFile || collidingFile === join(rosterDir, `${agent}.md`);
 }
 
-// Kiro, Codex, and OpenCode cannot dispatch a Markdown-only persona from the
-// engine roster. Kiro requires BOTH a hand-authored agent-v1 JSON and conductor
-// trustedAgents registration; Codex requires an agent config TOML; OpenCode
-// requires a native `.opencode/agents/<a>.md` subagent (installed, or viably
-// shipped by this plugin — see pluginShipsViableOpencodeAgent). Reject any
-// dispatched stage whose lead, support, or reviewer lacks that complete
-// surface. Markdown personas remain composable for accepted inline stages.
+// Kiro, Codex, OpenCode, and Copilot cannot dispatch a Markdown-only persona
+// from the engine roster. Reject any dispatched stage whose lead, support, or
+// reviewer lacks the harness-native surface.
 async function kiroPluginAgentPrechecks(): Promise<KiroPluginAgentPrechecks | null> {
   if (
     HARNESS_LEAF !== ".kiro" &&
@@ -774,7 +980,7 @@ async function kiroPluginAgentPrechecks(): Promise<KiroPluginAgentPrechecks | nu
       ? ".toml"
       : ".md";
   const surfaceDir = HARNESS_LEAF === ".aidlc"
-    ? join(PROJECT_DIR, ".opencode", "agents")
+    ? nativeAgentsDir()
     : join(HARNESS_DIR, "agents");
   const trustedAgents = new Set<string>();
   if (HARNESS_LEAF === ".kiro") {
@@ -807,7 +1013,9 @@ async function kiroPluginAgentPrechecks(): Promise<KiroPluginAgentPrechecks | nu
           ? `author ${HARNESS_LEAF}/agents/${gap.agent}.json (agent-v1 JSON)`
           : HARNESS_LEAF === ".codex"
             ? `author ${HARNESS_LEAF}/agents/${gap.agent}.toml (the shipped aidlc-*-agent.toml shape)`
-            : `author .opencode/agents/${gap.agent}.md (an OpenCode subagent with closed frontmatter)`,
+            : IS_COPILOT
+              ? `author .github/agents/${gap.agent}.md (a Copilot custom agent with closed frontmatter)`
+              : `author .opencode/agents/${gap.agent}.md (an OpenCode subagent with closed frontmatter)`,
       );
     }
     if (gap.missingTrust) {
@@ -912,7 +1120,7 @@ async function kiroPluginAgentPrechecks(): Promise<KiroPluginAgentPrechecks | nu
       const gap = {
         agent,
         missingSurface: !existsSync(join(surfaceDir, `${agent}${surfaceExt}`)) &&
-          !(HARNESS_LEAF === ".aidlc" && pluginShipsViableOpencodeAgent(agent)),
+          !(HARNESS_LEAF === ".aidlc" && pluginShipsViableNativeAgent(agent)),
         missingTrust: HARNESS_LEAF === ".kiro" && !trustedAgents.has(agent),
       };
       if (gap.missingSurface || gap.missingTrust) gaps.set(agent, gap);
@@ -1028,6 +1236,7 @@ function copyTreeNoClobber(
   kind: string,
   precheck?: CopyPrecheck,
   transform?: CopyTransform,
+  existingHandler?: ExistingCopyHandler,
 ): boolean {
   if (!existsSync(src)) return false;
   let wrote = false;
@@ -1043,6 +1252,19 @@ function copyTreeNoClobber(
       // content collision, not an identical idempotent re-copy. The installed
       // copy was written transformed, so transform before comparing; a source
       // the transform rejects cannot equal any installed copy.
+      const installed = readFileSync(dest);
+      const existingAction = existingHandler?.({
+        file,
+        rel,
+        dest,
+        content: buf.toString("utf-8"),
+        installed,
+      }) ?? "compare";
+      if (existingAction === "written") {
+        wrote = true;
+        continue;
+      }
+      if (existingAction === "handled") continue;
       let current: Buffer | null = buf;
       if (transform) {
         try {
@@ -1051,7 +1273,7 @@ function copyTreeNoClobber(
           current = null;
         }
       }
-      if (current === null || !readFileSync(dest).equals(current)) {
+      if (current === null || !installed.equals(current)) {
         recordDrop(`${kind} "${rel}" collides with an existing file (core or another plugin); not overwritten — rename it to a plugin-namespaced path`);
       }
       continue;
@@ -1323,33 +1545,52 @@ try {
     changed = copyTreeNoClobber(join(PLUGIN_ROOT, "stages"), STAGES_DIR, "stage", stagePrecheck) || changed;
     const scopesDir = join(HARNESS_DIR, "scopes");
     const agentsDir = join(HARNESS_DIR, "agents");
+    const pluginAgentsDir =
+      HARNESS_LEAF === ".cursor"
+        ? join(PLUGIN_ROOT, "aidlc", "agents")
+        : join(PLUGIN_ROOT, "agents");
     changed = copyTreeNoClobber(join(PLUGIN_ROOT, "scopes"), scopesDir, "scopes", installedNameCollisionPrecheck(scopesDir, "scopes")) || changed;
     changed = copyTreeNoClobber(
-      join(PLUGIN_ROOT, "agents"),
+      pluginAgentsDir,
       agentsDir,
       "agents",
       combinePrechecks(
         kiroAgentPrechecks?.agent,
+        HARNESS_LEAF === ".kiro" ? kiroNativeAgentPrecheck() : undefined,
         installedNameCollisionPrecheck(agentsDir, "agents"),
       ),
       HARNESS_LEAF === ".aidlc"
         ? ({ content }) => projectOpencodeAgentMemory(content)
-        : undefined,
+        : HARNESS_LEAF === ".cursor"
+          ? projectCursorNativeAgent
+          : HARNESS_LEAF === ".kiro"
+            ? projectKiroNativeAgent
+            : undefined,
+      HARNESS_LEAF === ".kiro" ? migrateExistingKiroAgent : undefined,
     ) || changed;
-    if (HARNESS_LEAF === ".aidlc") {
-      const nativeAgentsDir = join(PROJECT_DIR, ".opencode", "agents");
+    if (IS_OPENCODE) {
+      const rosterDir = nativeAgentsDir();
       changed = copyTreeNoClobber(
         join(PLUGIN_ROOT, "agents"),
-        nativeAgentsDir,
+        rosterDir,
         "OpenCode native agents",
-        opencodeNativeAgentPrecheck(nativeAgentsDir),
+        opencodeNativeAgentPrecheck(rosterDir),
         (ctx) => projectOpencodeAgentMemory(emitOpencodeNativeAgent(ctx)),
+      ) || changed;
+    } else if (IS_COPILOT) {
+      const rosterDir = nativeAgentsDir();
+      changed = copyTreeNoClobber(
+        join(PLUGIN_ROOT, "agents"),
+        rosterDir,
+        "Copilot native agents",
+        copilotNativeAgentPrecheck(rosterDir),
+        (ctx) => projectOpencodeAgentMemory(emitCopilotNativeAgent(ctx)),
       ) || changed;
     }
   }
   changed = copyTreeNoClobber(join(PLUGIN_ROOT, "knowledge"), join(HARNESS_DIR, "knowledge"), "knowledge") || changed;
   changed = copyTreeNoClobber(join(PLUGIN_ROOT, "sensors"), join(HARNESS_DIR, "sensors"), "sensor", sensorManifestNamePrecheck()) || changed;
-  changed = copyTreeNoClobber(join(PLUGIN_ROOT, "tools"), join(HARNESS_DIR, "tools"), "tool") || changed;
+  changed = copyTreeNoClobber(join(PLUGIN_ROOT, "tools"), join(HARNESS_DIR, "tools"), "tool", doctorScriptOwnershipPrecheck()) || changed;
 
   // 2. Merge contributions into stage SOURCE (structural + prose fragments).
   // Probe ONCE whether the installed engine accepts required_sections — writing

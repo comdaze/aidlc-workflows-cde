@@ -20,23 +20,23 @@
     "render-surface": "tui"
   },
   "counts": {
-    "total": 548,
+    "total": 617,
     "enumeratedByClass": {
-      "function": 301,
-      "audit": 82,
-      "scope": 9,
-      "stage": 32,
+      "function": 354,
+      "audit": 86,
+      "scope": 11,
+      "stage": 33,
       "hook": 17,
-      "subcommand": 100,
+      "subcommand": 109,
       "render-surface": 7
     },
     "coveredByClass": {
-      "function": 142,
-      "audit": 40,
-      "scope": 9,
-      "stage": 9,
+      "function": 174,
+      "audit": 44,
+      "scope": 11,
+      "stage": 11,
       "hook": 17,
-      "subcommand": 88,
+      "subcommand": 97,
       "render-surface": 7
     }
   },
@@ -122,6 +122,46 @@
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "audit",
+      "unitId": "DOCUMENT_INDEXED",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t298-knowledge-transaction.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "audit",
+      "unitId": "DOCUMENT_REMOVED",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t284-knowledge-sync-rebind.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "audit",
+      "unitId": "DOCUMENT_UPDATED",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t284-knowledge-sync-rebind.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t297-knowledge-intents.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "audit",
@@ -271,6 +311,18 @@
     },
     {
       "unitClass": "audit",
+      "unitId": "PIPELINE_LINK_COMPLETED",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t304-pipeline-link-receipts.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "audit",
       "unitId": "PLAN_APPROVAL_BLOCKED",
       "minMechanism": "none",
       "coveredBy": [
@@ -366,6 +418,14 @@
       "coveredBy": [
         {
           "file": "tests/integration/t135-invoke-swarm.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/integration/t304-loopback-review-receipt-replay.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/integration/t307-loopback-unitmajor-replay.test.ts",
           "mechanism": "cli"
         },
         {
@@ -535,6 +595,14 @@
         {
           "file": "tests/e2e/t57-workflow-backward-jump.test.ts",
           "mechanism": "sdk"
+        },
+        {
+          "file": "tests/integration/t304-loopback-review-receipt-replay.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/integration/t307-loopback-unitmajor-replay.test.ts",
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -717,6 +785,10 @@
       "minMechanism": "none",
       "coveredBy": [
         {
+          "file": "tests/integration/t307-loopback-unitmajor-replay.test.ts",
+          "mechanism": "cli"
+        },
+        {
           "file": "tests/unit/t260-unit-lifecycle-receipts.test.ts",
           "mechanism": "cli"
         }
@@ -752,6 +824,10 @@
       "unitId": "UNIT_STARTED",
       "minMechanism": "none",
       "coveredBy": [
+        {
+          "file": "tests/integration/t307-loopback-unitmajor-replay.test.ts",
+          "mechanism": "cli"
+        },
         {
           "file": "tests/unit/t260-unit-lifecycle-receipts.test.ts",
           "mechanism": "cli"
@@ -913,7 +989,7 @@
         },
         {
           "file": "tests/unit/t161-per-intent-lock-reaper.test.ts",
-          "mechanism": "none"
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -928,6 +1004,13 @@
     {
       "unitClass": "function",
       "unitId": "function:ACTIVE_SPACE_POINTER",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:ActiveDirectiveLockContendedError",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
@@ -986,6 +1069,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:advanceContinuationCursor",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t283-copilot-engine-cursor.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:agentsDir",
       "minMechanism": "none",
       "coveredBy": [],
@@ -1026,6 +1121,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:artifactFilename",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t281-sensor-traceability.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:artifactsRegistry",
       "minMechanism": "none",
       "coveredBy": [
@@ -1046,6 +1153,18 @@
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:assertNoSymlinkInChainOrThrow",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t286-read-write-boundary.test.ts",
+          "mechanism": "none"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -1088,7 +1207,7 @@
         },
         {
           "file": "tests/unit/t161-per-intent-lock-reaper.test.ts",
-          "mechanism": "none"
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -1239,10 +1358,34 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:claimCopilotCommand",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t249-copilot-adapter.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:classifyRuntimeCompileCommand",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:classifyStateVersion",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t282-state-version-doctor.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -1275,6 +1418,13 @@
         }
       ],
       "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:clearSessionIntentHandoff",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
     },
     {
       "unitClass": "function",
@@ -1414,11 +1564,35 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:consumeCopilotConversation",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t249-copilot-adapter.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:consumersOf",
       "minMechanism": "none",
       "coveredBy": [
         {
           "file": "tests/integration/t66.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:copilotStopEvidence",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t249-copilot-adapter.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -1456,6 +1630,32 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:CURRENT_STATE_VERSION",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:currentPipelineLinkReceipts",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t304-pipeline-link-receipts.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:currentUnitLifecycleMode",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:dateStamp",
       "minMechanism": "none",
       "coveredBy": [],
@@ -1464,6 +1664,13 @@
     {
       "unitClass": "function",
       "unitId": "function:DEFAULT_LOCK_STALE_MS",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:DEFAULT_SCOPE",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
@@ -1521,6 +1728,18 @@
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:documentExtractors",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t294-document-extractors-seam.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -1586,6 +1805,20 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:ensureDirSync",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:envDefaultScope",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:errorMessage",
       "minMechanism": "none",
       "coveredBy": [],
@@ -1632,6 +1865,20 @@
         }
       ],
       "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:FILE_CHANGED_DURING_READ",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:filteredRawIndexEntries",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
     },
     {
       "unitClass": "function",
@@ -1706,6 +1953,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:formatReceivedReply",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t261-audit-authority-floor.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:frameworkMemorySeedDir",
       "minMechanism": "none",
       "coveredBy": [
@@ -1734,7 +1993,15 @@
       "minMechanism": "none",
       "coveredBy": [
         {
+          "file": "tests/integration/t304-loopback-review-receipt-replay.test.ts",
+          "mechanism": "cli"
+        },
+        {
           "file": "tests/unit/t264-review-freeze-hook.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t291-review-receipt-recovery.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -1791,11 +2058,35 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:hasCurrentSharedResumeWait",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/integration/t121-stop-hook-enforce.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:hasOpenGate",
       "minMechanism": "none",
       "coveredBy": [
         {
           "file": "tests/unit/t188-human-presence-gate.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:hasPendingDecision",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/integration/t121-stop-hook-enforce.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -1824,7 +2115,7 @@
         },
         {
           "file": "tests/unit/t161-per-intent-lock-reaper.test.ts",
-          "mechanism": "none"
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -1911,6 +2202,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:inspectContinuationCursor",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t283-copilot-engine-cursor.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:INTENT_VERBS",
       "minMechanism": "none",
       "coveredBy": [],
@@ -1948,6 +2251,30 @@
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:invalidateActiveDirectiveContext",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t249-copilot-adapter.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:isAutonomousConstructionDecision",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t261-audit-authority-floor.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -2036,6 +2363,13 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:isPidAlive",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:isPlainObject",
       "minMechanism": "none",
       "coveredBy": [],
@@ -2070,6 +2404,13 @@
     {
       "unitClass": "function",
       "unitId": "function:keywordCollisions",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:KNOWLEDGE_VERBS",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
@@ -2167,8 +2508,13 @@
       "unitClass": "function",
       "unitId": "function:listField",
       "minMechanism": "none",
-      "coveredBy": [],
-      "status": "UNCOVERED"
+      "coveredBy": [
+        {
+          "file": "tests/unit/t309-listfield-flow-sequence.test.ts",
+          "mechanism": "none"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -2494,6 +2840,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:nearestStockScopes",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t277-validate-grid-nearest-stock.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:needsFlatMigration",
       "minMechanism": "none",
       "coveredBy": [],
@@ -2554,6 +2912,18 @@
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:parseKnowledgeCommand",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t178-classify-terminal-command.test.ts",
+          "mechanism": "none"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -2720,6 +3090,30 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:pipelineLinkEvidence",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t304-pipeline-link-receipts.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:pipelineLinks",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t304-pipeline-link-receipts.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:planFilePath",
       "minMechanism": "none",
       "coveredBy": [],
@@ -2819,6 +3213,20 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:readAppendOnlyFileNoFollowOrThrow",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:readAtomicReplacedFileNoFollowOrThrow",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:readAuditShardEvents",
       "minMechanism": "none",
       "coveredBy": [
@@ -2864,6 +3272,25 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:readRegularFileNoFollowOrThrow",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t286-read-write-boundary.test.ts",
+          "mechanism": "none"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:readSessionIntentHandoff",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:readSessionIntentUuid",
       "minMechanism": "none",
       "coveredBy": [
@@ -2887,6 +3314,18 @@
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:recordCopilotHumanSequence",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t249-copilot-adapter.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -2990,7 +3429,7 @@
         },
         {
           "file": "tests/unit/t161-per-intent-lock-reaper.test.ts",
-          "mechanism": "none"
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -3005,6 +3444,20 @@
     {
       "unitClass": "function",
       "unitId": "function:removeSlug",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:removeTreeSync",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:renameIntoPlace",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
@@ -3209,6 +3662,20 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:reviewedSourceRef",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:reviewedSourceRefPrefix",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:REVIEWER_DISPATCH_TTL_MS",
       "minMechanism": "none",
       "coveredBy": [],
@@ -3223,11 +3690,30 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:reviewerGateGuardDisabled",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:rulesSubdir",
       "minMechanism": "none",
       "coveredBy": [
         {
           "file": "tests/unit/t144-harness-seam.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:runnerFrontmatterAdditions",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t275-cursor-packaging.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -3311,7 +3797,26 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:selfAttributedDecisionMarker",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t261-audit-authority-floor.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:sensorsDir",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:SESSION_INTENT_HANDOFF_TTL_MS",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
@@ -3408,6 +3913,30 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:settleCopilotCommand",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t249-copilot-adapter.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:settleCopilotIntentBoundary",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t249-copilot-adapter.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:SLUG_TAG_REGEX",
       "minMechanism": "none",
       "coveredBy": [],
@@ -3424,6 +3953,18 @@
         },
         {
           "file": "tests/unit/t160-workspace-record-resolution.test.ts",
+          "mechanism": "none"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:SPACE_NAME_REGEX",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t286-read-write-boundary.test.ts",
           "mechanism": "none"
         }
       ],
@@ -3591,6 +4132,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:terminalReviewVerdict",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/integration/t135-invoke-swarm.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:TOOLCHAIN_PROBE_TTL_MS",
       "minMechanism": "none",
       "coveredBy": [],
@@ -3641,6 +4194,13 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:UNBINDABLE_FINGERPRINT",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:UNIT_KINDS",
       "minMechanism": "none",
       "coveredBy": [],
@@ -3686,6 +4246,18 @@
       "coveredBy": [
         {
           "file": "tests/unit/t260-unit-lifecycle-receipts.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:updateCopilotStopCount",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t249-copilot-adapter.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -3783,6 +4355,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:validSpaceFlag",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t286-read-write-boundary.test.ts",
+          "mechanism": "none"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:withAuditLock",
       "minMechanism": "none",
       "coveredBy": [
@@ -3796,7 +4380,7 @@
         },
         {
           "file": "tests/unit/t161-per-intent-lock-reaper.test.ts",
-          "mechanism": "none"
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -3827,6 +4411,18 @@
       "coveredBy": [
         {
           "file": "tests/unit/t229-workspace-parser.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:workspaceSourceFingerprint",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t304-source-freshness-receipts.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -3886,6 +4482,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:writeBufferAtomic",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t286-read-write-boundary.test.ts",
+          "mechanism": "none"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:writeCoalesceLedger",
       "minMechanism": "none",
       "coveredBy": [],
@@ -3909,6 +4517,13 @@
         }
       ],
       "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:writeSessionIntentHandoff",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
     },
     {
       "unitClass": "function",
@@ -4012,6 +4627,10 @@
         {
           "file": "tests/unit/t13-hook-input-robustness.test.ts",
           "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t276-cursor-adapter.test.ts",
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -4075,6 +4694,10 @@
       "coveredBy": [
         {
           "file": "tests/unit/t228-hook-run-exports.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t276-cursor-adapter.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -4446,12 +5069,52 @@
     },
     {
       "unitClass": "scope",
+      "unitId": "classic",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/e2e/t-tui-t58-workshop-scope.serial.test.ts",
+          "mechanism": "tui"
+        },
+        {
+          "file": "tests/e2e/t301-express-scope-routing.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/integration/t30-scope-stage-mapping.test.ts",
+          "mechanism": "none"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "scope",
       "unitId": "enterprise",
       "minMechanism": "none",
       "coveredBy": [
         {
           "file": "tests/integration/t141-enterprise-scope-routing.test.ts",
           "mechanism": "sdk"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "scope",
+      "unitId": "express",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/e2e/t301-express-scope-routing.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/integration/t130-scope-runners.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/smoke/t130-scope-runners.test.ts",
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -4554,12 +5217,8 @@
       "minMechanism": "none",
       "coveredBy": [
         {
-          "file": "tests/e2e/t-tui-t58-workshop-scope.serial.test.ts",
-          "mechanism": "tui"
-        },
-        {
-          "file": "tests/integration/t30-scope-stage-mapping.test.ts",
-          "mechanism": "none"
+          "file": "tests/unit/t125-scope-files.test.ts",
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -4692,10 +5351,15 @@
     },
     {
       "unitClass": "stage",
-      "unitId": "inception/application-design",
+      "unitId": "inception/contract-design",
       "minMechanism": "none",
-      "coveredBy": [],
-      "status": "UNCOVERED"
+      "coveredBy": [
+        {
+          "file": "tests/unit/t280-contract-design-wiring.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "stage",
@@ -4703,6 +5367,18 @@
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "stage",
+      "unitId": "inception/domain-design",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t116-directive-path-resolution.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "stage",
@@ -5227,6 +5903,14 @@
           "mechanism": "sdk"
         },
         {
+          "file": "tests/integration/t304-loopback-review-receipt-replay.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/integration/t307-loopback-unitmajor-replay.test.ts",
+          "mechanism": "cli"
+        },
+        {
           "file": "tests/unit/t19.test.ts",
           "mechanism": "cli"
         },
@@ -5271,6 +5955,130 @@
     },
     {
       "unitClass": "subcommand",
+      "unitId": "aidlc-knowledge associate",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t285-knowledge-skill.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t293-knowledge-journey.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-knowledge dissociate",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t285-knowledge-skill.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t293-knowledge-journey.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-knowledge help",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t285-knowledge-skill.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-knowledge list",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t292-knowledge-list-show.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t293-knowledge-journey.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-knowledge onboard",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t293-knowledge-journey.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t298-knowledge-transaction.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-knowledge rebind",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t285-knowledge-skill.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t293-knowledge-journey.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-knowledge show",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t285-knowledge-skill.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t293-knowledge-journey.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-knowledge sync",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t285-knowledge-skill.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t293-knowledge-journey.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
       "unitId": "aidlc-learnings persist",
       "minMechanism": "cli",
       "coveredBy": [
@@ -5280,6 +6088,10 @@
         },
         {
           "file": "tests/unit/t158-memory-writer-reader-seam.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t306-learnings-cid-collision-followup.test.ts",
           "mechanism": "cli"
         },
         {
@@ -5300,6 +6112,10 @@
         },
         {
           "file": "tests/unit/t199-learnings-memory-path.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t306-learnings-cid-collision-followup.test.ts",
           "mechanism": "cli"
         },
         {
@@ -5335,11 +6151,35 @@
     },
     {
       "unitClass": "subcommand",
+      "unitId": "aidlc-log link",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t304-pipeline-link-receipts.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
       "unitId": "aidlc-log review",
       "minMechanism": "cli",
       "coveredBy": [
         {
+          "file": "tests/integration/t304-loopback-review-receipt-replay.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/integration/t307-loopback-unitmajor-replay.test.ts",
+          "mechanism": "cli"
+        },
+        {
           "file": "tests/unit/t115.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t291-review-receipt-recovery.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -5558,6 +6398,10 @@
         },
         {
           "file": "tests/unit/t263-reviewer-terminal-ordering.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t291-review-receipt-recovery.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -5837,6 +6681,10 @@
       "minMechanism": "cli",
       "coveredBy": [
         {
+          "file": "tests/integration/t307-loopback-unitmajor-replay.test.ts",
+          "mechanism": "cli"
+        },
+        {
           "file": "tests/unit/t260-unit-lifecycle-receipts.test.ts",
           "mechanism": "cli"
         }
@@ -5949,6 +6797,10 @@
       "minMechanism": "cli",
       "coveredBy": [
         {
+          "file": "tests/e2e/t301-express-scope-routing.test.ts",
+          "mechanism": "cli"
+        },
+        {
           "file": "tests/unit/t27.test.ts",
           "mechanism": "cli"
         },
@@ -6014,6 +6866,10 @@
         },
         {
           "file": "tests/unit/t27.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t282-state-version-doctor.test.ts",
           "mechanism": "cli"
         },
         {
@@ -6138,6 +6994,10 @@
         },
         {
           "file": "tests/e2e/t-exec-codex-journey-workspace.serial.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/e2e/t301-express-scope-routing.test.ts",
           "mechanism": "cli"
         },
         {

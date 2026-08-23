@@ -274,11 +274,12 @@ describe("t266 conversation-language rule layer", () => {
   // === (c2) HARNESS DELIVERY ===============================================
   // (c) proves the hook rewrite path, but only through the CLAUDE copy of the
   // hook. Claude, Codex, and opencode all use that path; Kiro CLI has no
-  // input-rewrite channel and Kiro IDE cannot expose tool arguments at all, so
-  // both rely on PRELOAD instead. Two ways this could silently regress while
-  // (c) stays green: a harness ships a stale or diverged hook, or a Kiro
-  // manifest stops projecting the memory glob. Check the delivered artifact
-  // itself in both cases rather than its mere presence.
+  // input-rewrite channel, and Kiro IDE does not register this hook because
+  // tool-argument delivery is not uniform across supported generations, so both
+  // rely on PRELOAD instead. Two ways this could silently regress while (c)
+  // stays green: a harness ships a stale or diverged hook, or a Kiro manifest
+  // stops projecting the memory glob. Check the delivered artifact itself in
+  // both cases rather than its mere presence.
   test("c2: every harness ships a surface that delivers active memory to delegated agents", () => {
     // The glob Kiro agent configs must preload. Exact string, not a substring:
     // `r.includes("memory")` would accept `file://docs/memory-notes.md` and any
@@ -371,6 +372,14 @@ describe("t266 conversation-language rule layer", () => {
           surface = join(harness.engineRoot, "config.toml");
           required = `AIDLC_RULES_DIR = "${MEMORY_DIR}"`;
           break;
+        case "copilot-agents-md":
+          surface = join(harness.distRoot, "AGENTS.md");
+          required = `@${MEMORY_DIR}/org.md`;
+          break;
+        case "cursor-rule":
+          surface = join(harness.engineRoot, "rules", "aidlc.mdc");
+          required = `- ${MEMORY_DIR}/org.md`;
+          break;
         case "kiro-steering":
           // The IDE's real surface: an always-included steering file whose
           // #[[file:...]] references pull the live memory tree in verbatim.
@@ -406,6 +415,12 @@ describe("t266 conversation-language rule layer", () => {
         expect(
           /^---\n(?:.*\n)*?inclusion:\s*always\n(?:.*\n)*?---/.test(body),
           `${harness.name}'s steering file declares inclusion: always`,
+        ).toBe(true);
+      }
+      if (include === "cursor-rule") {
+        expect(
+          /^---\n(?:.*\n)*?alwaysApply:\s*true\n(?:.*\n)*?---/.test(body),
+          `${harness.name}'s standing rule declares alwaysApply: true`,
         ).toBe(true);
       }
 

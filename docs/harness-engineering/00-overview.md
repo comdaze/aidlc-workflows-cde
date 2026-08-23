@@ -3,8 +3,8 @@
 > Part of the [AI-DLC documentation](../README.md) · [User Guide](../guide/00-introduction.md) · **Harness Engineer Guide** · [Developer Reference](../reference/00-overview.md)
 
 AI-DLC is a methodology, and this implementation ships it working out of the box
-on the harness you use — Claude Code, Kiro CLI, Kiro IDE, Codex CLI, or opencode: 14 agents
-(11 domain experts, 2 reviewers, and the composer), 32 stages, 9 scopes, a set
+on the harness you use — Claude Code, Kiro CLI, Kiro IDE, Codex CLI, Cursor, opencode, or GitHub Copilot: 14 agents
+(11 domain experts, 2 reviewers, and the composer), 33 stages, 11 scopes, a set
 of rules and sensors. This guide is for the person who
 wants to **reshape** that methodology — change which stages run, add an agent for
 a domain the framework doesn't cover, tighten a scope, teach the framework a
@@ -63,7 +63,7 @@ inputs that steer it.
 Everything else a harness engineer configures hangs off these two:
 
 - **Scopes** decide *which* stages run for a given kind of work (a bugfix runs
-  7 of 32 stages; an enterprise feature runs all of them).
+  7 of 33 stages; an enterprise feature runs all of them).
 - **Rules** are standing decisions that travel into every workflow — your
   team's "always do it this way."
 - **Sensors** are deterministic checks bound to stages — an advisory second
@@ -114,8 +114,8 @@ Everything a harness engineer authors lives in **`core/`** — the hand-authored
 harness-neutral source of truth (stages under `core/aidlc-common/stages/`,
 agents under `core/agents/`, scopes, rules, sensors, knowledge, tools, hooks).
 The per-harness `dist/<harness>/` trees you actually run (`dist/claude/.claude/`,
-`dist/kiro/.kiro/`, `dist/kiro-ide/.kiro/`, `dist/codex/`, and
-`dist/opencode/`) are **generated**
+`dist/kiro/.kiro/`, `dist/kiro-ide/.kiro/`, `dist/codex/`, `dist/cursor/`,
+`dist/opencode/`, and `dist/copilot/`) are **generated**
 from `core/` plus a thin `harness/<name>/` surface, and they are
 **drift-guarded** — a hand-edit there is rejected by CI. The loop is always:
 
@@ -188,8 +188,9 @@ Read it in order the first time:
    `core/` edits: the manifest contract, the hook adapter, and `emit.ts`.
 10. **[Authoring a Plugin](10-authoring-a-plugin.md)** — package a reusable,
     optional **AIDLC plugin** in `plugins/<name>/`: new stages/agents/scopes/
-    sensors + additive contributions to existing core stages, emitted as a real
-    host plugin per harness. Design in the Developer Reference's single chapter
+    sensors/doctor checks + additive contributions to existing core stages,
+    emitted as a real host plugin per harness. Design in the Developer
+    Reference's single chapter
     ([18 mechanism](../reference/18-plugin-mechanism.md)).
 
 ## Next

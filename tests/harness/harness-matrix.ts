@@ -9,6 +9,8 @@ const HARNESS_ROOT = join(REPO_ROOT, "harness");
 type ReviewerScopeRegistration =
   | "claude-settings"
   | "codex-hooks"
+  | "copilot-hooks"
+  | "cursor-hooks"
   | "kiro-agent-json"
   | "opencode-plugin"
   | "unsupported";
@@ -23,16 +25,18 @@ type HarnessCapabilities = {
   rootFiles: readonly string[];
   skillsRoot: string;
   plugin: {
-    kind: "store" | "kiro";
+    kind: "store" | "kiro" | "kiro-ide" | "cursor";
     manifestDir: string;
     marketplaceDir: string;
     pluginParentDir: string | null;
     marketplaceFormat: "legacy" | "codex";
-    wiringFile: string;
+    wiringFile: string | null;
   };
   memoryInclude:
     | "claude-import"
     | "codex-env"
+    | "copilot-agents-md"
+    | "cursor-rule"
     | "kiro-resources"
     | "kiro-steering"
     | "opencode-instructions";
@@ -89,6 +93,50 @@ const HARNESS_CAPABILITIES = {
     ideAgentTools: false,
     reviewerScopeRegistration: "codex-hooks",
   },
+  copilot: {
+    harnessDir: ".aidlc",
+    onboarding: {
+      mode: "manifest",
+      fills: "onboarding.fills.ts",
+      dist: "AGENTS.md",
+    },
+    rootFiles: [".gitignore", "AGENTS.md"],
+    skillsRoot: ".github/skills",
+    plugin: {
+      kind: "store",
+      manifestDir: ".plugin",
+      marketplaceDir: ".plugin",
+      pluginParentDir: null,
+      marketplaceFormat: "legacy",
+      wiringFile: "hooks/hooks.json",
+    },
+    memoryInclude: "copilot-agents-md",
+    kiroAgentJson: false,
+    ideAgentTools: false,
+    reviewerScopeRegistration: "copilot-hooks",
+  },
+  cursor: {
+    harnessDir: ".cursor",
+    onboarding: {
+      mode: "manifest",
+      fills: "onboarding.fills.ts",
+      dist: "AGENTS.md",
+    },
+    rootFiles: [".gitignore", "AGENTS.md", "install.ts"],
+    skillsRoot: ".cursor/skills",
+    plugin: {
+      kind: "cursor",
+      manifestDir: ".cursor-plugin",
+      marketplaceDir: ".cursor-plugin",
+      pluginParentDir: null,
+      marketplaceFormat: "legacy",
+      wiringFile: "hooks/hooks.json",
+    },
+    memoryInclude: "cursor-rule",
+    kiroAgentJson: false,
+    ideAgentTools: false,
+    reviewerScopeRegistration: "cursor-hooks",
+  },
   "kiro-ide": {
     harnessDir: ".kiro",
     onboarding: {
@@ -99,12 +147,12 @@ const HARNESS_CAPABILITIES = {
     rootFiles: [".gitignore", "AGENTS.md"],
     skillsRoot: ".kiro/skills",
     plugin: {
-      kind: "kiro",
+      kind: "kiro-ide",
       manifestDir: ".kiro-plugin",
       marketplaceDir: ".kiro-plugin",
       pluginParentDir: null,
       marketplaceFormat: "legacy",
-      wiringFile: "hooks/aidlc-plugin-compose.kiro.hook",
+      wiringFile: ".kiro/hooks/aidlc-test-pro-compose.json",
     },
     memoryInclude: "kiro-steering",
     kiroAgentJson: true,
@@ -126,7 +174,7 @@ const HARNESS_CAPABILITIES = {
       marketplaceDir: ".kiro-plugin",
       pluginParentDir: null,
       marketplaceFormat: "legacy",
-      wiringFile: "hooks/aidlc-plugin-compose.kiro.hook",
+      wiringFile: null,
     },
     memoryInclude: "kiro-resources",
     kiroAgentJson: true,
@@ -251,7 +299,14 @@ function validateManifest(
     (capabilities.memoryInclude === "codex-env") !==
       (capabilities.onboarding.mode === "emit") ||
     (capabilities.memoryInclude === "opencode-instructions") !==
-      manifest.harnessFiles.some((file) => file.dst === "opencode.json")
+      manifest.harnessFiles.some((file) => file.dst === "opencode.json") ||
+    (capabilities.memoryInclude === "copilot-agents-md") !==
+      (manifest.onboarding?.projectRoot === true &&
+        manifest.onboarding.dst === "AGENTS.md" &&
+        manifest.harnessDir === ".aidlc" &&
+        manifest.skipRunnerGen === true) ||
+    (capabilities.memoryInclude === "cursor-rule") !==
+      manifest.harnessFiles.some((file) => file.dst === "rules/aidlc.mdc")
   ) {
     fail(name, "memoryInclude does not agree with manifest-owned include surfaces");
   }

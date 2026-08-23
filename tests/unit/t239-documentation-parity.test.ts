@@ -92,6 +92,8 @@ const harnessNames = readdirSync(harnessRoot)
 const harnessLabels: Record<string, string> = {
   claude: "Claude Code",
   codex: "Codex CLI",
+  copilot: "GitHub Copilot",
+  cursor: "Cursor",
   kiro: "Kiro CLI",
   "kiro-ide": "Kiro IDE",
   opencode: "opencode",
@@ -125,7 +127,7 @@ const engineCommands = [...engineMain.matchAll(/case "([^"]+)":/g)].map((match) 
 
 describe("documentation parity derives current behavior from authored implementation", () => {
   test("event count and user-guide taxonomy match VALID_EVENT_TYPES", () => {
-    expect(eventTypes.length).toBe(82);
+    expect(eventTypes.length).toBe(86);
 
     const guide = read("docs", "guide", "10-state-and-audit.md");
     const guideTaxonomy = sliceBetween(
@@ -137,6 +139,19 @@ describe("documentation parity derives current behavior from authored implementa
       ...new Set([...guideTaxonomy.matchAll(/`([A-Z][A-Z0-9_]*)`/g)].map((match) => match[1])),
     ].sort();
     expect(guideEvents).toEqual(eventTypes);
+
+    // The taxonomy's CATEGORY count is a second claim in the same prose, and the
+    // event-count regex above does not match a "N categories" phrasing — so it
+    // could drift while every other pin stayed green. Derive it three ways and
+    // require agreement: the prose number, the number of table rows, and the sum
+    // of the per-row counts (which must total the event count).
+    const guideCategoryRows = [
+      ...guideTaxonomy.matchAll(/^\| \*\*[^*]+\*\* \| +(\d+) \|/gm),
+    ].map((match) => Number(match[1]));
+    const guideCategoryClaim = guideTaxonomy.match(/organized into (\d+) categories/);
+    expect(guideCategoryClaim, "the taxonomy must state its category count").not.toBeNull();
+    expect(Number(guideCategoryClaim?.[1])).toBe(guideCategoryRows.length);
+    expect(guideCategoryRows.reduce((sum, n) => sum + n, 0)).toBe(eventTypes.length);
 
     for (const path of [
       ["README.md"],
@@ -168,7 +183,15 @@ describe("documentation parity derives current behavior from authored implementa
   });
 
   test("documented harness roster matches every implementation manifest", () => {
-    expect(harnessNames).toEqual(["claude", "codex", "kiro", "kiro-ide", "opencode"]);
+    expect(harnessNames).toEqual([
+      "claude",
+      "codex",
+      "copilot",
+      "cursor",
+      "kiro",
+      "kiro-ide",
+      "opencode",
+    ]);
     expect(Object.keys(harnessLabels).sort()).toEqual(harnessNames);
 
     const readmeRoster = sliceBetween(
@@ -212,6 +235,12 @@ describe("documentation parity derives current behavior from authored implementa
 
   test("Kiro IDE documentation names only IDE-native enforcement and configuration surfaces", () => {
     const skill = read("harness", "kiro-ide", "skills", "aidlc", "SKILL.md");
+    const reviewerProtocol = read(
+      "core",
+      "aidlc-common",
+      "protocols",
+      "stage-protocol-reviewer.md",
+    );
     const questionRendering = read(
       "harness",
       "kiro-ide",
@@ -223,7 +252,10 @@ describe("documentation parity derives current behavior from authored implementa
 
     expect(existsSync(join(ideHooks, "aidlc-reviewer-scope.kiro.hook"))).toBe(false);
     expect(existsSync(join(ideHooks, "aidlc-reviewer-scope.json"))).toBe(false);
-    expect(skill).toContain("read-scope bound is prose-only on this harness");
+    expect(skill).toContain("stage-protocol-reviewer.md");
+    expect(reviewerProtocol).toContain(
+      "On a harness without reviewer-scope enforcement (Kiro IDE today)",
+    );
     expect(skill).not.toContain(".aidlc-reviewer-dispatch.json");
     expect(skill).not.toContain("kiro-cli");
     expect(questionRendering).toContain("Kiro IDE has no structured-question tool");

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -639,12 +639,29 @@ describe("§9.2 — the selections the pull stage builds are accepted by the rea
     expect(rule).toBeTruthy();
 
     const dir = mkdtempSync(join(tmpdir(), "akp-persist-"));
+    // The pinned space must EXIST before persist runs: it verifies
+    // `aidlc/spaces/<space>` inside its audit lock and refuses a space it cannot
+    // find, rather than templating one on demand. Only the space dir is created
+    // here — persist still templates the memory file and the audit shard inside
+    // it, which is what the assertions below read.
+    mkdirSync(join(dir, "aidlc", "spaces", "default"), { recursive: true });
     const selections = join(dir, "selections.json");
     writeFileSync(
       selections,
       JSON.stringify(
         {
           stage_slug: "team-knowledge-pull",
+          // `space`/`intent` pin WHERE the write lands, so `persist` uses the pair
+          // resolved when candidates were surfaced rather than the live intent
+          // cursor. A framework build that emits them from `surface` REQUIRES them
+          // here and fails with `missing or non-string space`; one that does not
+          // ignores the extra keys — so naming them satisfies both contracts.
+          // Hardcoded rather than bound because this case deliberately runs against
+          // a bare project dir with no surfaced candidates: `default` is the space
+          // `persist` templates, and `intent: null` is the documented value for
+          // "no intent record", which the tool accepts explicitly.
+          space: "default",
+          intent: null,
           selections: [
             {
               candidate_id: read.card.id,
@@ -684,8 +701,15 @@ describe("§9.2 — the selections the pull stage builds are accepted by the rea
 
     const written = readFileSync(join(dir, "aidlc", "spaces", "default", "memory", "team.md"), "utf-8");
     expect(written).toContain("## Mandated");
-    // The concept ID is the candidate_id — stable, unique, and idempotent on re-run.
-    expect(written).toContain(`cid:team-knowledge-pull:${read.card.id}`);
+    // The written line carries a cid marker naming THIS stage, so a rule can
+    // always be traced back to the stage that installed it. The marker is
+    // `cid:<intent>:<stage>:<content-hash>` — `unscoped` here because the
+    // selections pinned `intent: null`. Note what is deliberately NOT asserted:
+    // the card id. Identity is keyed on the CONTENT hash, not on `candidate_id`,
+    // because surface candidate ids are positional and get reused across runs for
+    // different text — so idempotency is proven by the re-run below comparing the
+    // whole file, not by finding an id in the marker.
+    expect(written).toMatch(/<!-- cid:[a-z0-9-]+:team-knowledge-pull:[0-9a-f]{64} -->/);
 
     // Re-running the same selections must be a no-op, not a duplicate line.
     const again = Bun.spawnSync([

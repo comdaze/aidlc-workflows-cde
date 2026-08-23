@@ -156,7 +156,13 @@ function summaryEvidence(
 function setAutonomous(proj: string): void {
   const sf = seededStateFile(proj);
   const content = readFileSync(sf, "utf-8");
-  writeFileSync(sf, `${content}\n- **Construction Autonomy Mode**: autonomous\n`, "utf-8");
+  const next = content.includes("**Construction Autonomy Mode**:")
+    ? content.replace(
+        /- \*\*Construction Autonomy Mode\*\*:[^\n]*/,
+        "- **Construction Autonomy Mode**: autonomous",
+      )
+    : `${content}\n- **Construction Autonomy Mode**: autonomous\n`;
+  writeFileSync(sf, next, "utf-8");
 }
 
 function summaryQuestions(proj: string, answer = ""): string {
@@ -205,7 +211,7 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
     const slug = field(proj, "Current Stage"); // feasibility
     guarded(proj, ["checkbox", `${slug}=in-progress`]);
     guarded(proj, ["gate-start", slug]); // STAGE_AWAITING_APPROVAL recorded (ledger non-empty)
-    const r = guarded(proj, ["approve", slug, "--user-input", "ok"]);
+    const r = guarded(proj, ["approve", slug, "--user-input", "Approve"]);
     expect(r.rc).not.toBe(0);
     expect(r.out).toContain("Refusing to approve");
     expect(eventCount(proj, "GATE_APPROVED")).toBe(0);
@@ -223,8 +229,8 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
     guarded(proj, ["checkbox", `${slug}=in-progress`]);
     recordHumanTurn(proj); // the human typed a prompt
     guarded(proj, ["gate-start", slug]); // agent opens the gate (same turn)
-    const r = guarded(proj, ["approve", slug, "--user-input", "ok"]);
-    expect(r.rc).toBe(0);
+    const r = guarded(proj, ["approve", slug, "--user-input", "Approve"]);
+    expect(r.rc, r.out).toBe(0);
     expect(eventCount(proj, "GATE_APPROVED")).toBe(1);
     // Auto-advanced off feasibility.
     expect(field(proj, "Current Stage")).not.toBe(slug);
@@ -245,7 +251,7 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
     guarded(proj, ["gate-start", slug1]);
 
     // First gate this turn: commits.
-    const r1 = guarded(proj, ["approve", slug1, "--user-input", "ok"]);
+    const r1 = guarded(proj, ["approve", slug1, "--user-input", "Approve"]);
     expect(r1.rc).toBe(0);
     expect(eventCount(proj, "GATE_APPROVED")).toBe(1);
 
@@ -256,7 +262,7 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
     expect(slug2).not.toBe(slug1);
     guarded(proj, ["checkbox", `${slug2}=in-progress`]);
     guarded(proj, ["gate-start", slug2]);
-    const r2 = guarded(proj, ["approve", slug2, "--user-input", "ok"]);
+    const r2 = guarded(proj, ["approve", slug2, "--user-input", "Approve"]);
     expect(r2.rc).not.toBe(0);
     expect(r2.out).toContain("Refusing to approve");
     // Still exactly ONE commit across the whole turn.
@@ -270,31 +276,45 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
     guarded(proj, ["checkbox", `${slug1}=in-progress`]);
     recordHumanTurn(proj);
     guarded(proj, ["gate-start", slug1]);
-    expect(guarded(proj, ["approve", slug1, "--user-input", "ok"]).rc).toBe(0);
+    expect(guarded(proj, ["approve", slug1, "--user-input", "Approve"]).rc).toBe(0);
 
     const slug2 = field(proj, "Current Stage");
     guarded(proj, ["checkbox", `${slug2}=in-progress`]);
     guarded(proj, ["gate-start", slug2]);
     recordHumanTurn(proj); // the human acts again
-    const r2 = guarded(proj, ["approve", slug2, "--user-input", "ok"]);
+    const r2 = guarded(proj, ["approve", slug2, "--user-input", "Approve"]);
     expect(r2.rc).toBe(0);
     expect(eventCount(proj, "GATE_APPROVED")).toBe(2);
   });
 
-  // --- Scenario D: AUTONOMY carve-out ----------------------------------------
-  //
-  // state has `Construction Autonomy Mode: autonomous` -> approve COMMITS with NO
-  // HUMAN_TURN (swarm/Bolt has no human at the gate). The ledger is non-empty, so
-  // the pass is the autonomy carve-out, not the fail-open-empty-ledger path.
-  test("D: autonomous Construction approves with NO HUMAN_TURN (carve-out)", () => {
+  // --- Scenario D: AUTONOMY carve-out is Construction-only -------------------
+  test("D: a Construction autonomy field does NOT waive an Ideation gate", () => {
     const slug = field(proj, "Current Stage");
     guarded(proj, ["checkbox", `${slug}=in-progress`]);
     setAutonomous(proj);
     guarded(proj, ["gate-start", slug]); // ledger non-empty, but no HUMAN_TURN
-    const r = guarded(proj, ["approve", slug, "--user-input", "ok"]);
-    expect(r.rc).toBe(0);
+    const r = guarded(proj, ["approve", slug, "--user-input", "Approve"]);
+    expect(r.rc).not.toBe(0);
+    expect(eventCount(proj, "GATE_APPROVED")).toBe(0);
+    expect(field(proj, "Current Stage")).toBe(slug);
+  });
+
+  test("D2: an actual autonomous Construction stage may approve without a human turn", () => {
+    cleanupTestProject(proj);
+    proj = createTestProject();
+    seedStateFile(proj, "state-construction-with-worktree.md");
+    const statePath = seededStateFile(proj);
+    const state = readFileSync(statePath, "utf-8")
+      .replace("- [-] code-generation — EXECUTE", "- [-] build-and-test — EXECUTE")
+      .replace("- **Current Stage**: code-generation", "- **Current Stage**: build-and-test")
+      .replace("- **Next Stage**: build-and-test", "- **Next Stage**: ci-pipeline");
+    writeFileSync(statePath, state, "utf-8");
+    setAutonomous(proj);
+
+    guarded(proj, ["gate-start", "build-and-test"]);
+    const r = guarded(proj, ["approve", "build-and-test", "--user-input", "Approve"]);
+    expect(r.rc, r.out).toBe(0);
     expect(eventCount(proj, "GATE_APPROVED")).toBe(1);
-    expect(field(proj, "Current Stage")).not.toBe(slug);
   });
 
   // --- Scenario E: STALE human turn ------------------------------------------
@@ -306,13 +326,13 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
     guarded(proj, ["checkbox", `${slug1}=in-progress`]);
     recordHumanTurn(proj);
     guarded(proj, ["gate-start", slug1]);
-    expect(guarded(proj, ["approve", slug1, "--user-input", "ok"]).rc).toBe(0); // spends the turn
+    expect(guarded(proj, ["approve", slug1, "--user-input", "Approve"]).rc).toBe(0); // spends the turn
 
     // New gate, NO fresh HUMAN_TURN - the prior GATE_APPROVED is after the only turn.
     const slug2 = field(proj, "Current Stage");
     guarded(proj, ["checkbox", `${slug2}=in-progress`]);
     guarded(proj, ["gate-start", slug2]);
-    const r = guarded(proj, ["approve", slug2, "--user-input", "ok"]);
+    const r = guarded(proj, ["approve", slug2, "--user-input", "Approve"]);
     expect(r.rc).not.toBe(0);
     expect(r.out).toContain("Refusing to approve");
     expect(eventCount(proj, "GATE_APPROVED")).toBe(1);
@@ -380,7 +400,7 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
       expect(hasOpenGate(open)).toBe(true);
       // Approving closes it again: the floor stops firing post-approval.
       recordHumanTurn(proj);
-      expect(guarded(proj, ["approve", slug, "--user-input", "ok"]).rc).toBe(0);
+      expect(guarded(proj, ["approve", slug, "--user-input", "Approve"]).rc).toBe(0);
       const after = readFileSync(seededStateFile(proj), "utf-8");
       expect(hasOpenGate(after)).toBe(false);
     });
@@ -642,7 +662,7 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
       expect(eventCount(proj, "GATE_APPROVED")).toBe(1);
     });
 
-    test("a paraphrased approval is a no-op and report still approves", () => {
+    test("a paraphrased approval is a no-op and report refuses it", () => {
       const slug = field(proj, "Current Stage");
       guarded(proj, ["checkbox", `${slug}=in-progress`]);
       guarded(proj, ["gate-start", slug]);
@@ -668,8 +688,9 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
         "The user approved",
       ]);
       expect(approve.rc).toBe(0);
-      expect(approve.out).toContain('"kind":"done"');
-      expect(eventCount(proj, "GATE_APPROVED")).toBe(1);
+      expect(approve.out).toContain('"kind":"error"');
+      expect(approve.out).toContain("did not match an offered choice");
+      expect(eventCount(proj, "GATE_APPROVED")).toBe(0);
     });
 
     test("an interview answer still cannot authorize a later same-turn approval", () => {
@@ -698,7 +719,7 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
       ]);
       expect(approve.rc).toBe(0);
       expect(approve.out).toContain('"kind":"error"');
-      expect(approve.out).toContain("Refusing to approve");
+      expect(approve.out).toContain("did not match an offered choice");
       expect(eventCount(proj, "GATE_APPROVED")).toBe(0);
     });
 
@@ -728,7 +749,7 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
       ]);
       expect(approve.rc).toBe(0);
       expect(approve.out).toContain('"kind":"error"');
-      expect(approve.out).toContain("Refusing to approve");
+      expect(approve.out).toContain("did not match an offered choice");
       expect(eventCount(proj, "GATE_APPROVED")).toBe(0);
     });
 
@@ -743,7 +764,9 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
         "--result",
         "rejected",
         "--user-input",
-        "Request Changes: tighten the schema",
+        "Request Changes",
+        "--reason",
+        "tighten the schema",
       ]);
       expect(reject.rc).toBe(0);
       expect(reject.out).toContain('"kind":"error"');
@@ -767,7 +790,9 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
         "--result",
         "rejected",
         "--user-input",
-        "Request Changes: tighten the schema",
+        "Request Changes",
+        "--reason",
+        "tighten the schema",
       ]);
       expect(first.rc).toBe(0);
       expect(first.out).not.toContain('"kind":"error"');
@@ -780,7 +805,9 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
         "--result",
         "rejected",
         "--user-input",
-        "Request Changes: tighten the schema again",
+        "Request Changes",
+        "--reason",
+        "tighten the schema again",
       ]);
       expect(second.rc).toBe(0);
       expect(second.out).toContain('"kind":"error"');
@@ -811,7 +838,9 @@ describe("t188: human-presence approval gate (ledger-event design)", () => {
         "--result",
         "rejected",
         "--user-input",
-        "Request Changes: tighten the schema",
+        "Request Changes",
+        "--reason",
+        "tighten the schema",
       ]);
       expect(reject.rc).toBe(0);
       expect(eventCount(proj, "GATE_REJECTED")).toBe(1);

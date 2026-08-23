@@ -1,0 +1,15 @@
+{
+  "name": "aidlc-plugins",
+  "owner": {
+    "name": "AWS GCR — CDE"
+  },
+  "description": "AIDLC plugin catalogue.",
+  "plugins": [
+    {
+      "name": "aidlc-team-knowledge",
+      "source": ".",
+      "version": "0.3.0",
+      "description": "Cross-project flow of team-level knowledge. Two scope-independent stages — a pull that imports OKF v0.2 cards from a shared team knowledge git repository (Practice cards go through the framework's own learnings persist ritual, never a hand-written memory edit) and a push that sediments affirmed team rules and confirmed domain knowledge back as one-card-one-file merge requests. Cards carry OKF trust signals (generated / verified / stale_after) plus a cde: extension for provenance, sanitization approval, and the memory destination; a single fail-closed validator runs both as the spoke's pre-push self-check and as the hub's MR gate."
+    }
+  ]
+}

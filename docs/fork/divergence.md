@@ -493,14 +493,46 @@ What changed with it, so nothing is left dangling:
 > cost argument; `t245` and `t259` reddened within minutes and the merge was aborted.
 > The second attempt began with the decision already made.
 
-### A9 — Plugin parity across all five harnesses (4 files) — **upstream-bound**
+### A9 — Plugin parity across the harness fleet (1 file after the 2.6.61 sync) — **upstream-bound**
 
 | | |
 | --- | --- |
-| Files | `scripts/plugin-hooks-template/compose.ts` · `scripts/package.ts` · `harness/opencode/skills/aidlc/SKILL.md` · `docs/reference/18-plugin-mechanism.md` |
-| Class | **B — general, not CDE-specific.** Two host-shape bugs in the plugin mechanism plus the sentinel drift they exposed; nothing here knows about CDE or PoCs. |
-| Upstream | **Offer it.** Small, independently applicable, and it makes upstream's own "validated across all four harness projections" claim true for five. |
-| On conflict | Keep ours; each of the three fixes is independent. The `compose.ts` hunk must stay in sync with `resolveSkillsPath` — if upstream changes that resolver, re-derive the probe rather than re-applying the patch verbatim. |
+| Files | `scripts/plugin-hooks-template/compose.ts` (the `SKILLS_DIR` probe). **Was 4 files**; three closed at the 2.6.61 sync — see the disposition below. |
+| Class | **B — general, not CDE-specific.** A host-shape bug in the plugin mechanism; nothing here knows about CDE or PoCs. |
+| Upstream | **Offer it.** One self-contained probe, and it makes upstream's own per-harness parity claim true for Codex. |
+| On conflict | Keep ours, but **re-derive from `resolveSkillsPath` rather than re-applying the patch** — that resolver is what `aidlc-runner-gen` writes through, and it gains branches as upstream gains harnesses. The 2.6.61 sync is the worked example: upstream's resolver carried both the Copilot and the Codex branch while its compose probe carried only Copilot, so the merge kept the fork's Codex fallback *and* adopted upstream's Copilot branch in one expression. |
+
+**Disposition at the 2.6.61 sync (2026-08-23), verified per item:**
+
+| Item | Outcome |
+| --- | --- |
+| **Codex got no stage runners** (`compose.ts` `SKILLS_DIR`) | **Still ours — upstream has NOT fixed it.** Upstream's probe reads `IS_COPILOT ? .github/skills : <harness>/skills`, with no `.codex` → `.agents/skills` fallback, while its own `resolveSkillsPath` carries both. Merged as one re-derived expression mirroring the resolver's rule and order. |
+| **opencode sentinel em dash** | **Closed.** Auto-merged; both `BEGIN:` literals in `harness/opencode/skills/aidlc/SKILL.md` verified against `aidlc-utility.ts`. |
+| **Kiro plugin auto-compose was a dead promise** (v2 `.json`) | **Closed — upstream implemented it themselves**, and went further: `kind` is now `"store" \| "kiro" \| "kiro-ide" \| "cursor"`, Kiro IDE gets a `SessionStart` v2 registration, and the legacy `.kiro.hook` is **dropped entirely** rather than shipped alongside. Took theirs; the fork's own INSTALL guides already told users to delete those legacy files. |
+| **Codex repository-marketplace layout** | **DROPPED to upstream's flat layout — needs a decision.** See the note below. |
+
+> [!IMPORTANT]
+> **The Codex plugin layout is an open question, not a settled merge.** The fork
+> emitted `dist/plugins/<p>/codex/.agents/plugins/marketplace.json` pointing at a
+> `plugins/aidlc-<p>/` payload subdir; upstream emits flat
+> `dist/plugins/<p>/codex/.codex-plugin/{marketplace,plugin}.json` with content at
+> the root. These are **incompatible**, and git reported it as a directory-rename
+> conflict rather than a content conflict.
+>
+> The sync took **upstream's**, for a mechanical reason and not because it was
+> judged correct: upstream restructured the emitter (`harnessName`, the four-value
+> `kind`, per-host wiring), so the fork's three-field patch
+> (`marketplaceDir`/`pluginParentDir`/`marketplaceFormat` + `pluginPayloadRoot()`)
+> no longer had the surface it patched. Forcing both in would have produced a
+> layout neither side emits. `t188` and `harness-matrix.ts` were taken/aligned to
+> match, so the tree is self-consistent.
+>
+> **What is unverified:** which layout Codex CLI actually accepts. The fork's
+> commit (`20a9cf44`, 2026-08-02) claims theirs matched "the current plugin
+> marketplace layout"; that claim was not re-checked at this sync, and no Codex
+> install was exercised. Anyone using plugins on Codex should verify with
+> `codex plugin add` before trusting either shape. If the fork's layout proves
+> right, this becomes a fresh row against upstream's new structure — not a revert.
 
 Measured by composing `poc-accelerator` into a scratch install of each of the five
 harnesses and counting what landed. Before: two harnesses were silently degraded.
@@ -583,6 +615,26 @@ merge cost is per-file, not per-line.
 | Class | **B — general, not CDE-specific.** A message-ordering defect in upstream's Stop hook. Nothing here knows about CDE or any fork plugin. |
 | Upstream | **Submitted: [awslabs/aidlc-workflows#729](https://github.com/awslabs/aidlc-workflows/pull/729)** (opened 2026-08-09 against `v2` at 2.5.59, submitted as 2.5.60). The defect was proven **by a run, not a read**: the fork's ordering assertion planted on an unmodified `v2` worktree failed with token at offset 332 and payload at 160, then passed after the reorder. Upstream had no test pinning the order (`t121` there carried zero `indexOf` assertions). |
 | On conflict | **Take upstream's clauses, then check the order.** Upstream rewrote every clause of this message since the merge base ("still has rules to load" for "has pending rule delivery", "each load-steering step it returns" for "load-steering continuations — chaining each response's own token", "Do not summarise or narrate these rule chunks to the user" for "Do not report or narrate steering chunks"), so #729 deliberately carries **upstream's** wording with only the order changed. The fork's older phrasing is not worth preserving; the *property* is — actionable instruction before bulk payload. If #729 has merged by sync time, take theirs wholesale and the row closes. If not, take theirs and re-apply the reorder, and update the fork's `t121` `toContain` assertions to upstream's clause text at the same time (they currently pin the fork's older wording). |
+| **Status at 2.6.61 (2026-08-23)** | **#729 still open — the row stays.** Upstream's branch still emits `exactContent` before the `continue` token. `aidlc-continue-workflow.ts` **auto-merged** (it was not in the conflict set) and the fork's reorder survived intact: token at relative offset 144, payload at 429. Upstream did add a *second*, correctly-ordered branch guarded by `retained`, but that is reachable only when `copilotEvidence?.status === "directive"` — a Copilot-only path — so it does not cover the general case. |
+
+> [!NOTE]
+> **Scope correction (measured 2026-08-23), against an earlier reading of this row
+> as a live hazard for `vibe`.** A `vibe` container never reaches this branch:
+> `next` answers `run-stage` directly, with `continue_token` absent and
+> `rules_in_context: []`. Probed four ways — upstream 2.6.61 engine and this fork's
+> engine, `vibe` and `feature` scopes, an empty memory layer and this repository's
+> full 267-line one — every combination emitted `run-stage`, never
+> `load-steering`. The mechanism: the engine returns the directive unchanged when
+> `chunks.length === 0`, and the method files reach the model through each
+> harness's always-on include rather than through a directive, so they never become
+> chunks. `inline_context_paths` carries agent and knowledge files only.
+>
+> This does **not** retire the row — the branch is still misordered, and the
+> conditions that make `chunks` non-empty were not established, so no claim is made
+> that it can never fire. What it retires is the specific inference that opening a
+> `vibe` container is exposed to it. The earlier diary note reporting a per-turn
+> 16 KB re-delivery came from a container that was never actually parked
+> (`Status: Running`, no `Parked` field); parking is what stopped that loop.
 The load-steering continuation inlined the whole rules bundle into the hook's
 `reason` and put the `continue` token **after** it. Measured on a stock install:
 **16,583 chars across 37 entries**. Kiro IDE truncates hook output, so every
@@ -636,13 +688,34 @@ schema has no matcher field, and it is inert on IDE ≥ 1.0 anyway.
 > adapter target, new verb. Do that before closing any row on the strength of a
 > missing file.
 
-### A13 — `persist` keyed learning identity on `candidate_id` (2 files) — **upstream-bound**
-| | |
-| --- | --- |
-| Files | `core/tools/aidlc-learnings.ts` · `tests/integration/t99-learnings-gate-flow.test.ts` (two appended tests) |
-| Class | **B — general.** A silent data-loss defect in upstream's learnings gate. |
-| Upstream | **Offer it.** Self-contained, and it closes a path where an approved learning is discarded while the tool reports success. |
-| On conflict | Keep ours. The property to preserve is that identity derives from destination + text; the marker's prefix shape is only there for compatibility and can be re-derived. |
+### ~~A13 — `persist` keyed learning identity on `candidate_id`~~ — **CLOSED 2026-08-23 at the 2.6.61 sync: upstream fixed it their own way**
+
+Upstream now keys identity on content too, with a different marker shape:
+`cid:<intent-slug>:<stage-slug>:<full SHA-256>` (`createHash("sha256")` +
+`cidMarker(intentSlug, slug, hash)` in `core/tools/aidlc-learnings.ts`), against
+this fork's short hash appended to the legacy `cid:<slug>:<candidate_id>`. The
+**property this row existed to protect now holds upstream**, so the merge took
+theirs wholesale and the fork's implementation is gone.
+
+Upstream also went further than the fork did, and the extra strictness is what a
+consumer notices: the selections file is now
+`{ stage_slug, space, intent, selections[] }` — `space` and `intent` carried
+verbatim from `surface`, so `persist` writes against the pair resolved at surface
+time rather than the live intent cursor — and `aidlc/spaces/<space>/` must already
+exist, verified inside the audit lock rather than templated on demand. Both fork
+plugins that drive `persist` had to be updated at this sync (`vibe` beforehand,
+`team-knowledge` during it); a stage that only carries the command, and tells the
+agent not to load `stage-protocol.md`, leaves its reader with no way to know.
+
+> [!NOTE]
+> **What generalises from A13 is not the fix — it is that a row pinning a tool's
+> current implementation detail goes stale silently when the tool is fixed.** This
+> row was corrected once in the fork's own memory layer (2026-08-06, id-keyed →
+> content-keyed) and then had to be corrected again in the opposite direction
+> (2026-08-14) after the code moved underneath it. Prefer rows that state an
+> invariant and its consequence over rows that state a mechanism; when a mechanism
+> claim is worth recording, cite the function name so the next reader can
+> re-verify it cheaply instead of re-deriving it from behaviour.
 `surface` candidate IDs are **positional** — re-derived from the diary on every
 call — so appending a diary entry renumbers them, and a second `persist` in the
 same stage routinely reuses an id for different content. Both the line marker
@@ -760,13 +833,22 @@ and must be re-spelled at the sync.** Offered to upstream only if they want it.
 > that pinned the false premise, a divergence row, and a maintainer's review cycle
 > on a public repository.
 
-### A16 — Branch 2.5 (parked) swallowed `--new-intent` (2 files) — **upstream-bound**
-| | |
-| --- | --- |
-| Files | `core/tools/aidlc-orchestrate.ts` (one condition + comment in Branch 2.5) · `tests/unit/t114-orchestrate-next.test.ts` (one appended test in the parked describe) |
-| Class | **B — general.** Affects any install where a parked workflow is active when new work is requested. |
-| Upstream | **Offer it.** One-line guard alignment with Branch 4a's own stated contract ("precedes every continuation branch"). |
-| On conflict | Keep ours: `!flags.newIntent` joins the self-disable list exactly like `--resume`/`--stage`/`--phase`/`--review`. If upstream restructures the branch, preserve the property: `--new-intent` must reach the birth path regardless of the active intent's parked state. |
+### ~~A16 — Branch 2.5 (parked) swallowed `--new-intent`~~ — **CLOSED 2026-08-23 at the 2.6.61 sync: upstream carries the same guard**
+
+Upstream's Branch 2.5 now lists `!flags.newIntent` in its self-disable set beside
+`!flags.resume` / `!flags.stage` / `!flags.phase` / `!flags.review`, so the
+property this row protected holds there. `core/tools/aidlc-orchestrate.ts` —
+5000+ lines, the file most likely to conflict — **auto-merged cleanly**, and the
+merged condition carries exactly one `!flags.newIntent` (checked: no duplicated
+clause).
+
+`tests/unit/t114-orchestrate-next.test.ts` did conflict, because both sides had
+written a test for it. Upstream's is a superset: it asserts the same parked-bypass
+**and** that the nonblank-description guard still fires. The merge kept upstream's
+assertions and its fixture verbatim, and carried over only the fork's comment
+recording *why* the test exists — the vibe plugin names
+`next --new-intent --scope vibe` as the normal route for a second container, which
+is how the fork hit this deterministically.
 
 Branch 2.5 short-circuits every `next` against a parked workflow into the terminal
 `parked` directive, self-disabling only for `--resume`/`--stage`/`--phase`/`--review`.
@@ -887,8 +969,45 @@ ln -s "$PWD/node_modules" /tmp/upstream-tip/node_modules
 git worktree remove /tmp/upstream-tip
 ```
 
-Anything that reproduces there is upstream's, not yours. As of the 2.5.30 merge
-(288 files, 5840 assertions, 5 failing files / 21 failing assertions):
+Anything that reproduces there is upstream's, not yours.
+
+**At the 2.6.61 merge (2026-08-23) that method settled the whole question.** The
+unit tier reported 16 failing files. One (`gen-coverage-registry`) was ours and
+self-inflicted — the two derived files under D1 had been taken as merge
+placeholders and not yet regenerated; `bun tests/gen-coverage-registry.ts` cleared
+it. One (`t134-mechanism-honesty`) passed on re-run, i.e. a timeout flake. The
+remaining **14 reproduced on an unmodified `github/v2` worktree with identical
+fail counts**, so none of them is the merge's:
+
+| File | merged | upstream tip |
+| --- | --- | --- |
+| `t112-learnings-distribution-guard` | 0 pass / 3 fail | 0 / 3 |
+| `t116-directive-path-resolution` | 19 / 2 | 19 / 2 |
+| `t124-scope-transpose` | 8 / 6 | 8 / 6 |
+| `t142-tui-drive-setting-sources` | 26 / 1 | 26 / 1 |
+| `t149-codex-hook-adapter` | 26 / 4 | 26 / 4 |
+| `t150-codex-packaging` | 12 / 1 | 12 / 1 |
+| `t184-stage-graph-drift` | 7 / 1 | 7 / 1 |
+| `t231-handler-additions` | 11 / 1 | 11 / 1 |
+| `t235-ensemble-modes` | 12 / 3 | 12 / 3 |
+| `t241-opencode-adapter` | 14 / 2 | 14 / 2 |
+| `t248-codekb-scope-diff` | 32 / 2 | 32 / 2 |
+| `t248-steering-content-delivery` | 34 / 1 | 34 / 1 |
+| `t249-copilot-adapter` | 41 / 7 | 39 / 7 |
+| `t255-workspace-sync` | fail | 36 / 12 |
+
+`t249` is the one row where the numbers differ, and it differs in the right
+direction: **two more passing assertions here than upstream**, same 7 failures —
+the fork's two plugins now project to Copilot as well, and that test counts them.
+
+> [!TIP]
+> **Comparing fail COUNTS, not just pass/fail, is what makes this cheap.** An
+> identical count is strong evidence of the same defect; a differing count is the
+> only thing worth opening a log for. Fourteen files were dispositioned this way
+> without reading a single assertion diff.
+
+The older 2.5.30 baseline (288 files, 5840 assertions, 5 failing files / 21 failing
+assertions), kept because the verdicts still explain the recurring classes:
 
 | Failure | Verdict |
 | --- | --- |

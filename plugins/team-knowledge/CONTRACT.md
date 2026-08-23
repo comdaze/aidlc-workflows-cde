@@ -688,9 +688,15 @@ agent seat 复用 `aidlc-developer-agent`，不新增 agent。
 `handlePersist`（`:467` 起）只解析 selections 文件并逐条落盘，**不与日记候选交叉校验**，
 `--slug` 也不与 stage graph 校验。这正是 pull 路径可以复用 persist 的前提。
 
-同时确认既知陷阱依然存在：幂等键是 `(stage_slug, candidate_id)` + Content-Key
-（`:528-529`、`:546-548`），**不是内容**；行级幂等锚定在 `- <text> (learned ` 这个行形状上
-（`:545`）。⇒ 一次 persist 内不得复用 candidate_id。concept ID 天然满足。
+幂等键**已改为内容**（2026-08-23 随上游 2.6.61 合并核实）：身份是规则文本的
+SHA-256，行标记为 `cid:<intent>:<stage>:<content-hash>`，`intent` 为 null 时记作
+`unscoped`。此前本节记的 `(stage_slug, candidate_id)` 键已不适用。⇒ 一次 persist 内
+仍不得复用 candidate_id（concept ID 天然满足），但**不要依赖它做幂等**：同文本重跑
+是 no-op，改过文本即新规则。
+
+另有两条前置校验必须满足，否则 persist 在形状检查之后才失败：selections 文件需带
+`space` 与 `intent`（`intent` 可为 null），且 `aidlc/spaces/<space>/` 必须已存在
+——`persist` 在审计锁内校验该目录，不会按需创建。
 
 ### 10.4 有效 heading 集合
 
