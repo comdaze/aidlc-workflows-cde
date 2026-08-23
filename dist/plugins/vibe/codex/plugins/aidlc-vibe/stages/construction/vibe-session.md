@@ -161,12 +161,32 @@ bun {{HARNESS_DIR}}/tools/aidlc-learnings.ts surface --slug vibe-session
 ```
 
 Present the surfaced candidates and parked open questions. The user selects,
-edits, or discards each one; never self-select. Then persist the confirmed set:
+edits, or discards each one; never self-select. Then build the selections file and
+persist the confirmed set:
+
+```json
+{ "stage_slug": "vibe-session", "space": "…", "intent": "…", "selections": [ … ] }
+```
 
 ```bash
 bun {{HARNESS_DIR}}/tools/aidlc-learnings.ts persist --slug vibe-session \
   --selections-json <path>
 ```
+
+**Copy `space` and `intent` verbatim out of the `surface` output above** — do not
+re-derive them and do not invent them. `surface` resolves the pair at the moment
+it runs and `persist` writes against that pinned pair rather than the live
+active-intent cursor, so copying is what stops an intent switch between surfacing
+and persisting from filing the rules under the wrong record.
+
+Read the pair off the output rather than assuming it: a build whose `surface`
+emits `space`/`intent` **requires** them in the selections file and fails with
+`missing or non-string space` if either is absent; a build that emits neither
+requires neither and ignores them if present. The output is the judge in both
+directions, which is why this shape is spelled out here at all — the deviation
+note at the top of this stage tells you **not** to load the protocol file, so the
+one requirement in the ritual that is easy to get wrong has to travel with the
+command.
 
 Why through the tool rather than editing the memory files directly: the tool
 brings the conflict check against broader policy (a project rule contradicting an

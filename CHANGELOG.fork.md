@@ -1,5 +1,42 @@
 # Fork changelog
 
+## 2026-08-23 (vibe 0.3.2) — on upstream 2.6.61
+
+**The sedimentation step told the agent to build a selections file in a shape
+upstream v2 rejects.** Measured by copying `plugins/vibe/` unchanged into a
+detached worktree of `github/v2` at `8e365e4e` and running the plugin's own
+tests: 18 pass, 1 fail — the parked-container lifecycle test, on
+`aidlc-learnings.ts persist` returning
+`missing or non-string space (bind it from surface's output)`. Everything else
+about the plugin composes cleanly on upstream, including the two harnesses the
+fork does not have (copilot, cursor). Plugin-only; nothing for
+`docs/fork/divergence.md`.
+
+* **`space` and `intent` are now bound from `surface` into the selections file,
+  in the stage prose, the persona, and the test.** Upstream changed the contract
+  from `{ stage_slug, selections[] }` to `{ stage_slug, space, intent,
+  selections[] }` so that `persist` writes against the pair resolved at surface
+  time rather than the live intent cursor — an intent switch mid-session can no
+  longer misattribute the write. The stage carried only the command, and it also
+  instructs the agent **not** to load `stage-protocol.md`, so the one
+  easy-to-get-wrong requirement in the ritual never reached the reader.
+* **The two fields are bound conditionally, not asserted.** They move as a pair
+  across framework versions: a build whose `surface` emits them is a build whose
+  `persist` requires them, and one that emits neither rejects neither (this
+  fork's `SurfaceOutput` has neither, and its `parseSelectionsFile` ignores
+  extras). Asserting they exist fails on the older contract; hardcoding them
+  passes while the "copy verbatim" instruction rots unobserved. Binding is the
+  only form that follows the pair — 19/19 on both this fork and upstream, with
+  the lifecycle test confirmed spawning the real tools rather than skipping.
+
+Not changed, and worth knowing before a sync: the stage's Sensors section still
+claims the two code sensors "carry a coalesce window", which is true here and
+false upstream (A7 remains fork-only). It is advisory — `vibe` binds no sensors
+by default — so the wording was left for whoever resolves A7. Also confirmed
+resolved upstream by their own implementations: A12, A16, A9, and A13 (upstream's
+learnings marker is `cid:<intent-slug>:<stage-slug>:<full SHA-256>`, a different
+shape from this fork's — take upstream's on merge).
+
 This is the **CDE fork's** own changelog, and the only place fork release notes
 are added from 2026-08-01 onward. `CHANGELOG.md` belongs to upstream
 `awslabs/aidlc-workflows`: the fork takes upstream's entries as they are and adds

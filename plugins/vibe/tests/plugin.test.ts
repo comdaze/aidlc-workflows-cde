@@ -245,11 +245,29 @@ describe(`${PLUGIN_NAME} plugin — parked-container lifecycle (real tools)`, ()
         const surface = run(proj, [join(TOOLS, "aidlc-learnings.ts"), "surface", "--slug", STAGE_SLUG]);
         expect(surface.code).toBe(0);
         expect(surface.out).toContain('"stage_slug":"vibe-session"');
+        // BIND `space`/`intent` from surface rather than asserting or hardcoding
+        // them. The pair moves together across framework versions — a build whose
+        // `surface` emits them is a build whose `persist` REQUIRES them, and one
+        // that emits neither rejects neither. So:
+        //   * asserting they exist fails on a build that predates them;
+        //   * hardcoding them passes while the stage instruction ("copy verbatim
+        //     from surface") rots unobserved;
+        //   * omitting them fails on a build that requires them —
+        //     `missing or non-string space (bind it from surface's output)`, which
+        //     is exactly how this block failed against upstream v2 while every
+        //     content assertion above stayed green.
+        // Binding is the only form that follows the pair instead of pinning one
+        // side of it, and it exercises the same route the stage prose prescribes.
+        const surfaced = JSON.parse(
+          surface.out.slice(surface.out.indexOf("{"), surface.out.lastIndexOf("}") + 1),
+        );
         const selections = join(proj, "selections.json");
         writeFileSync(
           selections,
           JSON.stringify({
             stage_slug: STAGE_SLUG,
+            ...(typeof surfaced.space === "string" ? { space: surfaced.space } : {}),
+            ...("intent" in surfaced ? { intent: surfaced.intent } : {}),
             selections: [{ candidate_id: "c1", type: "learning", scope: "project", heading: "Tooling and Diagnostics", text: "Parked probe rule. Project-specific. (learned 2026-08-10)" }],
           }),
         );

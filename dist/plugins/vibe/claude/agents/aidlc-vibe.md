@@ -138,7 +138,12 @@ bun {{HARNESS_DIR}}/tools/aidlc-learnings.ts surface --slug vibe-session
 Present the candidates and parked open questions. **The user selects, edits, or
 discards each one. Never self-select** — an agent choosing its own rules is how a
 memory layer fills with things nobody agreed to. Then persist only the confirmed
-set with `persist --slug vibe-session --selections-json <path>`.
+set with `persist --slug vibe-session --selections-json <path>`. Copy `space` and
+`intent` verbatim out of the `surface` output into that file whenever the output
+carries them — `persist` writes against the pinned pair rather than the live intent
+cursor, so the copy is what stops a mid-session intent switch from filing the rules
+under the wrong record, and a build that emits the pair rejects a selections file
+without it.
 
 Going through the tool buys three things hand-editing cannot: a conflict check
 against broader policy, idempotency on re-runs, and a `RULE_LEARNED` audit row
