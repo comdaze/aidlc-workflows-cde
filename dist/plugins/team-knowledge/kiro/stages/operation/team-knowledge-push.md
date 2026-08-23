@@ -238,8 +238,18 @@ their hub paths, scoped to this deposit's cards:
 
 ```bash
 bun {{HARNESS_DIR}}/tools/aidlc-akp-validate.ts --bundle <hub-checkout> --mode produce \
+  --profile aidlc \
   --card <hub-checkout>/<path/to/card>.md   # one --card per card in this deposit
 ```
+
+`--profile aidlc` is not optional here and it is not the hub's setting. The hub
+gate is host-neutral: it holds every card, from every agent system, to what a
+shared hub needs. These cards are AIDLC's own, and AIDLC needs more from them —
+`origin.{project,intent,stage,content_key}` so the card can be traced back to its
+`RULE_LEARNED` audit row, and a `memory_target`/`heading`/`knowledge_seat` so the
+pull stage knows where to import it. Deposit without the profile and the cards
+pass the hub, then arrive back through `/team-knowledge-pull` with no destination
+to land in.
 
 Not an isolated staging directory, and this is not a preference. Rule 7 dedupe
 compares digests **within one bundle**, so a bundle holding only your own new

@@ -42,7 +42,7 @@ export function str(v: YamlValue | undefined): string {
   return typeof v === "string" ? v : "";
 }
 
-/** Dotted lookup: `path("cde.origin.project", fm)`. */
+/** Dotted lookup: `path("akp.origin.project", fm)`. */
 export function path(dotted: string, root: YamlValue | undefined): YamlValue | undefined {
   let cur: YamlValue | undefined = root;
   for (const seg of dotted.split(".")) {
@@ -50,6 +50,65 @@ export function path(dotted: string, root: YamlValue | undefined): YamlValue | u
     cur = cur[seg];
   }
   return cur;
+}
+
+/**
+ * The AKP extension namespace.
+ *
+ * `akp` is the name in the spec: the protocol is the standard and AIDLC is one
+ * implementation of it, so the namespace must not carry an implementation's
+ * initials (PRD § "Design decisions"). `cde` is what every card authored before
+ * that decision uses, and cards are the one artifact that cannot be updated by
+ * editing this file — so reads accept both, indefinitely, and writes emit `akp`.
+ *
+ * Nothing here does a rename in place. A card keeps whichever namespace it was
+ * authored with until something rewrites the card itself.
+ */
+export const EXT_NS = "akp";
+export const EXT_NS_LEGACY = "cde";
+
+/** The extension block, under whichever namespace this card was authored with. */
+export function extBlock(fm: YamlValue | undefined): YamlMap | undefined {
+  if (!isMap(fm)) return undefined;
+  const preferred = fm[EXT_NS];
+  if (isMap(preferred)) return preferred;
+  const legacy = fm[EXT_NS_LEGACY];
+  return isMap(legacy) ? legacy : undefined;
+}
+
+/**
+ * Dotted lookup INSIDE the extension block: `extPath("origin.project", fm)`.
+ *
+ * Use this rather than `path("akp.origin.project", fm)` — the latter silently
+ * returns undefined for a `cde:` card, which reads as "field absent" and
+ * produces a validator complaint about something that is present.
+ */
+export function extPath(dotted: string, fm: YamlValue | undefined): YamlValue | undefined {
+  const block = extBlock(fm);
+  return block === undefined ? undefined : path(dotted, block);
+}
+
+/**
+ * The sanitization mapping's field name — the same drift, one level down.
+ *
+ * The spec calls it `sanitized_by`; cards authored before that decision call it
+ * `sanitization`. Both are read, for the same reason the namespace is: a card
+ * cannot be updated by editing this file.
+ *
+ * Returns undefined when the value is not a mapping, and that is deliberate
+ * rather than defensive: the eight oldest cards carry
+ * `sanitized_by: "human:sean"` as a bare STRING, which genuinely fails the rule.
+ * A string has no `at`, so there is no approval date to check.
+ */
+export const SANITIZATION_KEYS = ["sanitized_by", "sanitization"] as const;
+
+export function sanitizationBlock(ext: YamlValue | undefined): YamlMap | undefined {
+  if (!isMap(ext)) return undefined;
+  for (const key of SANITIZATION_KEYS) {
+    const value = ext[key];
+    if (isMap(value)) return value;
+  }
+  return undefined;
 }
 
 class YamlError extends Error {}
@@ -529,7 +588,12 @@ export const FRONTMATTER_KEY_ORDER = [
   "verified",
   "stale_after",
   "sources",
-  "cde",
+  // The write-side name. A legacy `cde:` card is unaffected by this: both users
+  // of this list ignore keys that are not in it — keyOrderViolations() filters
+  // the card's keys down to canonical ones before comparing, and
+  // serializeFrontmatter() appends non-canonical keys afterwards, which is the
+  // same final position `cde` occupied when it was listed here.
+  EXT_NS,
 ] as const;
 
 /** Top-level keys in authored order (raw text scan — the writer's self-check). */

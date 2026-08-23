@@ -11,9 +11,17 @@
 // house-rule breach as "not OKF compliant" to our own authors, and refusing a
 // perfectly legal third-party bundle because it lacks our `cde:` block.
 //
-//   bun aidlc-akp-validate.ts --bundle <dir> [--mode produce|consume]
+//   bun aidlc-akp-validate.ts --bundle <dir> [--mode produce|consume] [--profile hub|aidlc]
 //                             [--policy <path>] [--card <path>]... [--today YYYY-MM-DD]
 //                             [--agents-dir <path>] [--json]
+//
+// `--mode` and `--profile` are different axes and both matter. MODE asks whose
+// bundle this is: produce (mine, house rules bind) or consume (someone else's,
+// only OKF binds). PROFILE asks which contract the AUTHOR holds itself to: hub
+// (the host-neutral gate, default) or aidlc (adds the coordinate that locates a
+// RULE_LEARNED audit row and the destination the import writes to). A hub that
+// runs --profile aidlc over every card rejects a Quick-authored one for having no
+// intent — a concept its producer does not have.
 //
 // Exit codes: 0 clean (warnings allowed), 1 rejected, 2 usage error.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -34,6 +42,9 @@ import {
   normalizeVerified,
   parseDate,
   parseYaml,
+  extBlock,
+  extPath,
+  sanitizationBlock,
   path as dig,
   readCard,
   ruleDigest,
@@ -52,7 +63,7 @@ export interface Policy {
   controlled_tags: string[];
 }
 
-/** Shipped defaults — mirrored by `hub-skeleton/policy/lifecycle.json` (§8.1). */
+/** Shipped defaults — mirrored by the hub skeleton's `policy/lifecycle.json` (§8.1). */
 export const DEFAULT_POLICY: Policy = {
   half_life_days: {
     Practice: 180,
@@ -116,6 +127,19 @@ export const CDE_CLASSES = ["knows", "judges"] as const;
 export const GENERALIZATIONS = ["industry-generic", "needs-recalibration"] as const;
 export const CONTENT_KEY_SCOPES = ["project", "team"] as const;
 
+/**
+ * Which contract the caller holds itself to.
+ *
+ * `hub` is the host-neutral gate every card in a shared hub must pass, whoever
+ * wrote it. `aidlc` adds what AIDLC's own round trip needs — the coordinate that
+ * locates a RULE_LEARNED audit row, and the destination the import writes to.
+ * AIDLC's push stage runs `--profile aidlc` on its own output; the hub's CI runs
+ * the default, because a hub holding a Quick card to AIDLC's contract rejects it
+ * for lacking concepts its producer does not have.
+ */
+export const PROFILES = ["hub", "aidlc"] as const;
+export type Profile = (typeof PROFILES)[number];
+
 /** §10.4 — the 8 `## ` headings `team.md` ships. A house rule, not a tool limit. */
 export const VALID_HEADINGS = [
   "## Way of Working",
@@ -176,6 +200,8 @@ export interface Finding {
 export interface ValidateOptions {
   bundleRoot: string;
   mode: "produce" | "consume";
+  /** Defaults to "hub" — the host-neutral gate. */
+  profile?: Profile;
   policy?: Policy;
   today?: Date;
   seats?: string[];
@@ -185,6 +211,7 @@ export interface ValidateOptions {
 
 export interface ValidateReport {
   mode: "produce" | "consume";
+  profile: Profile;
   cards_checked: number;
   rejected: boolean;
   findings: Finding[];
@@ -316,6 +343,7 @@ interface Ctx {
   policy: Policy;
   today: Date;
   seats: string[];
+  profile: Profile;
   byId: Map<string, Card>;
   digests: Map<string, string[]>;
   denyRes: Array<{ source: string; re: RegExp }>;
@@ -416,11 +444,11 @@ function checkCard(card: Card, ctx: Ctx): Finding[] {
   }
 
   // Rule 5 — the freshness clock, recomputed and compared with 0-day tolerance.
-  const cde = fm.cde;
-  const overrideRaw = str(dig("cde.review_interval_days", fm));
+  const cde = extBlock(fm);
+  const overrideRaw = str(extPath("review_interval_days", fm));
   const override = overrideRaw === "" ? null : Number(overrideRaw);
   if (overrideRaw !== "" && (!Number.isFinite(override) || (override as number) <= 0)) {
-    policyFail("4", `cde.review_interval_days "${overrideRaw}" is not a positive number of days`);
+    policyFail("4", `akp.review_interval_days "${overrideRaw}" is not a positive number of days`);
   }
   const lastVerified = verified
     .map((e) => parseDate(e.at))
@@ -477,11 +505,11 @@ function checkCard(card: Card, ctx: Ctx): Finding[] {
       );
     }
   }
-  const supersedes = str(dig("cde.supersedes", fm));
+  const supersedes = str(extPath("supersedes", fm));
   if (supersedes !== "") {
     const target = ctx.byId.get(supersedes);
     if (!target) {
-      policyFail("8", `cde.supersedes "${supersedes}" is not a card in this bundle — the replacement lands in the SAME MR`);
+      policyFail("8", `akp.supersedes "${supersedes}" is not a card in this bundle — the replacement lands in the SAME MR`);
     } else if (str(target.frontmatter.status) !== "deprecated") {
       policyFail(
         "8",
@@ -496,53 +524,123 @@ function checkCard(card: Card, ctx: Ctx): Finding[] {
   } else {
     const cls = str(cde.class);
     if (!(CDE_CLASSES as readonly string[]).includes(cls)) {
-      policyFail("4", `cde.class "${cls || "(absent)"}" is not one of: ${CDE_CLASSES.join(", ")}`);
+      policyFail("4", `akp.class "${cls || "(absent)"}" is not one of: ${CDE_CLASSES.join(", ")}`);
     }
     const generalization = str(cde.generalization);
     if (!(GENERALIZATIONS as readonly string[]).includes(generalization)) {
-      policyFail("4", `cde.generalization "${generalization || "(absent)"}" is not one of: ${GENERALIZATIONS.join(", ")}`);
+      policyFail("4", `akp.generalization "${generalization || "(absent)"}" is not one of: ${GENERALIZATIONS.join(", ")}`);
     }
-    for (const field of ["project", "intent", "stage", "content_key"] as const) {
-      if (str(dig(`origin.${field}`, cde)) === "") policyFail("4", `cde.origin.${field} is required`);
+    // `origin` is a COORDINATE IN THE PRODUCING SYSTEM'S OWN ADDRESS SPACE.
+    // Host-neutral checks its SHAPE, not its vocabulary: AIDLC locates a
+    // learning with project/intent/stage/content_key; an AMSP host locates one
+    // with agent/machine/memory_id. Both answer the same question in their own
+    // words.
+    //
+    // Requiring AIDLC's field names hub-wide made every Quick-authored card fail
+    // for not having an intent, and the only way to pass was to invent one —
+    // `intent: amsp-quick` is a trace anchor that resolves to nothing, which is
+    // worse than an absent field because a reader would try to follow it.
+    // Measured when this was found: 54 cards, ~53 copies each of the same ten
+    // errors. The AIDLC field set is still required, under `--profile aidlc`,
+    // where it belongs: it is what AIDLC's own import path needs, not what the
+    // hub needs to hold a card.
+    const origin = isMap(cde.origin) ? cde.origin : undefined;
+    if (origin === undefined) {
+      policyFail("4", "akp.origin is required (§6.3.1) — where this knowledge came from");
+    } else {
+      const system = str(origin.agent_system) || str(origin.system);
+      if (system === "") {
+        policyFail(
+          "4",
+          "akp.origin.agent_system is required — which agent system produced this (e.g. aidlc, kirocrew, quick, cursor, manual). Without it the coordinate below is in an unnamed address space: a reader who does not already know the producer cannot tell what `intent` or `memory_id` even refers to",
+        );
+      }
+      const coordinates = Object.entries(origin).filter(
+        ([key, value]) => key !== "agent_system" && key !== "system" && str(value) !== "",
+      );
+      if (coordinates.length === 0) {
+        policyFail(
+          "4",
+          "akp.origin names a system but carries no coordinate — add whatever locates this in that system (AIDLC: project/intent/stage/content_key; an AMSP host: agent/machine/memory_id)",
+        );
+      }
     }
+    // If you recorded a Content-Key you MUST record its scope. Not a house
+    // style: `contentKey(scope, text) = sha256(scope + "\0" + text)` (§10.2), so
+    // the key alone cannot be re-derived and the anchor points nowhere. Vacuous
+    // for a host that does not use Content-Keys, which is the point — the check
+    // is conditional on the claim, not on who is making it.
+    const contentKey = str(dig("origin.content_key", cde));
     const keyScope = str(dig("origin.content_key_scope", cde));
-    if (!(CONTENT_KEY_SCOPES as readonly string[]).includes(keyScope)) {
+    if (contentKey !== "" && !(CONTENT_KEY_SCOPES as readonly string[]).includes(keyScope)) {
       policyFail(
         "4",
-        `cde.origin.content_key_scope "${keyScope || "(absent)"}" is not one of: ${CONTENT_KEY_SCOPES.join(", ")} — the Content-Key hashes scope INTO the digest (§10.2), so a key without its scope cannot be traced back`,
+        `akp.origin.content_key_scope "${keyScope || "(absent)"}" is not one of: ${CONTENT_KEY_SCOPES.join(", ")} — the Content-Key hashes scope INTO the digest (§10.2), so a key without its scope cannot be traced back`,
       );
     }
-    const sanitizedBy = str(dig("sanitization.by", cde));
+    // Either field name, block form only. A bare-string `sanitized_by` yields
+    // undefined here and fails below, which is correct: a string carries no
+    // approval date.
+    const sanitized = sanitizationBlock(cde);
+    const sanitizedBy = str(dig("by", sanitized));
     if (sanitizedBy === "") {
-      policyFail("4", "cde.sanitization.by is required — the NAMED human who approved this leaving the delivery site");
+      policyFail("4", "akp.sanitized_by.by is required — the NAMED human who approved this leaving the delivery site");
     } else if (!sanitizedBy.startsWith("human:")) {
       policyFail(
         "4",
-        `cde.sanitization.by "${sanitizedBy}" must be a human: actor — sanitization is a value judgement and cannot be machine-approved (§2.2)`,
+        `akp.sanitized_by.by "${sanitizedBy}" must be a human: actor — sanitization is a value judgement and cannot be machine-approved (§2.2)`,
       );
     }
-    if (parseDate(str(dig("sanitization.at", cde))) === null) {
-      policyFail("4", `cde.sanitization.at "${str(dig("sanitization.at", cde)) || "(absent)"}" is not a parseable date`);
+    const sanitizedAt = str(dig("at", sanitized));
+    if (parseDate(sanitizedAt) === null) {
+      policyFail("4", `akp.sanitized_by.at "${sanitizedAt || "(absent)"}" is not a parseable date`);
     }
 
+    // Rules 9 and 10 describe an IMPORT DESTINATION: which heading a Practice
+    // rule lands under in `team.md`, which seat a Domain Knowledge card lands in.
+    // That is a real need for any host with a memory layer, but only AIDLC's
+    // answer is spelled `## Testing Posture` / `aidlc-shared` — a card that will
+    // never be imported into an AIDLC space has no such destination to name.
+    //
+    // So host-neutral checks the claim and not its presence: declare a
+    // destination and it must be a real one. `--profile aidlc` requires it,
+    // which is what AIDLC's push stage runs — the requirement comes from AIDLC's
+    // import machinery, so AIDLC's own gate is where it is enforced. SPEC §11 V6
+    // already worded it this way ("`akp.heading` in known headings"); it was the
+    // validator that read it as mandatory.
+    const aidlcProfile = ctx.profile === "aidlc";
     if (type === "Practice") {
       const target = str(cde.memory_target);
-      if (target !== "team") {
+      if (target !== "" && target !== "team") {
         policyFail(
           "9",
-          `cde.memory_target "${target || "(absent)"}" must be "team" — aidlc-learnings.ts persist has no org.md write path (§10.1)`,
+          `akp.memory_target "${target}" must be "team" — aidlc-learnings.ts persist has no org.md write path (§10.1)`,
         );
+      } else if (target === "" && aidlcProfile) {
+        policyFail("9", 'akp.memory_target is required under --profile aidlc — a Practice card imported into an AIDLC space lands in team.md, and "team" is the only value with a write path (§10.1)');
       }
       const heading = str(cde.heading);
-      if (!(VALID_HEADINGS as readonly string[]).includes(heading)) {
-        policyFail("9", `cde.heading "${heading || "(absent)"}" is not one of the 8 team.md headings: ${VALID_HEADINGS.join(", ")}`);
+      if (heading !== "" && !(VALID_HEADINGS as readonly string[]).includes(heading)) {
+        policyFail("9", `akp.heading "${heading}" is not one of the 8 team.md headings: ${VALID_HEADINGS.join(", ")}`);
+      } else if (heading === "" && aidlcProfile) {
+        policyFail("9", `akp.heading is required under --profile aidlc — the import has to know which team.md heading this rule lands under. One of: ${VALID_HEADINGS.join(", ")}`);
       }
     }
     if (type === "Domain Knowledge") {
       const seat = str(cde.knowledge_seat);
-      if (seat === "") policyFail("10", "cde.knowledge_seat is required on a Domain Knowledge card");
-      else if (!ctx.seats.includes(seat)) {
-        policyFail("10", `cde.knowledge_seat "${seat}" is not an installed agent seat or "aidlc-shared"`);
+      if (seat !== "" && !ctx.seats.includes(seat)) {
+        policyFail("10", `akp.knowledge_seat "${seat}" is not an installed agent seat or "aidlc-shared"`);
+      } else if (seat === "" && aidlcProfile) {
+        policyFail("10", "akp.knowledge_seat is required under --profile aidlc — the import has to know which agent seat's knowledge directory this card lands in");
+      }
+    }
+    // The AIDLC field set, required only when the caller has declared it holds
+    // itself to AIDLC's contract (CONTRACT.md §6.3.1).
+    if (aidlcProfile && isMap(cde.origin)) {
+      for (const field of ["project", "intent", "stage", "content_key"] as const) {
+        if (str(dig(`origin.${field}`, cde)) === "") {
+          policyFail("4", `akp.origin.${field} is required under --profile aidlc — it is part of the coordinate that locates this card's RULE_LEARNED audit row (CONTRACT.md §6.3.1)`);
+        }
       }
     }
   }
@@ -592,7 +690,8 @@ export function validateBundle(options: ValidateOptions): ValidateReport {
     digests.set(digest, [...(digests.get(digest) ?? []), card.id]);
   }
 
-  const ctx: Ctx = { policy, today, seats, byId, digests, denyRes: compileDeny(policy.deny_patterns) };
+  const profile: Profile = options.profile ?? "hub";
+  const ctx: Ctx = { policy, today, seats, profile, byId, digests, denyRes: compileDeny(policy.deny_patterns) };
   for (const card of cards) {
     if (options.only && !options.only.has(card.id)) continue;
     findings.push(...checkCard(card, ctx));
@@ -605,6 +704,7 @@ export function validateBundle(options: ValidateOptions): ValidateReport {
 
   return {
     mode: options.mode,
+    profile,
     cards_checked: options.only ? cards.filter((c) => options.only?.has(c.id)).length : cards.length,
     rejected: hard.length > 0,
     findings: hard,
@@ -627,6 +727,7 @@ export function consumeAdvice(report: ValidateReport): string[] {
 interface Flags {
   bundle?: string;
   mode: "produce" | "consume";
+  profile: Profile;
   policy?: string;
   agentsDir?: string;
   today?: string;
@@ -635,11 +736,12 @@ interface Flags {
 }
 
 function parseFlags(argv: string[]): Flags {
-  const flags: Flags = { mode: "produce", cards: [], json: false };
+  const flags: Flags = { mode: "produce", profile: "hub", cards: [], json: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--bundle") flags.bundle = argv[++i];
     else if (arg === "--mode") flags.mode = argv[++i] === "consume" ? "consume" : "produce";
+    else if (arg === "--profile") flags.profile = argv[++i] === "aidlc" ? "aidlc" : "hub";
     else if (arg === "--policy") flags.policy = argv[++i];
     else if (arg === "--agents-dir") flags.agentsDir = argv[++i];
     else if (arg === "--today") flags.today = argv[++i];
@@ -656,8 +758,15 @@ export function runCli(argv: string[]): number {
   const flags = parseFlags(argv);
   if (!flags.bundle) {
     process.stderr.write(
-      "Usage: aidlc-akp-validate.ts --bundle <dir> [--mode produce|consume] [--policy <path>]\n" +
-        "                            [--card <path>]... [--today YYYY-MM-DD] [--agents-dir <path>] [--json]\n",
+      "Usage: aidlc-akp-validate.ts --bundle <dir> [--mode produce|consume] [--profile hub|aidlc]\n" +
+        "                            [--policy <path>] [--card <path>]... [--today YYYY-MM-DD]\n" +
+        "                            [--agents-dir <path>] [--json]\n" +
+        "\n" +
+        "  --profile hub    (default) the host-neutral gate every card in a shared hub must pass\n" +
+        "  --profile aidlc  adds what AIDLC's round trip needs: origin.{project,intent,stage,\n" +
+        "                   content_key} and the import destination. Run this on AIDLC's OWN\n" +
+        "                   output; a hub that holds every card to it rejects cards whose\n" +
+        "                   producer has no intents or stages.\n",
     );
     return 2;
   }
@@ -677,6 +786,7 @@ export function runCli(argv: string[]): number {
     report = validateBundle({
       bundleRoot,
       mode: flags.mode,
+      profile: flags.profile,
       policy: loadPolicy(flags.policy, bundleRoot),
       today: today ?? new Date(),
       seats: resolveSeats(flags.agentsDir),
@@ -693,7 +803,9 @@ export function runCli(argv: string[]): number {
   }
 
   const line = (f: Finding): string => `  [${f.verdict} §11.${f.rule}] ${f.card}: ${f.message}`;
-  process.stdout.write(`aidlc-akp-validate (${report.mode}) — ${report.cards_checked} card(s)\n`);
+  process.stdout.write(
+    `aidlc-akp-validate (${report.mode}, profile ${report.profile}) — ${report.cards_checked} card(s)\n`,
+  );
   if (report.findings.length > 0) {
     process.stdout.write(`REJECTED — ${report.findings.length} blocking finding(s):\n`);
     for (const f of report.findings) process.stdout.write(`${line(f)}\n`);
