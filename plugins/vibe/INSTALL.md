@@ -3,30 +3,45 @@
 Chinese: [INSTALL.zh-CN.md](INSTALL.zh-CN.md) · What the plugin *is*:
 [README.md](README.md)
 
-## Read this first: the plugin needs this fork's engine
+## Read this first: which engine you pair it with
 
-> [!IMPORTANT]
-> **Do not pair this plugin with an upstream `awslabs/aidlc-workflows` install.**
-> Two fixes it depends on live in this fork's `core/`, not in the plugin. With
-> stock upstream the plugin does not degrade gracefully.
+This plugin runs on **either** this fork's engine or stock upstream
+`awslabs/aidlc-workflows` v2. That was not always true, and if you are following an
+older copy of this page, it told you not to use upstream — measured against
+upstream 2.6.61 (2026-08-23), the two reasons it gave no longer hold:
 
-| Needs | Without it |
+| Former dependency | Status |
 | --- | --- |
-| Load-steering continuations are followable (**A11**) | The `continue` token is emitted *after* a ~16 KB rule payload and gets truncated away, so the chain can never advance. Same bundle re-delivered every turn, forever. |
-| Learnings identity is content-keyed (**A13**) | A second `sediment` in one session can **silently discard a rule you approved** while reporting success. |
+| Learnings identity is content-keyed (**A13**) | **Gone.** Upstream implemented content-keyed identity themselves (`createHash("sha256")` + `cidMarker`), so the "a second `sediment` silently discards an approved rule" hazard does not exist there. Verified by reading `core/tools/aidlc-learnings.ts`, not its prose. |
+| `set-autonomy` works on a fresh workflow (**A10**) | **Gone since 0.3.0**, which parks the container instead of granting autonomy. |
+| The parked branch honours `--new-intent` (**A16**) | **Present upstream** — their Branch 2.5 self-disable list carries `!flags.newIntent`, so opening a second container beside a parked one works there too. |
 
-Both are recorded in `docs/fork/divergence.md` (rows A11, A13) and are
-offerable upstream; once they land upstream this warning goes away. Until then,
-**ship the fork, not the plugin alone.**
+What that leaves is one open engine defect and one cosmetic difference. Neither
+blocks installation, and you should know both:
 
-(Earlier versions also depended on A10 — `set-autonomy` working on a fresh
-workflow. Since 0.3.0 the stage parks the container instead of granting
-autonomy, so that dependency is gone. A16 — the engine's parked branch honouring
-`--new-intent` — is what makes opening a second container beside a parked one
-work, and it ships in this fork's `core/` too.)
+- **A11 (still open upstream, [#729](https://github.com/awslabs/aidlc-workflows/pull/729)).**
+  Upstream's Stop hook emits a rules payload *before* the `continue` token, and a
+  truncating harness can cut the token off. **Measured not to affect a `vibe`
+  session:** a container's first `next` answers `run-stage` directly, with no
+  `continue_token` and `rules_in_context: []`, so that branch is never reached.
+  Probed across both engines, `vibe` and `feature`, and an empty vs. a
+  267-line memory layer — `load-steering` never appeared in any combination. The
+  mechanism is that the method files reach the model through each harness's
+  always-on include rather than through a directive, so they never become
+  chunks. The conditions that *do* produce chunks were not established, so this
+  is a measured scope limit, not a proof the branch can never fire.
+- **A7 (fork-only).** This fork gives the two code sensors a coalesce window; on
+  upstream they fire once per write. Only matters if you opt into
+  `linter`/`type-check` in the stage's `sensors:` list, which is off by default —
+  the stage's own Sensors section quotes the coalesced cost.
 
-The practical consequence: give the recipient this whole repository (or an archive
-of it), not just `plugins/vibe/`.
+Recorded in `docs/fork/divergence.md` (rows A7, A11; A13 and A16 are closed there).
+
+The practical consequence: **you can ship `dist/plugins/vibe/<harness>/` on its
+own** — it is self-contained (only node built-ins, plus the installed engine's own
+`aidlc-lib.ts` / `aidlc-stage-schema.ts` loaded from the target project). Sending
+the whole repository is still the simplest option if the recipient has no AI-DLC
+install yet, since they need a framework to compose into.
 
 ## Also note: `plugins/vibe/` is source, not the distributable
 
@@ -45,6 +60,13 @@ build step needed unless you edited `core/` or `plugins/`.
 | Claude Code | `claude` | `.claude` |
 | Codex CLI | `codex` | `.codex` |
 | opencode | `opencode` | `.aidlc` |
+| GitHub Copilot | `copilot` | `.aidlc` |
+| Cursor | `cursor` | `.cursor` |
+
+The last two arrived with upstream 2.6.x and the plugin projects to them without
+carrying anything Copilot- or Cursor-specific. They are **emitted but not
+exercised**: no vibe session has been run on either, so treat them as untested
+rather than supported.
 
 **1. Install the framework first.** Copy `dist/<harness>/` into `<project>/` per
 [Pick your harness](../../README.md#pick-your-harness). Skip if the project already

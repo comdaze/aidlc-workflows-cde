@@ -1,5 +1,33 @@
 # Fork changelog
 
+## 2026-08-23 (vibe 0.3.3) — on upstream 2.6.61
+
+**The install guide told people not to pair this plugin with upstream, for two
+reasons that had stopped being true.** Docs only; no stage logic changed.
+
+* **`INSTALL.md` / `INSTALL.zh-CN.md`: the "needs this fork's engine" warning is
+  replaced by a per-difference status table.** A13 is gone (upstream implemented
+  content-keyed identity themselves — read from `aidlc-learnings.ts`, not from its
+  prose), A10 stopped applying at 0.3.0, and A16 is present upstream. What is left
+  is A11, still open upstream, together with the measurement that a `vibe`
+  container never reaches that branch — first `next` answers `run-stage` with no
+  continue token, probed across both engines, two scopes, and empty vs. full
+  memory. The measured scope limit is stated as such rather than as a proof the
+  branch can never fire.
+* **The distributable is now named correctly.** The old advice was to send the
+  whole repository because the plugin needed fork `core/` fixes. It is
+  `dist/plugins/vibe/<harness>/`, verified self-contained: copied alone to an
+  unrelated path and composed into a fresh project, it produced runners, a scope
+  row, and a working parked container. Sending the whole repo is still the simplest
+  route for a recipient with no AI-DLC install, since compose needs a framework to
+  merge into.
+* **Copilot and Cursor added to the harness table**, marked *emitted but not
+  exercised* — the plugin projects to all seven upstream harnesses and carries
+  nothing host-specific, but no session has been run on those two.
+* **The stage's Sensors section no longer states a coalesced cost as fact.** The
+  coalesce window is fork-only (A7), so the sentence now says the cost depends on
+  the installed engine and to check before opting in.
+
 ## 2026-08-23 (vibe 0.3.2) — on upstream 2.6.61
 
 **The sedimentation step told the agent to build a selections file in a shape

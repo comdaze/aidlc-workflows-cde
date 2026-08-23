@@ -256,9 +256,11 @@ record dir would cost friction and check nothing worth checking.
 The two code sensors are a different question: their globs (`**/*.{ts,js}` and
 `**/*.{ts,tsx}`) match by file type, not by who wrote the file, so binding them
 makes verification follow the code regardless of whether you or a spec task wrote
-it. They now carry a coalesce window, so the cost is one toolchain run per window
-rather than one per write. Opt in by adding the ids to this stage's `sensors:`
-list in the installed copy:
+it. **Their cost depends on which engine you installed**: on an engine that gives
+them a coalesce window it is one toolchain run per window, and without one it is a
+run per write. Check before opting in — the difference is roughly an order of
+magnitude in a session that touches many files. Opt in by adding the ids to this
+stage's `sensors:` list in the installed copy:
 
 ```yaml
 sensors:

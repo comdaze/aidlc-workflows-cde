@@ -2,25 +2,37 @@
 
 English: [INSTALL.md](INSTALL.md) · 插件本身是什么：[README.zh-CN.md](README.zh-CN.md)
 
-## 先读这一节：这个插件依赖本 fork 的引擎
+## 先读这一节：配哪个引擎
 
-> [!IMPORTANT]
-> **不要把这个插件配上游 `awslabs/aidlc-workflows` 的安装。** 它依赖的两个修复在本
-> fork 的 `core/` 里，不在插件里。配原版上游不会优雅降级。
+这个插件在**本 fork 的引擎**和**原版上游 `awslabs/aidlc-workflows` v2** 上都能跑。
+以前不是这样 —— 如果你看到的是这页的旧版本，它写着不要配上游。对着上游 2.6.61 实测
+（2026-08-23），当时给的两条理由都已不成立：
 
-| 依赖 | 缺了会怎样 |
+| 曾经的依赖 | 现状 |
 | --- | --- |
-| load-steering 续传可跟随（**A11**） | `continue` 的 token 排在约 16KB 规则正文**后面**，会被截断掉，链永远推不动 —— 同一批内容每回合重发一次。 |
-| learnings 身份按内容取键（**A13**） | 同一会话里第二次 `沉淀` 可能**静默丢弃你已经批准的规则**，同时报告成功。 |
+| learnings 身份按内容取键（**A13**） | **已消除。** 上游自己实现了内容取键（`createHash("sha256")` + `cidMarker`），所以"第二次沉淀静默丢弃已批准规则"这个风险在上游不存在。依据是读 `core/tools/aidlc-learnings.ts` 的实现，不是读它的说明。 |
+| fresh workflow 上 `set-autonomy` 可用（**A10**） | **0.3.0 起消除** —— stage 改为停车容器，不再授予 autonomy。 |
+| parked 分支放行 `--new-intent`（**A16**） | **上游已有** —— 它们 Branch 2.5 的 self-disable 列表里带 `!flags.newIntent`，所以"在停车容器旁边开第二个容器"在上游也成立。 |
 
-两条都记在 `docs/fork/divergence.md`（A11 / A13），都是可以提给上游的；上游收了之后
-这段警告就作废。在那之前，**要发就发整个 fork，不要单发插件。**
+剩下的是一个仍未修的引擎缺陷加一处非功能差异。两者都不阻碍安装，但你应该知道：
 
-（旧版还依赖 A10 —— fresh workflow 上 `set-autonomy` 可用。0.3.0 起 stage 改为把容器
-真正停车而不再授予 autonomy，该依赖已消除。另外让"在停车容器旁边开第二个容器"成立的
-是 A16 —— 引擎的 parked 分支放行 `--new-intent` —— 它同样在本 fork 的 `core/` 里。）
+- **A11（上游仍未合并，[#729](https://github.com/awslabs/aidlc-workflows/pull/729)）。**
+  上游的 Stop hook 把规则正文排在 `continue` token **前面**，会截断的 harness 可能把
+  token 切掉。**实测不影响 `vibe` 会话**：容器的第一次 `next` 直接返回 `run-stage`，
+  没有 `continue_token`，`rules_in_context` 为空数组，所以那个分支根本到不了。两个
+  引擎 × `vibe` 和 `feature` × 空 memory 和 267 行满载 memory，四种组合都没出现
+  `load-steering`。机制是 memory 文件经由各 harness 的常驻 include 到达模型，不走
+  directive，因此从不变成 chunks。但产生 chunks 的条件我没查清，所以这是一个实测的
+  范围结论，不是"该分支永不触发"的证明。
+- **A7（仅本 fork 有）。** 本 fork 给两个代码 sensor 加了 coalesce 窗口，上游是每次
+  写入触发一次。只在你把 `linter`/`type-check` 显式加进 stage 的 `sensors:` 列表时
+  才有影响 —— 默认不绑，而 stage 的 Sensors 段引用的是加了窗口后的成本。
 
-实际结论：把**整个仓库**（或它的压缩包）交给对方，而不是只给 `plugins/vibe/`。
+都记在 `docs/fork/divergence.md`（A7、A11；A13 和 A16 在那里已关闭）。
+
+实际结论：**可以只发 `dist/plugins/vibe/<harness>/`** —— 它是自包含的（只用 node
+内置模块，加上从目标项目动态加载的引擎自带 `aidlc-lib.ts` / `aidlc-stage-schema.ts`）。
+如果对方还没有任何 AI-DLC 安装，发整个仓库仍然最省事，因为他需要一个框架来 compose。
 
 ## 另外：`plugins/vibe/` 是源码，不是分发物
 
@@ -38,6 +50,12 @@ English: [INSTALL.md](INSTALL.md) · 插件本身是什么：[README.zh-CN.md](R
 | Claude Code | `claude` | `.claude` |
 | Codex CLI | `codex` | `.codex` |
 | opencode | `opencode` | `.aidlc` |
+| GitHub Copilot | `copilot` | `.aidlc` |
+| Cursor | `cursor` | `.cursor` |
+
+后两个随上游 2.6.x 出现，插件投影到它们不需要携带任何 Copilot / Cursor 专有内容。
+但它们是**产出了、没实跑过** —— 没有在这两个 harness 上跑过 vibe 会话，请当作未测试
+而非已支持。
 
 **1. 先装框架。** 按 [Pick your harness](../../README.md#pick-your-harness) 把
 `dist/<harness>/` 拷进 `<project>/`。项目里已有 AI-DLC 安装就跳过。
