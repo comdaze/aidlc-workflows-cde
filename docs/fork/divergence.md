@@ -74,7 +74,7 @@ upstream `9c9201b8`:
 | `plugins/` | 59 | **None.** Ours entirely; upstream has no such directory. |
 | `docs/` | 8 | None in practice. Fork-authored chapters live under `docs/fork/`, a path upstream has none of — see A6. |
 | `dist/` | 256 | **Not a conflict** — generated. Never merge it; regenerate (§3). |
-| `core/` | 5 | Low. See A1, A2 (small, policy-driven), A11 (Stop-hook message ordering), A13 (learnings identity), A14 (a doctor row) and A16 (one condition in the engine's parked branch). |
+| `core/` | 5 | Low. See A1, A2 (small, policy-driven), A11 (Stop-hook message ordering) and A14 (a doctor row). **A13 and A16 closed at the 2.6.61 sync** — upstream implemented both itself, so they no longer contribute conflict surface. |
 | `harness/` | 7 | **One real risk**, the Kiro IDE adapter. See B1; also A12 (one hook matcher). |
 | `tests/` | 5 | Low. One new file, one ratchet entry, three files with appended guards. See A5, A10, A11, A13, A16 — and D1 for the two derived coverage files, which are not a divergence at all but do conflict on every sync. |
 | root files | 6 | Low. No longer includes `CHANGELOG.md` or the version — see A3. |
@@ -110,9 +110,12 @@ row. Exposure is down from 341 to **150**.
 
 What is left is only two kinds of thing:
 
-- **A1, A2, A5 — upstreamable, and A1 is already submitted** as
-  [#701](https://github.com/awslabs/aidlc-workflows/pull/701). The fork's text is
-  byte-identical to that PR, so A1 self-resolves on merge.
+- **A1, A2, A5 — upstreamable in principle, none of them landed.** A1's PR
+  ([#701](https://github.com/awslabs/aidlc-workflows/pull/701)) was **closed
+  unmerged**; it is re-submittable, but only in the shape the maintainer named, and
+  the fork's current wording is not that shape. A2 and A5 are unsent. Treat A1 as a
+  **permanent** divergence until a fresh PR lands — see the submission ledger in §6
+  before assuming anything about state.
 - **A4 — fork identity.** Unavoidable, but every hunk is additive.
 
 **Fork changes outside `plugins/` and `dist/`, measured against the merge base:**
@@ -151,14 +154,40 @@ resolved) plus one cluster no row explains yet. Resolve by change, not by file.
 > surface again. A9 also puts `scripts/` on the map for the first time with a
 > classified row (the two files there were previously "all unclassified").
 
-### A1 — No piped shell scripts for `bun` / `uv` (13 files) — **submitted upstream**
+### A1 — No piped shell scripts for `bun` / `uv` (13 files) — **PR #701 CLOSED unmerged; re-submittable with changes**
 
 | | |
 | --- | --- |
 | Files | `core/tools/aidlc-utility.ts` (doctor fix hint) · `harness/{claude,codex,kiro,kiro-ide,opencode}/onboarding.fills.ts` · `README.md` · `docs/guide/01-getting-started.md` · `docs/guide/15-troubleshooting.md` · `docs/guide/harnesses/{kiro-cli,kiro-ide}.md` · `docs/reference/{06-hooks-and-tools,11-contributing,14-claude-features}.md` |
-| Class | **A — must diverge until the PR lands.** Internal policy: do not instruct users to pipe a network script into a shell. |
-| Upstream | **Submitted: [awslabs/aidlc-workflows#701](https://github.com/awslabs/aidlc-workflows/pull/701).** The fork's text is byte-identical to that PR, so **A1 disappears from this table the moment it merges** — no follow-up edit needed. |
+| Class | **A — must diverge indefinitely.** Internal policy: do not instruct users to pipe a network script into a shell. This is now a **permanent** divergence, not a waiting-room one. |
+| Upstream | **[#701](https://github.com/awslabs/aidlc-workflows/pull/701) was CLOSED unmerged on 2026-08-09** — verified by `gh`, not inferred. The maintainer's objection is a *shape* objection, and it names the accepted shape, so this is re-submittable. It is not a rejection of the policy concern. |
 | On conflict | Keep ours. Each site is a self-contained sentence; if upstream rewrites the surrounding prose, re-apply the substitution rather than reverting their edit. |
+
+> [!IMPORTANT]
+> **The earlier claim in this row — "A1 disappears from this table the moment it
+> merges" — will not happen, and the fork's current wording is the exact shape
+> that was refused.** Two corrections to make before re-submitting, both from
+> `apackeer`'s review:
+>
+> 1. **Do not make the package manager the only documented path.** It assumes the
+>    reader already has Homebrew / npm / pipx. Both Bun's and uv's own guides lead
+>    with the standalone installer and then list package-manager alternatives; the
+>    accepted shape is to keep the vendor standalone command as the **default**,
+>    then add clearly labelled package-manager alternatives **with their
+>    prerequisites stated**. The fork may still ship its own inverted default as
+>    internal policy — but the upstream patch has to carry upstream's shape.
+> 2. **Scope: `bun` and `uv` are not peers.** `bun` is the runtime prerequisite
+>    every harness shares. `uv`/`uvx` is **not** a general framework prerequisite —
+>    upstream uses it only for the four optional AWS MCP servers in the Claude
+>    distribution and for the maintainer docs build. uv guidance belongs in those
+>    optional/contributor contexts, not in the general prerequisites list. The
+>    fork's canonical-wording block below treats them as peers, which is part of
+>    what drew the objection.
+>
+> The maintainer also asked explicitly **not** to spend effort on a mechanical
+> rebase — "maintainers can port the agreed wording onto current `v2`" — so a
+> re-submission should be a fresh, small PR carrying the agreed shape, not a
+> rebase of #701.
 
 The canonical wording, so every site stays consistent:
 
@@ -615,7 +644,46 @@ merge cost is per-file, not per-line.
 | Class | **B — general, not CDE-specific.** A message-ordering defect in upstream's Stop hook. Nothing here knows about CDE or any fork plugin. |
 | Upstream | **Submitted: [awslabs/aidlc-workflows#729](https://github.com/awslabs/aidlc-workflows/pull/729)** (opened 2026-08-09 against `v2` at 2.5.59, submitted as 2.5.60). The defect was proven **by a run, not a read**: the fork's ordering assertion planted on an unmodified `v2` worktree failed with token at offset 332 and payload at 160, then passed after the reorder. Upstream had no test pinning the order (`t121` there carried zero `indexOf` assertions). |
 | On conflict | **Take upstream's clauses, then check the order.** Upstream rewrote every clause of this message since the merge base ("still has rules to load" for "has pending rule delivery", "each load-steering step it returns" for "load-steering continuations — chaining each response's own token", "Do not summarise or narrate these rule chunks to the user" for "Do not report or narrate steering chunks"), so #729 deliberately carries **upstream's** wording with only the order changed. The fork's older phrasing is not worth preserving; the *property* is — actionable instruction before bulk payload. If #729 has merged by sync time, take theirs wholesale and the row closes. If not, take theirs and re-apply the reorder, and update the fork's `t121` `toContain` assertions to upstream's clause text at the same time (they currently pin the fork's older wording). |
-| **Status at 2.6.61 (2026-08-23)** | **#729 still open — the row stays.** Upstream's branch still emits `exactContent` before the `continue` token. `aidlc-continue-workflow.ts` **auto-merged** (it was not in the conflict set) and the fork's reorder survived intact: token at relative offset 144, payload at 429. Upstream did add a *second*, correctly-ordered branch guarded by `retained`, but that is reachable only when `copilotEvidence?.status === "directive"` — a Copilot-only path — so it does not cover the general case. |
+| **Status at 2.6.61 (2026-08-23)** | **#729 is open but has `CHANGES_REQUESTED` that nobody has acted on — see the blocking finding below.** Upstream's own branch still emits `exactContent` before the `continue` token. `aidlc-continue-workflow.ts` **auto-merged** (it was not in the conflict set) and the fork's reorder survived intact: token at relative offset 144, payload at 429. Upstream did add a *second*, correctly-ordered branch guarded by `retained`, but it is reachable only when `copilotEvidence?.status === "directive"` — a Copilot-only path — so it does not cover the general case. |
+
+> [!CAUTION]
+> **The review on #729 found a semantic regression, it is correct, and this fork
+> is shipping it right now.** `apackeer`, 2026-08-09 (`CHANGES_REQUESTED`, never
+> addressed):
+>
+> Moving the token earlier also changed the *imperative order* — from
+> `Apply … before continuing` / `Then run …` to `Run …` / `… as you go`. The
+> steering contract requires the current chunk to be applied **and retained**
+> before its opaque token is invoked (`core/aidlc-common/protocols/stage-protocol.md`,
+> `core/tools/aidlc-directive.ts`). Followed literally, the fork's current message
+> tells the conductor to advance the chain **past the current chunk without
+> retaining it** — which is a different, quieter failure than the truncation this
+> row set out to fix.
+>
+> Verified in the merged tree, so it is not hypothetical:
+> ```
+> "…still has rules to load. Run `…continue "<token>"` and keep following each
+>  load-steering step it returns… Apply every path/text entry in this exact
+>  `rules_content` payload as you go:\n\n<payload>"
+> ```
+> Both sides are half right: upstream's order is safe semantically and unsafe
+> under truncation; the fork's is the reverse.
+>
+> **The fix the reviewer named** (it satisfies both, and is what a re-submission
+> should carry): keep the literal command and token **ahead** of the payload, but
+> phrase it as the command to run *only after applying the payload below*. And
+> pin the **semantic** order in `t121` — the current assertion checks character
+> offsets, which is exactly why a green suite did not catch this. The reviewer
+> flagged that too: "The passing test does not clear the finding because it checks
+> token position, not the required apply-before-continue instruction."
+>
+> Second, non-blocking finding: `CHANGELOG.md` claimed the wording was unchanged
+> when it had changed. Not applicable to the fork any more — the version line is
+> frozen (A3) and the fork adds no `CHANGELOG.md` entries.
+>
+> **This is a live defect in this fork's engine, not merely PR housekeeping.**
+> Measured mitigation: a `vibe` container never reaches this branch (see the scope
+> note below), but other scopes deliver rules through it.
 
 > [!NOTE]
 > **Scope correction (measured 2026-08-23), against an earlier reading of this row
@@ -1081,18 +1149,51 @@ and A5 all land, `core/` and `harness/` divergence goes to **zero** and the fork
 reduces to `plugins/` plus the A4 identity files — the shape §7 argues it should
 have had all along.
 
-**Open submissions.** A1 is [#701](https://github.com/awslabs/aidlc-workflows/pull/701)
-and A11 is [#729](https://github.com/awslabs/aidlc-workflows/pull/729). A2 (one word,
-inclusive language) and A5 (one 8-line rule) are still unsent and should go as
-separate PRs — they are unrelated concerns and bundling them would give a reviewer
-three reasons to hesitate instead of one to agree.
+**Submission ledger — verified with `gh` on 2026-08-23, not from memory.** Four PRs
+have ever been opened from this fork; **none has merged**, and no issue has ever
+been filed.
+
+| PR | Row | State | Disposition |
+| --- | --- | --- | --- |
+| [#729](https://github.com/awslabs/aidlc-workflows/pull/729) | A11 | **OPEN** | `CHANGES_REQUESTED` 2026-08-09, **never addressed**. One blocking semantic finding, and it is correct — see A11's CAUTION note. This is the only actionable submission. |
+| [#701](https://github.com/awslabs/aidlc-workflows/pull/701) | A1 | CLOSED | Unmerged. Refused on *shape*, not on the policy concern, and the accepted shape was named — re-submittable as a fresh PR. See A1. |
+| [#726](https://github.com/awslabs/aidlc-workflows/pull/726) | A15 | CLOSED | **We** closed it after review; the premise was false. |
+| [#602](https://github.com/awslabs/aidlc-workflows/pull/602) | — | CLOSED | Titled "V2", body left as the unfilled template. No row claims it; treat it as an accidental open, and do not cite it as precedent. |
+
+A2 (one word, inclusive language) and A5 (one 8-line rule) are still unsent and
+should go as separate PRs — they are unrelated concerns and bundling them would
+give a reviewer three reasons to hesitate instead of one to agree.
+
+> [!WARNING]
+> **A submitted PR is not a resolved one, and this document twice recorded it as
+> if it were.** Before this ledger existed, A1's row said "A1 disappears from this
+> table the moment it merges" — for a PR that had been closed unmerged two weeks
+> earlier — and A11's said only "still open", omitting that a reviewer had
+> requested changes and found a real defect the fork is still shipping. Both errors
+> have the same shape: the state was written at submission time and never
+> re-checked, so the document aged into confident wrongness while looking
+> maintained.
+>
+> **Re-run this before every sync** — it costs one command, and it is the only way
+> the ledger stays true:
+> ```bash
+> gh pr list --repo awslabs/aidlc-workflows --author "@me" --state all \
+>   --json number,title,state,mergedAt,reviewDecision
+> ```
+> Read `mergedAt`, not `state`: **CLOSED does not mean merged.** Three of the four
+> PRs above are `CLOSED` and none of them merged. And check `reviewDecision` — a PR
+> can sit `OPEN` for weeks with unaddressed blocking feedback, which is
+> indistinguishable from "waiting on the maintainer" unless you look.
 
 > [!TIP]
-> **#729 is the shape to copy.** One behaviour, one source file, and an assertion
-> **proven red on an unmodified upstream worktree before the fix was written** —
-> offsets recorded in the PR body. Compare A15's retraction, where the claim rested
-> on a grep instead of a run. The cost difference between the two is a merge and a
-> closed PR.
+> **#729 is still the shape to copy for the *submission*, and a lesson about the
+> follow-through.** One behaviour, one source file, and an assertion **proven red
+> on an unmodified upstream worktree before the fix was written** — offsets in the
+> PR body. That got it a serious, engaged review within hours. What went wrong came
+> after: the review was never answered, so the change never landed and the fork
+> kept a defect the reviewer had already diagnosed for it. Compare A15's
+> retraction, where the claim rested on a grep instead of a run. **Getting the
+> evidence right buys you a reviewer; only answering them lands the patch.**
 
 **Closed without merging.** A15 was submitted as
 [#726](https://github.com/awslabs/aidlc-workflows/pull/726) and **we closed it**
