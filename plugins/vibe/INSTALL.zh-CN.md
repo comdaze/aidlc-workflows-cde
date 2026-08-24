@@ -17,13 +17,12 @@ English: [INSTALL.md](INSTALL.md) · 插件本身是什么：[README.zh-CN.md](R
 剩下的是一个仍未修的引擎缺陷加一处非功能差异。两者都不阻碍安装，但你应该知道：
 
 - **A11（上游仍未合并，[#729](https://github.com/awslabs/aidlc-workflows/pull/729)）。**
-  上游的 Stop hook 把规则正文排在 `continue` token **前面**，会截断的 harness 可能把
-  token 切掉。**实测不影响 `vibe` 会话**：容器的第一次 `next` 直接返回 `run-stage`，
-  没有 `continue_token`，`rules_in_context` 为空数组，所以那个分支根本到不了。两个
-  引擎 × `vibe` 和 `feature` × 空 memory 和 267 行满载 memory，四种组合都没出现
-  `load-steering`。机制是 memory 文件经由各 harness 的常驻 include 到达模型，不走
-  directive，因此从不变成 chunks。但产生 chunks 的条件我没查清，所以这是一个实测的
-  范围结论，不是"该分支永不触发"的证明。
+  上游的 Stop hook 把规则正文排在承载链位置的 `continue` token **前面**，会截断的
+  harness 可能把 token 切掉，投递循环就再也推不动。这个分支在**所有核心 scope 上都会
+  触发** —— 在 `feature` 容器上实测，配本仓库的 memory 层是 21 段、17KB payload ——
+  但**`vibe` 容器到不了它**：第一次 `next` 返回 `run-stage`，没有 `continue_token`，
+  `rules_in_context` 为空数组，这是带着同一份满载 memory 验证的。vibe 的 bundle 是空
+  的，引擎原样返回 directive；memory 层仍然经由 harness 的常驻 include 到达模型。
 - **A7（仅本 fork 有）。** 本 fork 给两个代码 sensor 加了 coalesce 窗口，上游是每次
   写入触发一次。只在你把 `linter`/`type-check` 显式加进 stage 的 `sensors:` 列表时
   才有影响 —— 默认不绑，而 stage 的 Sensors 段引用的是加了窗口后的成本。

@@ -699,23 +699,41 @@ merge cost is per-file, not per-line.
 > branch (see the scope note below), but other scopes deliver rules through it.
 
 > [!NOTE]
-> **Scope correction (measured 2026-08-23), against an earlier reading of this row
-> as a live hazard for `vibe`.** A `vibe` container never reaches this branch:
-> `next` answers `run-stage` directly, with `continue_token` absent and
-> `rules_in_context: []`. Probed four ways — upstream 2.6.61 engine and this fork's
-> engine, `vibe` and `feature` scopes, an empty memory layer and this repository's
-> full 267-line one — every combination emitted `run-stage`, never
-> `load-steering`. The mechanism: the engine returns the directive unchanged when
-> `chunks.length === 0`, and the method files reach the model through each
-> harness's always-on include rather than through a directive, so they never become
-> chunks. `inline_context_paths` carries agent and knowledge files only.
+> **Scope (measured 2026-08-23). This branch fires on every core scope; `vibe` is
+> the exception.** In a clean project whose only intent is `feature`, the first
+> `next` answers **`load-steering`** with a continuation token. With this
+> repository's own 267-line memory layer the bundle is **21 heading-sized segments,
+> a 17,145-byte payload inside an 18,017-byte directive, split across 2 parts** —
+> and the token that carries the chain position is 683 bytes sitting *after* that
+> payload in the hook's `reason`. The bundle content is the substantive text of
+> `org.md` / `team.md` / `project.md`, so **it grows with sedimentation**: more
+> memory means a larger payload and a token pushed further out.
 >
-> This does **not** retire the row — the branch is still misordered, and the
-> conditions that make `chunks` non-empty were not established, so no claim is made
-> that it can never fire. What it retires is the specific inference that opening a
-> `vibe` container is exposed to it. The earlier diary note reporting a per-turn
-> 16 KB re-delivery came from a container that was never actually parked
-> (`Status: Running`, no `Parked` field); parking is what stopped that loop.
+> A `vibe` container really does escape it — `next` answers `run-stage`,
+> `continue_token` absent, `rules_in_context: []`, verified with the full memory
+> layer in place. Its bundle is empty, so `chunks.length === 0` and the engine
+> returns the directive unchanged. `vibe` still gets the memory layer; it arrives
+> through each harness's always-on include rather than through a directive.
+
+> [!WARNING]
+> **An earlier revision of this note claimed the opposite for `feature`, and the
+> error was methodological.** It reported that four combinations — both engines ×
+> `vibe`/`feature` × empty/full memory — all emitted `run-stage`. The `feature`
+> half was wrong: that probe created a `vibe` intent, ran `next`, then created a
+> `feature` intent in the **same project** and ran `next` again, so the second call
+> was never a first delivery. A scope-comparison claim requires a **separate clean
+> project per scope**; reusing one carries the first intent's state into the second
+> measurement.
+>
+> Two `stage-graph.json` readings taken to support it were also unusable — its top
+> level is an array serialised with numeric keys, so a `slug` lookup silently
+> matched nothing, once producing "33 of 33 stages have rules" and once "all 33 are
+> empty". **Neither was true, and the contradiction should have been the signal.**
+> The reliable check is to read `rules_content[].path` off an actual emitted
+> directive, which is what the numbers above come from.
+>
+> The claim reached `divergence.md`, both `INSTALL` translations, and a drafted PR
+> comment before being caught. Corrected in all three.
 The load-steering continuation inlined the whole rules bundle into the hook's
 `reason` and put the `continue` token **after** it. Measured on a stock install:
 **16,583 chars across 37 entries**. Kiro IDE truncates hook output, so every

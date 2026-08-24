@@ -1,5 +1,27 @@
 # Fork changelog
 
+## 2026-08-23 (vibe 0.3.4) — on upstream 2.6.61
+
+**0.3.3's `INSTALL` got the A11 exposure backwards.** It said `load-steering` never
+fires — "probed four ways, every combination emitted `run-stage`". Half of that was
+a bad measurement, so read 0.3.3's A11 bullet as wrong, not merely imprecise.
+
+* **Corrected in both translations: the branch fires on every core scope, and
+  `vibe` is the exception.** A `feature` container's first `next` answers
+  `load-steering` with a continuation token; with this repository's 267-line memory
+  layer that is 21 segments and a 17 KB payload, with the 683-byte token *after* it.
+  A `vibe` container genuinely does escape — `run-stage`, no token,
+  `rules_in_context: []`, verified with the same full memory layer — because its
+  bundle is empty. The good news for `vibe` users is unchanged; the reason for it is
+  now stated correctly, and the scope of the underlying defect is not understated.
+* The bad probe reused **one project** for both scopes (create `vibe` intent → `next`
+  → create `feature` intent → `next`), so the second call was never a first
+  delivery. Recorded in `docs/fork/divergence.md` A11 together with the second error
+  behind it: two `stage-graph.json` readings that silently matched nothing, because
+  its top level is an array serialised with numeric keys — the same approach
+  returned "33 of 33 have rules" and then "all 33 are empty", and the contradiction
+  was not treated as the signal it was.
+
 ## 2026-08-23 (vibe 0.3.3) — on upstream 2.6.61
 
 **The install guide told people not to pair this plugin with upstream, for two

@@ -20,16 +20,15 @@ What that leaves is one open engine defect and one cosmetic difference. Neither
 blocks installation, and you should know both:
 
 - **A11 (still open upstream, [#729](https://github.com/awslabs/aidlc-workflows/pull/729)).**
-  Upstream's Stop hook emits a rules payload *before* the `continue` token, and a
-  truncating harness can cut the token off. **Measured not to affect a `vibe`
-  session:** a container's first `next` answers `run-stage` directly, with no
-  `continue_token` and `rules_in_context: []`, so that branch is never reached.
-  Probed across both engines, `vibe` and `feature`, and an empty vs. a
-  267-line memory layer — `load-steering` never appeared in any combination. The
-  mechanism is that the method files reach the model through each harness's
-  always-on include rather than through a directive, so they never become
-  chunks. The conditions that *do* produce chunks were not established, so this
-  is a measured scope limit, not a proof the branch can never fire.
+  Upstream's Stop hook emits the rules payload *before* the `continue` token that
+  carries the chain position, so a truncating harness can cut the token off and the
+  delivery loop cannot advance. This fires on **every core scope** — measured on a
+  `feature` container, the bundle is 21 segments and a 17 KB payload with this
+  repository's memory layer — but **a `vibe` container does not reach it**: its
+  first `next` answers `run-stage`, with no `continue_token` and
+  `rules_in_context: []`, verified with that same full memory layer. `vibe`'s
+  bundle is empty, so the engine returns the directive unchanged; the memory layer
+  still reaches the model through the harness's always-on include.
 - **A7 (fork-only).** This fork gives the two code sensors a coalesce window; on
   upstream they fire once per write. Only matters if you opt into
   `linter`/`type-check` in the stage's `sensors:` list, which is off by default —
