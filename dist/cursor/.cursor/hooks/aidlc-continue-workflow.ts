@@ -1050,7 +1050,10 @@ function continuationReason(
   }
   if (kind === "load-steering" && continueToken) {
     const exactContent = JSON.stringify(rulesContent ?? []);
-    // ORDER IS LOAD-BEARING: the continue token goes BEFORE the payload.
+    // TWO orders matter here, and they are DELIBERATELY OPPOSITE. Changing one
+    // to match the other reintroduces a defect; that has happened once already.
+    //
+    // 1. TEXTUAL order — the command and token are printed BEFORE the payload.
     //
     // A rules bundle is large — 16,583 chars across 37 entries measured on a
     // stock install — and a harness may truncate hook output. With the token
@@ -1066,12 +1069,35 @@ function continuationReason(
     // Truncated rule text is recoverable (the method files are on disk and reach
     // the model through the harness's always-on include anyway). A truncated
     // token is not. So the actionable instruction leads.
+    //
+    // 2. IMPERATIVE order — the payload is applied BEFORE the token is invoked.
+    //
+    // The steering contract is apply-then-continue: stage-protocol.md's inline
+    // sequence is "apply every load-steering.rules_content entry in order AND
+    // follow each opaque continuation", and aidlc-directive.ts's own comment on
+    // LoadSteeringDirective says the conductor "applies rules_content in order
+    // and immediately invokes continue". A chunk must be applied and retained
+    // before its token advances the chain, or the chain moves past content the
+    // model never took in — a quieter failure than truncation, because it looks
+    // like progress.
+    //
+    // Leading with the command therefore MUST NOT be phrased as leading with the
+    // action. An earlier revision of this branch reordered the text and let the
+    // imperative follow along ("Run … / apply … as you go"), which reads as
+    // continue-then-apply and was correctly flagged in review. The wording below
+    // keeps the command first on the page while naming it as the SECOND step,
+    // and says why the two disagree — otherwise a reader resolves the conflict
+    // by assuming print order is execution order.
     return (
-      `The AIDLC workflow still has rules to load${where}. Run ` +
+      `The AIDLC workflow still has rules to load${where}. Two steps, in this order: ` +
+      "**first** apply every path/text entry in the exact `rules_content` payload printed " +
+      "below, **then** run " +
       `\`bun ${harnessDir()}/tools/aidlc-orchestrate.ts continue "${continueToken}"\` ` +
       "and keep following each load-steering step it returns until it answers `run-stage`. " +
-      "Do not summarise or narrate these rule chunks to the user. " +
-      "Apply every path/text entry in this exact `rules_content` payload as you go:\n\n" +
+      "The command is printed above the payload only so it survives output truncation; " +
+      "it is still the second thing to do, and applying the payload first is what makes " +
+      "the chain advance over rules you have actually taken in. " +
+      "Do not summarise or narrate these rule chunks to the user.\n\n" +
       `${exactContent}`
     );
   }

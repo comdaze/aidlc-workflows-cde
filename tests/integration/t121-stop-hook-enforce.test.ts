@@ -988,21 +988,52 @@ describe("t121 aidlc-continue-workflow hook — forwarding-loop enforcement (mig
     expect(parsed.reason).toContain("keep following each load-steering step");
     expect(parsed.reason).toContain("Do not summarise or narrate these rule chunks");
 
-    // ORDER IS LOAD-BEARING: the continue token must precede the rules payload.
-    // A bundle runs to many KB (16,583 chars across 37 entries on a stock
-    // install) and a harness may truncate hook output; with the token last,
-    // truncation removes the only instruction that advances the chain and the
-    // engine re-emits load-steering every turn forever. Observed before the fix:
-    // seven identical deliveries, no progress. Truncated rule text is recoverable
-    // (the method files are on disk and ambient); a truncated token is not.
-    // Submitted upstream as #729; verified failing on unmodified v2 at 2.5.59
-    // (token at offset 332, payload at 160).
     const reasonText = parsed.reason ?? "";
+
+    // TWO ORDERS, DELIBERATELY OPPOSITE. Both are pinned, because pinning either
+    // one alone has already let the other regress.
+    //
+    // (i) TEXTUAL: the continue token must precede the rules payload. A bundle
+    // runs to many KB (16,583 chars across 37 entries on a stock install) and a
+    // harness may truncate hook output; with the token last, truncation removes
+    // the only instruction that advances the chain and the engine re-emits
+    // load-steering every turn forever. Observed before the fix: seven identical
+    // deliveries, no progress. Truncated rule text is recoverable (the method
+    // files are on disk and ambient); a truncated token is not. Submitted
+    // upstream as #729; verified failing on unmodified v2 at 2.5.59 (token at
+    // offset 332, payload at 160).
     const tokenAt = reasonText.indexOf('continue "steering-token-495"');
     const payloadAt = reasonText.indexOf('"path":"aidlc/spaces/default/memory/org.md"');
     expect(tokenAt).toBeGreaterThanOrEqual(0);
     expect(payloadAt).toBeGreaterThanOrEqual(0);
     expect(tokenAt).toBeLessThan(payloadAt);
+
+    // (ii) IMPERATIVE: the message must instruct APPLY-THEN-CONTINUE, which is the
+    // opposite of the textual order and is the steering contract —
+    // stage-protocol.md's inline sequence ("apply every load-steering.rules_content
+    // entry in order and follow each opaque continuation") and
+    // aidlc-directive.ts's LoadSteeringDirective comment ("applies rules_content in
+    // order and immediately invokes continue"). A chunk applied AFTER its token
+    // advances the chain past content the model never took in — which looks like
+    // progress, so nothing surfaces it.
+    //
+    // WHY THIS ASSERTION EXISTS SEPARATELY: check (i) passed while the message said
+    // "Run <token> … apply … as you go", i.e. continue-then-apply. Offsets cannot
+    // see an inverted imperative, so a green (i) was read as the whole property
+    // being safe. Caught in review on #729, not by this suite.
+    expect(reasonText).toContain("**first** apply");
+    expect(reasonText).toContain("**then** run");
+    const firstAt = reasonText.indexOf("**first** apply");
+    const thenAt = reasonText.indexOf("**then** run");
+    expect(firstAt).toBeGreaterThanOrEqual(0);
+    expect(thenAt).toBeGreaterThan(firstAt);
+
+    // And the message must EXPLAIN the disagreement, so a reader does not resolve
+    // it by assuming print order is execution order.
+    expect(reasonText).toContain("only so it survives output truncation");
+
+    // Regression guard on the exact phrasing that inverted the imperative.
+    expect(reasonText).not.toContain("as you go");
   }, 30000);
 
   // =========================================================================

@@ -646,10 +646,16 @@ merge cost is per-file, not per-line.
 | On conflict | **Take upstream's clauses, then check the order.** Upstream rewrote every clause of this message since the merge base ("still has rules to load" for "has pending rule delivery", "each load-steering step it returns" for "load-steering continuations — chaining each response's own token", "Do not summarise or narrate these rule chunks to the user" for "Do not report or narrate steering chunks"), so #729 deliberately carries **upstream's** wording with only the order changed. The fork's older phrasing is not worth preserving; the *property* is — actionable instruction before bulk payload. If #729 has merged by sync time, take theirs wholesale and the row closes. If not, take theirs and re-apply the reorder, and update the fork's `t121` `toContain` assertions to upstream's clause text at the same time (they currently pin the fork's older wording). |
 | **Status at 2.6.61 (2026-08-23)** | **#729 is open but has `CHANGES_REQUESTED` that nobody has acted on — see the blocking finding below.** Upstream's own branch still emits `exactContent` before the `continue` token. `aidlc-continue-workflow.ts` **auto-merged** (it was not in the conflict set) and the fork's reorder survived intact: token at relative offset 144, payload at 429. Upstream did add a *second*, correctly-ordered branch guarded by `retained`, but it is reachable only when `copilotEvidence?.status === "directive"` — a Copilot-only path — so it does not cover the general case. |
 
-> [!CAUTION]
-> **The review on #729 found a semantic regression, it is correct, and this fork
-> is shipping it right now.** `apackeer`, 2026-08-09 (`CHANGES_REQUESTED`, never
-> addressed):
+> [!NOTE]
+> **FIXED IN THIS FORK 2026-08-23; #729 still needs the same change pushed to it.**
+> The review's blocking finding was correct and the fork was shipping it. Both
+> orders are now pinned, and the fix is verified to have teeth: reverting the
+> wording turns the new assertion red and names the missing clause, while a
+> deliberately reverted build was also used to prove the change is unrelated to
+> `t248`'s flake. What remains is to push the branch and answer the reviewer —
+> nothing in `core/` is outstanding.
+>
+> The finding, kept because it explains why the wording looks the way it does:
 >
 > Moving the token earlier also changed the *imperative order* — from
 > `Apply … before continuing` / `Then run …` to `Run …` / `… as you go`. The
@@ -669,21 +675,28 @@ merge cost is per-file, not per-line.
 > Both sides are half right: upstream's order is safe semantically and unsafe
 > under truncation; the fork's is the reverse.
 >
-> **The fix the reviewer named** (it satisfies both, and is what a re-submission
-> should carry): keep the literal command and token **ahead** of the payload, but
-> phrase it as the command to run *only after applying the payload below*. And
-> pin the **semantic** order in `t121` — the current assertion checks character
-> offsets, which is exactly why a green suite did not catch this. The reviewer
-> flagged that too: "The passing test does not clear the finding because it checks
-> token position, not the required apply-before-continue instruction."
+> **What was implemented** (the reviewer's own prescription): the command and token
+> stay **ahead** of the payload textually, but the sentence now names them as the
+> *second* step — "**first** apply … **then** run …" — and adds one clause saying
+> the command is printed above the payload *only* so it survives truncation. That
+> clause is the load-bearing part: without it a reader resolves the
+> print-order/execution-order conflict by assuming they are the same, which is how
+> the regression arose in the first place.
+>
+> `t121` now pins **both** orders, deliberately opposite, plus a `not.toContain`
+> guard on the exact phrase that inverted the imperative. The reviewer's point about
+> the old assertion was precise — "The passing test does not clear the finding
+> because it checks token position, not the required apply-before-continue
+> instruction" — and the general lesson is that **an offset comparison cannot see an
+> inverted imperative**, so the two properties need two assertions.
 >
 > Second, non-blocking finding: `CHANGELOG.md` claimed the wording was unchanged
 > when it had changed. Not applicable to the fork any more — the version line is
-> frozen (A3) and the fork adds no `CHANGELOG.md` entries.
+> frozen (A3) and the fork adds no `CHANGELOG.md` entries. A re-submission to
+> upstream still has to carry a correct release note.
 >
-> **This is a live defect in this fork's engine, not merely PR housekeeping.**
-> Measured mitigation: a `vibe` container never reaches this branch (see the scope
-> note below), but other scopes deliver rules through it.
+> Scope of the exposure while it lasted: a `vibe` container never reaches this
+> branch (see the scope note below), but other scopes deliver rules through it.
 
 > [!NOTE]
 > **Scope correction (measured 2026-08-23), against an earlier reading of this row
@@ -1039,13 +1052,14 @@ git worktree remove /tmp/upstream-tip
 
 Anything that reproduces there is upstream's, not yours.
 
-**At the 2.6.61 merge (2026-08-23) that method settled the whole question.** The
+**At the 2.6.61 merge (2026-08-23) that method settled most of the question.** The
 unit tier reported 16 failing files. One (`gen-coverage-registry`) was ours and
 self-inflicted — the two derived files under D1 had been taken as merge
 placeholders and not yet regenerated; `bun tests/gen-coverage-registry.ts` cleared
 it. One (`t134-mechanism-honesty`) passed on re-run, i.e. a timeout flake. The
-remaining **14 reproduced on an unmodified `github/v2` worktree with identical
-fail counts**, so none of them is the merge's:
+remaining 14 reproduced on an unmodified `github/v2` worktree with identical fail
+counts, so **none of them is the merge's** — though one of the 14 later proved to
+be a second flake rather than an upstream defect (see the CAUTION after the table):
 
 | File | merged | upstream tip |
 | --- | --- | --- |
@@ -1060,7 +1074,7 @@ fail counts**, so none of them is the merge's:
 | `t235-ensemble-modes` | 12 / 3 | 12 / 3 |
 | `t241-opencode-adapter` | 14 / 2 | 14 / 2 |
 | `t248-codekb-scope-diff` | 32 / 2 | 32 / 2 |
-| `t248-steering-content-delivery` | 34 / 1 | 34 / 1 |
+| ~~`t248-steering-content-delivery`~~ **→ FLAKE, see below** | ~~34 / 1~~ | ~~34 / 1~~ |
 | `t249-copilot-adapter` | 41 / 7 | 39 / 7 |
 | `t255-workspace-sync` | fail | 36 / 12 |
 
@@ -1073,6 +1087,30 @@ the fork's two plugins now project to Copilot as well, and that test counts them
 > identical count is strong evidence of the same defect; a differing count is the
 > only thing worth opening a log for. Fourteen files were dispositioned this way
 > without reading a single assertion diff.
+
+> [!CAUTION]
+> **…and here is the limit of that shortcut, found the same day by accident.**
+> `t248-steering-content-delivery` was recorded above as 34/1 on both sides and
+> filed as upstream's. It is a **flake**: it now runs 35/0 three times in a row,
+> and — the decisive check — 35/0 *also* on a build with the A11 fix deliberately
+> reverted, so nothing in this fork's tree was ever making it fail.
+>
+> Note how it evaded the method: an identical count on both sides is exactly what a
+> shared defect looks like, **and also exactly what one slow assertion timing out
+> under two equally loaded runs looks like.** Matching counts prove the two runs
+> agree; they do not prove the failure is real.
+>
+> Cheap way to keep the shortcut and close the hole: **re-run a single-failure file
+> standalone before filing it.** A timeout flake has no assertion diff — no
+> `Expected`/`Received` — which is the signature already documented in §4's
+> flake row. Files with one failure are the ones worth this extra 10 seconds;
+> multi-failure files (`t112` 0/3, `t124` 8/6, `t249` 41/7) are far less likely to
+> be timing.
+>
+> The other 13 rows were **not** re-checked this way, so treat the table as
+> "reproduces on upstream" — which is what was measured — rather than "is an
+> upstream defect", which is an inference. At least one row has already proven to
+> be neither.
 
 The older 2.5.30 baseline (288 files, 5840 assertions, 5 failing files / 21 failing
 assertions), kept because the verdicts still explain the recurring classes:
@@ -1155,7 +1193,7 @@ been filed.
 
 | PR | Row | State | Disposition |
 | --- | --- | --- | --- |
-| [#729](https://github.com/awslabs/aidlc-workflows/pull/729) | A11 | **OPEN** | `CHANGES_REQUESTED` 2026-08-09, **never addressed**. One blocking semantic finding, and it is correct — see A11's CAUTION note. This is the only actionable submission. |
+| [#729](https://github.com/awslabs/aidlc-workflows/pull/729) | A11 | **OPEN** | `CHANGES_REQUESTED` 2026-08-09. The blocking finding was correct and is **fixed in this fork as of 2026-08-23** (see A11's note); the branch still needs pushing and the reviewer still needs an answer. This is the only actionable submission. |
 | [#701](https://github.com/awslabs/aidlc-workflows/pull/701) | A1 | CLOSED | Unmerged. Refused on *shape*, not on the policy concern, and the accepted shape was named — re-submittable as a fresh PR. See A1. |
 | [#726](https://github.com/awslabs/aidlc-workflows/pull/726) | A15 | CLOSED | **We** closed it after review; the premise was false. |
 | [#602](https://github.com/awslabs/aidlc-workflows/pull/602) | — | CLOSED | Titled "V2", body left as the unfilled template. No row claims it; treat it as an accidental open, and do not cite it as precedent. |
